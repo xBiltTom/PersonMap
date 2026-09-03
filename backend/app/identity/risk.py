@@ -31,6 +31,17 @@ def calculate_risk_score(entities: List[Entity], target: Target) -> Tuple[int, s
     dork_count = sum(1 for e in entities if e.entity_type == "search_mention")
     score += min(dork_count * 4, 15)
 
+    # 5. Data Breaches / Credential Leaks (Critical)
+    breach_entities = [e for e in entities if e.entity_type == "breach"]
+    if breach_entities:
+        total_breaches = sum(len(e.metadata_info.get("breaches", [])) for e in breach_entities)
+        score += min(25 + (total_breaches * 5), 45)
+
+    # 6. Phone number exposure
+    phone_count = sum(1 for e in entities if e.entity_type == "phone")
+    if phone_count > 0:
+        score += 15
+
     # Cap score at 100
     final_score = min(max(score, 5), 100)
 
@@ -46,6 +57,34 @@ def calculate_risk_score(entities: List[Entity], target: Target) -> Tuple[int, s
 
     # Actionable Awareness Recommendations
     recommendations: List[Dict[str, Any]] = []
+
+    if breach_entities:
+        all_breaches_list = []
+        for be in breach_entities:
+            all_breaches_list.extend(be.metadata_info.get("breaches", []))
+        sample_breaches = ", ".join(all_breaches_list[:4])
+        recommendations.append({
+            "title": "Aparición en Brechas de Seguridad (Data Leaks)",
+            "category": "Filtración de Credenciales",
+            "impact": "Crítico",
+            "description": (
+                f"Tu correo electrónico figura en filtraciones públicas masivas ({sample_breaches or 'Múltiples servicios'}). "
+                "Ciberdelincuentes poseen copias de hashes de contraseñas, nombres y teléfonos asociados a esta cuenta."
+            ),
+            "advice": "Cambia inmediatamente las contraseñas en los servicios afectados, activa autenticación de dos factores (2FA) con app (no SMS) y no reutilices claves.",
+        })
+
+    if phone_count > 0:
+        recommendations.append({
+            "title": "Teléfono Móvil Rastreado en Fuentes Abiertas",
+            "category": "Ingeniería Social / Smishing",
+            "impact": "Alto",
+            "description": (
+                "Tu número de teléfono está indexado y vinculado a tu identidad digital pública. "
+                "Esto abre la puerta a ataques de vishing (llamadas fraudulentas suplantando al banco o la universidad) y SIM swapping."
+            ),
+            "advice": "Configura la privacidad de WhatsApp y Telegram para que solo tus contactos puedan ver tu foto, biografía y última conexión.",
+        })
 
     if social_count >= 3:
         recommendations.append({

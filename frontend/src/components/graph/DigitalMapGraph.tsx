@@ -28,11 +28,15 @@ import {
   Briefcase,
   AtSign,
   Share2,
+  AlertTriangle,
+  Phone,
 } from "lucide-react";
 
 // Platform Icon Helper
 function getPlatformIcon(platform?: string | null, type?: string) {
   const p = (platform || "").toLowerCase();
+  if (type === "breach") return <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />;
+  if (type === "phone") return <Phone className="w-3.5 h-3.5 text-violet-400" />;
   if (p.includes("github")) return <Code2 className="w-3.5 h-3.5 text-slate-200" />;
   if (p.includes("instagram")) return <Share2 className="w-3.5 h-3.5 text-pink-400" />;
   if (p.includes("twitter") || p.includes("x_twitter")) return <AtSign className="w-3.5 h-3.5 text-sky-400" />;
@@ -74,18 +78,24 @@ function PersonRootNode({ data }: { data: any }) {
 function CustomEntityNode({ data, selected }: { data: any; selected?: boolean }) {
   const isHighConf = Number(data.confidence || 0) >= 0.70;
   const isVerified = Boolean(data.verified);
+  const isBreach = data.entity_type === "breach";
+  const isPhone = data.entity_type === "phone";
   const platform = String(data.platform || data.entity_type || "");
 
   return (
     <div
-      className={`px-3 py-2.5 rounded-lg bg-[#111722] border transition-all min-w-[170px] max-w-[220px] shadow-lg ${
+      className={`px-3 py-2.5 rounded-lg border transition-all min-w-[170px] max-w-[220px] shadow-lg ${
         selected
           ? "border-sky-400 ring-2 ring-sky-500/20 bg-[#162030]"
+          : isBreach
+          ? "border-rose-500/70 bg-[#210d14] ring-1 ring-rose-500/20 text-rose-200"
+          : isPhone
+          ? "border-violet-500/50 bg-[#161224]"
           : isVerified
           ? "border-emerald-500/50 bg-[#0f1b1a]"
           : isHighConf
-          ? "border-[#2c3d59] hover:border-sky-500/50"
-          : "border-[#1e293b] opacity-85"
+          ? "border-[#2c3d59] hover:border-sky-500/50 bg-[#111722]"
+          : "border-[#1e293b] bg-[#111722] opacity-85"
       }`}
     >
       <Handle type="target" position={Position.Top} className="!bg-slate-500 !w-1.5 !h-1.5" />

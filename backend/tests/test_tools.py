@@ -29,3 +29,23 @@ def test_tool_runnable_filtering():
     runnable_user = tool_registry.get_runnable_tools(ctx_user)
     runnable_user_names = [t.name for t in runnable_user]
     assert "username_finder" in runnable_user_names
+    assert "github_deep_scanner" in runnable_user_names
+
+    # Context with phone
+    ctx_phone = TargetContext(phone="987654321")
+    runnable_phone = tool_registry.get_runnable_tools(ctx_phone)
+    assert "phone_lookup" in [t.name for t in runnable_phone]
+
+    # Context with email has breach_checker
+    assert "breach_checker" in runnable_names
+
+
+@pytest.mark.asyncio
+async def test_phone_lookup_peru_formatting():
+    from app.tools.phone_lookup import PhoneLookupTool
+    tool = PhoneLookupTool()
+    ctx = TargetContext(phone="987654321")
+    findings = await tool.execute(ctx)
+    assert len(findings) == 1
+    assert findings[0].value.startswith("+51")
+    assert "whatsapp_link" in findings[0].metadata_info

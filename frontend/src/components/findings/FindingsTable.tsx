@@ -29,6 +29,8 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
     { id: "all", label: "Todos" },
     { id: "social_account", label: "Redes / Cuentas" },
     { id: "email", label: "Correos" },
+    { id: "breach", label: "Filtraciones / Brechas" },
+    { id: "phone", label: "Telefonía" },
     { id: "academic", label: "Académico" },
     { id: "search_mention", label: "Dorks / Menciones" },
     { id: "document", label: "Documentos (DNI)" },

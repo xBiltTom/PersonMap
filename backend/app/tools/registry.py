@@ -6,6 +6,9 @@ from app.tools.social_verifier import SocialVerifierTool
 from app.tools.search_dorker import SearchDorkerTool
 from app.tools.academic_finder import AcademicFinderTool
 from app.tools.dni_lookup import DniLookupTool
+from app.tools.breach_checker import BreachCheckerTool
+from app.tools.phone_lookup import PhoneLookupTool
+from app.tools.github_deep_scanner import GitHubDeepScannerTool
 
 
 class ToolRegistry:
@@ -22,6 +25,9 @@ class ToolRegistry:
         self.register(SearchDorkerTool())
         self.register(AcademicFinderTool())
         self.register(DniLookupTool())
+        self.register(BreachCheckerTool())
+        self.register(PhoneLookupTool())
+        self.register(GitHubDeepScannerTool())
 
     def register(self, tool: BaseTool) -> None:
         self._tools[tool.name] = tool

@@ -40,8 +40,17 @@ class Orchestrator:
             target = investigation.target
 
             try:
-                # 2. Execute OSINT extraction & correlation
-                entities = await rule_engine.execute_investigation(str_id, target, db)
+                # 2. Execute OSINT extraction: Autonomous Agent vs Rule-Based
+                use_agent = (
+                    investigation.strategy == "agentic"
+                    or (investigation.strategy == "auto" and settings.ai_enabled)
+                )
+
+                if use_agent and settings.ai_enabled:
+                    from app.agent.autonomous_agent import autonomous_agent
+                    entities = await autonomous_agent.run(str_id, target, db)
+                else:
+                    entities = await rule_engine.execute_investigation(str_id, target, db)
 
                 # 3. Resolve Identity Clusters
                 clusters = identity_resolver.resolve_clusters(investigation.id, entities, target)
