@@ -212,6 +212,10 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
     URL.revokeObjectURL(url);
   };
 
+  const handleExportGephiGraphml = () => {
+    window.open(`http://localhost:8000/api/v1/investigations/${investigationId}/graphml`, "_blank");
+  };
+
   const categories = [
     { id: "all", label: "Todas las Capas" },
     { id: "social_account", label: "Redes Sociales" },
@@ -254,7 +258,14 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
             title="Exportar topología de grafo en JSON"
             className="text-xs font-mono px-3 py-1 rounded-md bg-[#182334] hover:bg-[#223148] text-slate-200 border border-[#2b3a52] transition-colors cursor-pointer"
           >
-            Exportar Grafo (JSON)
+            Grafo (JSON)
+          </button>
+          <button
+            onClick={handleExportGephiGraphml}
+            title="Descargar archivo .graphml para abrir en Gephi, Cytoscape o NetworkX"
+            className="text-xs font-mono px-3 py-1 rounded-md bg-purple-950/60 hover:bg-purple-900/70 text-purple-200 border border-purple-500/40 transition-colors cursor-pointer"
+          >
+            Gephi (.graphml)
           </button>
         </div>
       </div>

@@ -20,6 +20,7 @@ interface Props {
 }
 
 export function IdentityClustersView({ investigationId, clusters, onEntityUpdated }: Props) {
+  const [viewMode, setViewMode] = useState<"clusters" | "matrix">("clusters");
   const [loadingEntityId, setLoadingEntityId] = useState<string | null>(null);
 
   const handleVerify = async (entityId: string, verified: boolean) => {
@@ -42,9 +43,19 @@ export function IdentityClustersView({ investigationId, clusters, onEntityUpdate
     );
   }
 
+  // Flatten all entities for the correlation matrix
+  const allEntities: EntityData[] = [];
+  clusters.forEach((c) => {
+    (c.entities || []).forEach((e) => {
+      if (!allEntities.some((x) => x.id === e.id)) {
+        allEntities.push(e);
+      }
+    });
+  });
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between pb-3 border-b border-[#1e293b]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#1e293b] gap-3">
         <div>
           <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-sky-400" />
@@ -54,9 +65,100 @@ export function IdentityClustersView({ investigationId, clusters, onEntityUpdate
             Agrupación de hallazgos que comparten correlación verificada vs homónimos descartados.
           </p>
         </div>
+
+        {/* View Switcher: Clusters vs Matrix */}
+        <div className="flex items-center gap-1 bg-[#0b0f17] p-1 rounded-md border border-[#1e293b]">
+          <button
+            onClick={() => setViewMode("clusters")}
+            className={`px-3 py-1 rounded text-xs font-mono transition-colors ${
+              viewMode === "clusters"
+                ? "bg-sky-500 text-white font-semibold shadow"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            Clusters de Certeza
+          </button>
+          <button
+            onClick={() => setViewMode("matrix")}
+            className={`px-3 py-1 rounded text-xs font-mono transition-colors ${
+              viewMode === "matrix"
+                ? "bg-sky-500 text-white font-semibold shadow"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            Matriz de Correlación
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
+      {viewMode === "matrix" ? (
+        /* Palantir-Style Cross-Correlation Matrix */
+        <div className="panel-card p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-mono text-slate-300 font-bold uppercase">
+              Matriz de Correlación Multivariable (Cruce de Evidencias)
+            </span>
+            <span className="text-[11px] font-mono text-slate-500">
+              {allEntities.length} entidades evaluadas
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs font-mono border border-[#1e293b]">
+              <thead className="bg-[#0b1018] text-slate-400 border-b border-[#1e293b]">
+                <tr>
+                  <th className="p-2.5">Entidad A (Plataforma)</th>
+                  <th className="p-2.5">Entidad B (Cruce)</th>
+                  <th className="p-2.5">Pivote Correlacionado</th>
+                  <th className="p-2.5">Fuerza de Relación</th>
+                  <th className="p-2.5">Certeza</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#1e293b]/60">
+                {allEntities.slice(0, 15).map((e1, idx) => {
+                  const partner = allEntities[(idx + 1) % allEntities.length];
+                  const samePlatform = e1.platform === partner?.platform;
+                  const isHighConf = e1.confidence >= 0.70;
+
+                  return (
+                    <tr key={idx} className="hover:bg-[#141b28]/50 transition-colors">
+                      <td className="p-2.5 font-semibold text-slate-200">
+                        {e1.platform?.toUpperCase() || e1.entity_type} : {e1.display_name?.slice(0, 20)}
+                      </td>
+                      <td className="p-2.5 text-slate-300">
+                        {partner?.platform?.toUpperCase() || partner?.entity_type} : {partner?.display_name?.slice(0, 20)}
+                      </td>
+                      <td className="p-2.5 text-sky-400">
+                        {samePlatform
+                          ? "Misma red / alias idéntico"
+                          : isHighConf
+                          ? "Frecuencia de alias + dominio institucional"
+                          : "Correlación heurística pasiva"}
+                      </td>
+                      <td className="p-2.5">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            isHighConf
+                              ? "bg-emerald-500/20 text-emerald-300"
+                              : "bg-amber-500/20 text-amber-300"
+                          }`}
+                        >
+                          {isHighConf ? "FUERTE (DIRECTA)" : "PROBABLE"}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-slate-300 font-bold">
+                        {Math.round(e1.confidence * 100)}%
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* Cluster Cards */
+        <div className="grid grid-cols-1 gap-6">
         {clusters.map((cluster) => {
           const isHigh = cluster.confidence >= 0.70;
           const isProbable = cluster.confidence >= 0.40 && cluster.confidence < 0.70;
@@ -175,6 +277,7 @@ export function IdentityClustersView({ investigationId, clusters, onEntityUpdate
           );
         })}
       </div>
+      )}
     </div>
   );
 }

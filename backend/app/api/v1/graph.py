@@ -142,3 +142,89 @@ async def get_investigation_graph(
         nodes=nodes,
         edges=edges,
     )
+
+
+@router.get("/investigations/{id}/graphml")
+async def export_graphml(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Exports the investigation digital map in GraphML format for direct import
+    into Gephi, Cytoscape, or NetworkX for academic publication graphics.
+    """
+    stmt = (
+        select(Investigation)
+        .where(Investigation.id == id)
+        .options(
+            selectinload(Investigation.target),
+            selectinload(Investigation.entities),
+            selectinload(Investigation.relationships),
+        )
+    )
+    result = await db.execute(stmt)
+    inv = result.scalar_one_or_none()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Investigación no encontrada")
+
+    target = inv.target
+    entities = inv.entities
+    relationships = inv.relationships
+
+    xml_lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<graphml xmlns="http://graphml.graphdrawing.org/xmlns"',
+        '         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
+        '         xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">',
+        '  <key id="label" for="node" attr.name="label" attr.type="string"/>',
+        '  <key id="type" for="node" attr.name="type" attr.type="string"/>',
+        '  <key id="platform" for="node" attr.name="platform" attr.type="string"/>',
+        '  <key id="confidence" for="node" attr.name="confidence" attr.type="double"/>',
+        '  <key id="weight" for="edge" attr.name="weight" attr.type="double"/>',
+        '  <key id="relation" for="edge" attr.name="relation" attr.type="string"/>',
+        '  <graph id="G" edgedefault="undirected">',
+    ]
+
+    # Root Target node
+    root_id = f"target_{target.id}"
+    root_label = target.full_name or target.username or "Target"
+    xml_lines.append(f'    <node id="{root_id}">')
+    xml_lines.append(f'      <data key="label">{root_label}</data>')
+    xml_lines.append('      <data key="type">target</data>')
+    xml_lines.append('      <data key="platform">identity</data>')
+    xml_lines.append('      <data key="confidence">1.0</data>')
+    xml_lines.append('    </node>')
+
+    # Entity nodes
+    for ent in entities:
+        ent_id = f"ent_{ent.id}"
+        ent_label = (ent.display_name or ent.value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        xml_lines.append(f'    <node id="{ent_id}">')
+        xml_lines.append(f'      <data key="label">{ent_label}</data>')
+        xml_lines.append(f'      <data key="type">{ent.entity_type}</data>')
+        xml_lines.append(f'      <data key="platform">{ent.platform or "web"}</data>')
+        xml_lines.append(f'      <data key="confidence">{ent.confidence}</data>')
+        xml_lines.append('    </node>')
+
+        # Edge from target to entity
+        xml_lines.append(f'    <edge source="{root_id}" target="{ent_id}">')
+        xml_lines.append(f'      <data key="weight">{ent.confidence}</data>')
+        xml_lines.append('      <data key="relation">identified</data>')
+        xml_lines.append('    </edge>')
+
+    # Semantic relationships
+    for rel in relationships:
+        xml_lines.append(f'    <edge source="ent_{rel.source_entity_id}" target="ent_{rel.target_entity_id}">')
+        xml_lines.append(f'      <data key="weight">{rel.strength}</data>')
+        xml_lines.append(f'      <data key="relation">{rel.relation_type}</data>')
+        xml_lines.append('    </edge>')
+
+    xml_lines.append('  </graph>')
+    xml_lines.append('</graphml>')
+
+    from fastapi.responses import Response
+    return Response(
+        content="\n".join(xml_lines),
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="person_map_{id}.graphml"'},
+    )
