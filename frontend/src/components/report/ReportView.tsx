@@ -10,12 +10,17 @@ import {
   Cpu,
   Layers,
   FileCheck,
+  Printer,
 } from "lucide-react";
 
 export function ReportView({ investigation }: { investigation: InvestigationData }) {
   const score = investigation.risk_score || 0;
   const level = investigation.metrics?.risk_level || "Desconocido";
   const recommendations = investigation.metrics?.recommendations || [];
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   const getScoreColor = () => {
     if (score >= 75) return "text-rose-400 border-rose-500/30 bg-rose-500/10";
@@ -24,7 +29,26 @@ export function ReportView({ investigation }: { investigation: InvestigationData
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print:m-0 print:p-0">
+      {/* Print Action Bar (Hidden when printing) */}
+      <div className="flex items-center justify-between print:hidden">
+        <div>
+          <h2 className="text-sm font-bold text-slate-100 font-mono">
+            EXPEDIENTE FORENSE // INFORME DE EXPOSICIÓN DIGITAL
+          </h2>
+          <p className="text-xs text-slate-400">
+            Documento de concientización y auditoría de ciberseguridad personal.
+          </p>
+        </div>
+
+        <button
+          onClick={handlePrint}
+          className="flex items-center gap-2 px-3.5 py-1.5 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-xs font-mono font-semibold transition-colors shadow"
+        >
+          <Printer className="w-3.5 h-3.5" />
+          <span>Imprimir / Guardar como PDF</span>
+        </button>
+      </div>
       {/* Top Banner: Exposure Gauge & Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Score Card */}

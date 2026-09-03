@@ -140,10 +140,13 @@ function intPercent(val: number): string {
 }
 
 export function DigitalMapGraph({ investigationId }: { investigationId: string }) {
+  const [allNodes, setAllNodes] = useState<any[]>([]);
+  const [allEdges, setAllEdges] = useState<any[]>([]);
   const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<any>([]);
   const [loading, setLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState<any>(null);
+  const [activeCategory, setActiveCategory] = useState<string>("all");
 
   const nodeTypes = useMemo(
     () => ({
@@ -157,6 +160,8 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
     try {
       setLoading(true);
       const data: GraphResponse = await getInvestigationGraph(investigationId);
+      setAllNodes(data.nodes);
+      setAllEdges(data.edges);
       setNodes(data.nodes);
       setEdges(data.edges);
     } catch (err) {
@@ -170,12 +175,87 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
     loadGraph();
   }, [loadGraph]);
 
+  // Apply layer filtering
+  useEffect(() => {
+    if (activeCategory === "all") {
+      setNodes(allNodes);
+      setEdges(allEdges);
+      return;
+    }
+
+    const filteredNodes = allNodes.filter(
+      (n) => n.type === "personRoot" || n.data.entity_type === activeCategory
+    );
+    const visibleNodeIds = new Set(filteredNodes.map((n) => n.id));
+    const filteredEdges = allEdges.filter(
+      (e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)
+    );
+
+    setNodes(filteredNodes);
+    setEdges(filteredEdges);
+  }, [activeCategory, allNodes, allEdges, setNodes, setEdges]);
+
   const onNodeClick = useCallback((_: any, node: any) => {
     setSelectedNode(node);
   }, []);
 
+  const handleExportGraphJson = () => {
+    const data = { nodes: allNodes, edges: allEdges };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `graph-${investigationId}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const categories = [
+    { id: "all", label: "Todas las Capas" },
+    { id: "social_account", label: "Redes Sociales" },
+    { id: "email", label: "Correos" },
+    { id: "breach", label: "Brechas (Leaks)" },
+    { id: "phone", label: "Telefonía" },
+    { id: "academic", label: "Académico" },
+  ];
+
   return (
-    <div className="h-[650px] w-full panel-card relative flex overflow-hidden border border-[#1e293b]">
+    <div className="h-[680px] w-full panel-card relative flex flex-col overflow-hidden border border-[#1e293b]">
+      {/* Top Filter Bar */}
+      <div className="px-4 py-2.5 bg-[#0e1420] border-b border-[#1b2537] flex flex-wrap items-center justify-between gap-2 z-10">
+        <div className="flex items-center gap-1.5 overflow-x-auto">
+          <span className="text-[10px] font-mono uppercase text-slate-500 mr-1 hidden sm:inline">
+            Capas:
+          </span>
+          {categories.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setActiveCategory(cat.id)}
+              className={`text-[10px] font-mono px-2 py-0.5 rounded transition-colors whitespace-nowrap ${
+                activeCategory === cat.id
+                  ? "bg-sky-500/20 text-sky-300 border border-sky-500/40 font-semibold"
+                  : "bg-[#131b28] text-slate-400 hover:text-slate-200 border border-transparent"
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-mono text-slate-400">
+            {nodes.length} nodos visibles
+          </span>
+          <button
+            onClick={handleExportGraphJson}
+            title="Exportar topología de grafo en JSON"
+            className="text-[10px] font-mono px-2 py-1 rounded bg-[#182334] hover:bg-[#223148] text-slate-300 border border-[#2b3a52] transition-colors"
+          >
+            Exportar Grafo
+          </button>
+        </div>
+      </div>
+
       {/* React Flow Canvas */}
       <div className="flex-1 h-full relative">
         {loading ? (

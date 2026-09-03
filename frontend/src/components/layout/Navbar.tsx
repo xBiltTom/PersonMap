@@ -63,6 +63,13 @@ export function Navbar() {
             <Layers className="w-3.5 h-3.5 text-sky-400" />
             <span>Investigaciones</span>
           </Link>
+
+          <Link
+            href="/evaluation"
+            className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-md bg-purple-950/40 hover:bg-purple-900/50 text-purple-200 border border-purple-500/30 transition-colors"
+          >
+            <span>Métricas Paper</span>
+          </Link>
         </div>
       </div>
     </header>
