@@ -30,6 +30,8 @@ import {
   Share2,
   AlertTriangle,
   Phone,
+  Filter,
+  Layers,
 } from "lucide-react";
 
 // Platform Icon Helper
@@ -222,19 +224,20 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
   return (
     <div className="h-[680px] w-full panel-card relative flex flex-col overflow-hidden border border-[#1e293b]">
       {/* Top Filter Bar */}
-      <div className="px-4 py-2.5 bg-[#0e1420] border-b border-[#1b2537] flex flex-wrap items-center justify-between gap-2 z-10">
-        <div className="flex items-center gap-1.5 overflow-x-auto">
-          <span className="text-[10px] font-mono uppercase text-slate-500 mr-1 hidden sm:inline">
-            Capas:
-          </span>
+      <div className="px-4 py-3 bg-[#0d131f] border-b border-[#212f45] flex flex-wrap items-center justify-between gap-3 z-10">
+        <div className="flex items-center gap-2 overflow-x-auto">
+          <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-sky-400 bg-sky-950/40 px-2.5 py-1 rounded border border-sky-500/30 shrink-0">
+            <Filter className="w-3.5 h-3.5" />
+            <span>FILTRAR CAPAS:</span>
+          </div>
           {categories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}
-              className={`text-[10px] font-mono px-2 py-0.5 rounded transition-colors whitespace-nowrap ${
+              className={`text-xs font-mono px-3 py-1 rounded-md transition-all whitespace-nowrap cursor-pointer ${
                 activeCategory === cat.id
-                  ? "bg-sky-500/20 text-sky-300 border border-sky-500/40 font-semibold"
-                  : "bg-[#131b28] text-slate-400 hover:text-slate-200 border border-transparent"
+                  ? "bg-sky-500 text-white font-bold shadow-md shadow-sky-950 border border-sky-400"
+                  : "bg-[#151e2c] text-slate-300 hover:text-white hover:bg-[#1e2b3e] border border-[#2b3a52]"
               }`}
             >
               {cat.label}
@@ -242,16 +245,16 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
           ))}
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-mono text-slate-400">
-            {nodes.length} nodos visibles
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950/40 px-2.5 py-1 rounded border border-emerald-500/30">
+            {nodes.length} nodos activos
           </span>
           <button
             onClick={handleExportGraphJson}
             title="Exportar topología de grafo en JSON"
-            className="text-[10px] font-mono px-2 py-1 rounded bg-[#182334] hover:bg-[#223148] text-slate-300 border border-[#2b3a52] transition-colors"
+            className="text-xs font-mono px-3 py-1 rounded-md bg-[#182334] hover:bg-[#223148] text-slate-200 border border-[#2b3a52] transition-colors cursor-pointer"
           >
-            Exportar Grafo
+            Exportar Grafo (JSON)
           </button>
         </div>
       </div>
