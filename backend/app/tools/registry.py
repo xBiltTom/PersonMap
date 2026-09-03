@@ -2,6 +2,11 @@ from typing import Dict, List, Optional
 from app.tools.base import BaseTool, TargetContext, ToolCategory
 from app.tools.username_finder import UsernameFinderTool
 from app.tools.email_checker import EmailCheckerTool
+from app.tools.email_enumerator import EmailEnumeratorTool
+from app.tools.gravatar_deep import GravatarDeepTool
+from app.tools.keybase_resolver import KeybaseResolverTool
+from app.tools.social_url_extractor import SocialUrlExtractorTool
+from app.tools.wikipedia_edits import WikipediaEditsTool
 from app.tools.social_verifier import SocialVerifierTool
 from app.tools.search_dorker import SearchDorkerTool
 from app.tools.academic_finder import AcademicFinderTool
@@ -19,15 +24,33 @@ class ToolRegistry:
         self._register_default_tools()
 
     def _register_default_tools(self) -> None:
+        # Username & Profile Hunting (WhatsMyName / Keybase / Wikipedia)
         self.register(UsernameFinderTool())
+        self.register(KeybaseResolverTool())
+        self.register(WikipediaEditsTool())
+
+        # Email Intelligence & Silent Enumeration (Holehe / Gravatar / Domain)
         self.register(EmailCheckerTool())
+        self.register(EmailEnumeratorTool())
+        self.register(GravatarDeepTool())
+
+        # Code & Developer Forensics
+        self.register(GitHubDeepScannerTool())
+
+        # URL Extraction & Deep Social Scraping
+        self.register(SocialUrlExtractorTool())
         self.register(SocialVerifierTool())
+
+        # Search Engines & Academic Footprint
         self.register(SearchDorkerTool())
         self.register(AcademicFinderTool())
+
+        # National Identity & Telephony
         self.register(DniLookupTool())
-        self.register(BreachCheckerTool())
         self.register(PhoneLookupTool())
-        self.register(GitHubDeepScannerTool())
+
+        # Compromised Credentials & Breaches
+        self.register(BreachCheckerTool())
 
     def register(self, tool: BaseTool) -> None:
         self._tools[tool.name] = tool

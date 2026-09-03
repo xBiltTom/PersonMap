@@ -56,13 +56,31 @@ class GitHubDeepScannerTool(BaseTool):
             if user_data.get("email"):
                 discovered_emails.add(user_data["email"].lower())
 
-            # Inspect public events / commits for author emails
+            # Inspect public events / commits for author emails and schedule analysis
             events_url = f"https://api.github.com/users/{username}/events/public"
             events_resp = await client.get(events_url)
+            commit_hours = []
+            commit_days = []
+            active_repos = set()
+
             if events_resp.status_code == 200:
                 events_data = events_resp.json()
-                for event in events_data[:15]:
+                for event in events_data[:25]:
+                    created_at = event.get("created_at")
+                    if created_at:
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                            commit_hours.append(dt.hour)
+                            commit_days.append(dt.strftime("%A"))
+                        except Exception:
+                            pass
+
                     if event.get("type") == "PushEvent":
+                        repo_name = event.get("repo", {}).get("name")
+                        if repo_name:
+                            active_repos.add(repo_name)
+
                         commits = event.get("payload", {}).get("commits", [])
                         for commit in commits:
                             author_email = commit.get("author", {}).get("email", "")
@@ -74,6 +92,22 @@ class GitHubDeepScannerTool(BaseTool):
                                 discovered_emails.add(author_email.lower())
 
             emails_list = list(discovered_emails)
+
+            # Analyze active schedule if commits were found
+            schedule_meta = {}
+            if commit_hours:
+                from collections import Counter
+                hour_dist = Counter(commit_hours)
+                peak_hour_utc = hour_dist.most_common(1)[0][0]
+                # Inferred local timezone assuming typical peak programming between 19:00 - 23:00
+                inferred_tz = f"UTC{peak_hour_utc - 21:+d}" if -12 <= (peak_hour_utc - 21) <= 14 else "UTC"
+                schedule_meta = {
+                    "peak_hour_utc": peak_hour_utc,
+                    "hour_distribution": dict(sorted(hour_dist.items())),
+                    "inferred_active_hours": f"{peak_hour_utc}:00 UTC",
+                    "inferred_timezone_hint": inferred_tz,
+                    "recent_active_repos": list(active_repos)[:5],
+                }
 
             metadata = {
                 "username": username,
@@ -87,6 +121,7 @@ class GitHubDeepScannerTool(BaseTool):
                 "emails": emails_list,
                 "extracted_emails": emails_list,
                 "profile_url": html_url,
+                "schedule_analysis": schedule_meta,
             }
 
             return ToolFinding(

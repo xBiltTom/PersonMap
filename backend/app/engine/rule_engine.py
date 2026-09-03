@@ -18,7 +18,28 @@ class RuleEngine:
     Runs multiple tool rounds with automated heuristic pivoting.
     """
 
-    MAX_ROUNDS = 3
+    MAX_ROUNDS = 4
+
+    def _get_tool_run_key(self, tool, context: TargetContext) -> str:
+        parts = [tool.name]
+        for req in getattr(tool, "required_inputs", []):
+            if req == "username":
+                parts.append("u:" + ",".join(sorted(context.all_usernames())))
+            elif req == "email":
+                parts.append("e:" + ",".join(sorted(context.all_emails())))
+            elif req == "phone":
+                parts.append(f"p:{context.phone or ''}")
+            elif req == "dni":
+                parts.append(f"d:{context.dni or ''}")
+            elif req == "full_name":
+                parts.append(f"n:{context.full_name or ''}")
+            elif req == "candidate_urls":
+                urls = context.extra.get("candidate_urls", [])
+                parts.append("urls:" + ",".join(sorted(str(u) for u in urls)))
+            else:
+                val = getattr(context, req, None) or context.extra.get(req, "")
+                parts.append(f"{req}:{val}")
+        return "|".join(parts)
 
     async def execute_investigation(
         self,
@@ -39,7 +60,7 @@ class RuleEngine:
         )
 
         all_findings: List[ToolFinding] = []
-        executed_tools: Set[str] = set()
+        executed_runs: Set[str] = set()
 
         await event_bus.publish(investigation_id, {
             "type": "log",
@@ -49,7 +70,10 @@ class RuleEngine:
         })
 
         for round_idx in range(1, self.MAX_ROUNDS + 1):
-            runnable = tool_registry.get_runnable_tools(context, list(executed_tools))
+            runnable = [
+                tool for tool in tool_registry.get_all()
+                if tool.can_run(context) and self._get_tool_run_key(tool, context) not in executed_runs
+            ]
             if not runnable:
                 break
 
@@ -62,7 +86,7 @@ class RuleEngine:
 
             tasks = []
             for tool in runnable:
-                executed_tools.add(tool.name)
+                executed_runs.add(self._get_tool_run_key(tool, context))
                 tasks.append(self._run_single_tool(investigation_id, tool, context))
 
             batch_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -89,9 +113,20 @@ class RuleEngine:
             else:
                 break
 
+        # Deduplicate findings by (entity_type, platform, normalized value), preserving highest confidence
+        deduped_findings: dict[tuple[str, str, str], ToolFinding] = {}
+        for f in all_findings:
+            key = (
+                f.entity_type,
+                (f.platform or "").lower(),
+                f.value.strip().rstrip("/").lower(),
+            )
+            if key not in deduped_findings or f.confidence > deduped_findings[key].confidence:
+                deduped_findings[key] = f
+
         # Persist entities and compute identity resolution scores
         entities: List[Entity] = []
-        for f in all_findings:
+        for f in deduped_findings.values():
             score, breakdown = compute_identity_score(
                 display_name=f.display_name,
                 value=f.value,

@@ -1,24 +1,40 @@
-import hashlib
-import json
-from typing import List
+import re
+from typing import Any, Dict, List, Optional
 import httpx
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    "Accept": "application/json",
-}
-
-
 class EmailCheckerTool(BaseTool):
+    """
+    Email Infrastructure & Domain Intelligence Tool.
+    Classifies email addresses into Academic, Corporate, Disposable (burner), or Free providers,
+    extracts inferred human names from email formats (e.g. juan.perez@ -> Juan Perez),
+    and queries GitHub's public email attribution index.
+    """
+
     name = "email_checker"
-    description = (
-        "Verifica registros pasivos asociados a direcciones de correo electrónico "
-        "(Gravatar, GitHub, perfiles públicos y servicios web)."
-    )
+    description = "Análisis de infraestructura de correo (clasificación académica/desechable, extracción de nombres y atribución Git)"
     category = ToolCategory.EMAIL
     required_inputs = ["email", "discovered_emails"]
+
+    ACADEMIC_PATTERNS = [
+        ".edu", ".ac.", ".edu.", "uni.edu.pe", "unmsm.edu.pe", "pucp.edu.pe",
+        "utp.edu.pe", "upc.edu.pe", "usmp.pe", "ulima.edu.pe", "unt.edu.pe",
+        "unsa.edu.pe", "unsaac.edu.pe", "unfv.edu.pe", "lamolina.edu.pe",
+        "upn.pe", "ucv.edu.pe", "cientifica.edu.pe", "continental.edu.pe",
+    ]
+
+    FREE_PROVIDERS = {
+        "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com",
+        "yahoo.com", "icloud.com", "proton.me", "protonmail.com", "aol.com",
+        "zoho.com", "yandex.com", "mail.com",
+    }
+
+    DISPOSABLE_PROVIDERS = {
+        "mailinator.com", "guerrillamail.com", "tempmail.com", "10minutemail.com",
+        "throwawaymail.com", "yopmail.com", "trashmail.com", "getairmail.com",
+        "dispostable.com", "sharklasers.com", "temp-mail.org",
+    }
 
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
         emails = context.all_emails()
@@ -27,104 +43,84 @@ class EmailCheckerTool(BaseTool):
 
         findings: List[ToolFinding] = []
 
-        async with httpx.AsyncClient(headers=HEADERS, timeout=8.0, follow_redirects=True) as client:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+        }
+
+        async with httpx.AsyncClient(headers=headers, timeout=8.0, follow_redirects=True, verify=False) as client:
             for email in emails:
-                # 1. Check Gravatar
-                gravatar_finding = await self._check_gravatar(client, email)
-                if gravatar_finding:
-                    findings.append(gravatar_finding)
+                clean_email = email.strip().lower()
+                if "@" not in clean_email:
+                    continue
 
-                # 2. Check GitHub API for email commit attribution
-                gh_finding = await self._check_github_email(client, email)
-                if gh_finding:
-                    findings.append(gh_finding)
+                username_part, domain_part = clean_email.split("@", 1)
 
-                # 3. Add base email entity finding
-                domain = email.split("@")[-1] if "@" in email else ""
-                is_academic = any(d in domain.lower() for d in [".edu", ".ac.", "uni.", "unmsm.", "pucp.", "unt.", "utp."])
+                # 1. Classify domain type
+                is_academic = any(pat in domain_part for pat in self.ACADEMIC_PATTERNS)
+                is_disposable = domain_part in self.DISPOSABLE_PROVIDERS
+                is_free = domain_part in self.FREE_PROVIDERS
+                provider_type = "academic" if is_academic else ("disposable" if is_disposable else ("free_webmail" if is_free else "corporate"))
+
+                # 2. Heuristic human name extraction from email (Spiderfoot sfp_names style)
+                inferred_name: Optional[str] = None
+                if "." in username_part and not any(ch.isdigit() for ch in username_part):
+                    parts = [p.capitalize() for p in username_part.split(".") if len(p) >= 2]
+                    if len(parts) >= 2:
+                        inferred_name = " ".join(parts)
+
+                extracted_names = [inferred_name] if inferred_name else []
+                extracted_users = [username_part] if len(username_part) >= 3 else []
+
+                # 3. Base Email Entity Finding
                 findings.append(
                     ToolFinding(
                         entity_type="email",
-                        platform="mail_provider",
-                        value=email,
-                        display_name=email,
-                        metadata_info={
-                            "domain": domain,
-                            "is_academic": is_academic,
-                            "email": email,
-                        },
+                        platform=domain_part,
+                        value=clean_email,
+                        display_name=f"{clean_email} ({provider_type.upper()})",
                         confidence=1.0,
-                        evidence_urls=[f"mailto:{email}"],
+                        metadata_info={
+                            "source_tool": "email_checker",
+                            "domain": domain_part,
+                            "provider_type": provider_type,
+                            "is_academic": is_academic,
+                            "is_disposable": is_disposable,
+                            "inferred_name": inferred_name,
+                            "names": extracted_names,
+                            "usernames": extracted_users,
+                            "url": f"mailto:{clean_email}",
+                        },
                     )
                 )
+
+                # 4. GitHub Email Search API Attribution (unauthenticated public query)
+                try:
+                    gh_url = f"https://api.github.com/search/users?q={clean_email}+in:email"
+                    resp = await client.get(gh_url)
+                    if resp.status_code == 200:
+                        gh_data = resp.json()
+                        if gh_data.get("total_count", 0) > 0:
+                            item = gh_data["items"][0]
+                            gh_user = item.get("login")
+                            gh_profile = item.get("html_url")
+                            findings.append(
+                                ToolFinding(
+                                    entity_type="social_account",
+                                    platform="github",
+                                    value=gh_profile or f"https://github.com/{gh_user}",
+                                    display_name=f"GitHub (Commit Email Match): @{gh_user}",
+                                    confidence=0.96,
+                                    metadata_info={
+                                        "source_tool": "email_checker",
+                                        "username": gh_user,
+                                        "matched_email": clean_email,
+                                        "usernames": [gh_user] if gh_user else [],
+                                        "avatar_url": item.get("avatar_url"),
+                                    },
+                                )
+                            )
+                except Exception:
+                    pass
 
         return findings
-
-    async def _check_gravatar(self, client: httpx.AsyncClient, email: str) -> ToolFinding | None:
-        email_hash = hashlib.md5(email.strip().lower().encode("utf-8")).hexdigest()
-        url = f"https://en.gravatar.com/{email_hash}.json"
-        try:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                data = resp.json()
-                entry = data.get("entry", [{}])[0]
-                display_name = entry.get("displayName") or entry.get("preferredUsername")
-                preferred_username = entry.get("preferredUsername")
-                avatar = entry.get("thumbnailUrl")
-                about_me = entry.get("aboutMe")
-
-                # Extract linked accounts
-                verified_accounts = entry.get("verifiedAccounts", [])
-                links = [acc.get("url") for acc in verified_accounts if acc.get("url")]
-
-                metadata = {
-                    "gravatar_profile": f"https://gravatar.com/{preferred_username or email_hash}",
-                    "avatar_url": avatar,
-                    "bio": about_me,
-                    "usernames": [preferred_username] if preferred_username else [],
-                    "linked_profiles": links,
-                    "email_matched": email,
-                }
-
-                return ToolFinding(
-                    entity_type="social_account",
-                    platform="gravatar",
-                    value=metadata["gravatar_profile"],
-                    display_name=display_name or email,
-                    metadata_info=metadata,
-                    confidence=0.95,
-                    evidence_urls=[url],
-                )
-        except Exception:
-            return None
-        return None
-
-    async def _check_github_email(self, client: httpx.AsyncClient, email: str) -> ToolFinding | None:
-        url = f"https://api.github.com/search/users?q={email}+in:email"
-        try:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("total_count", 0) > 0:
-                    user = data["items"][0]
-                    login = user.get("login")
-                    profile_url = user.get("html_url")
-                    avatar_url = user.get("avatar_url")
-                    return ToolFinding(
-                        entity_type="social_account",
-                        platform="github",
-                        value=profile_url,
-                        display_name=login,
-                        metadata_info={
-                            "username": login,
-                            "avatar_url": avatar_url,
-                            "profile_url": profile_url,
-                            "emails": [email],
-                            "usernames": [login],
-                        },
-                        confidence=0.90,
-                        evidence_urls=[profile_url],
-                    )
-        except Exception:
-            return None
-        return None

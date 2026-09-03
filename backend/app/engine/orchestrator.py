@@ -52,8 +52,8 @@ class Orchestrator:
                 else:
                     entities = await rule_engine.execute_investigation(str_id, target, db)
 
-                # 3. Resolve Identity Clusters
-                clusters = identity_resolver.resolve_clusters(investigation.id, entities, target)
+                # 3. Resolve Identity Clusters (with Fellegi-Sunter & Avatar dHash)
+                clusters = await identity_resolver.resolve_clusters(investigation.id, entities, target)
                 for cluster in clusters:
                     db.add(cluster)
                 await db.flush()
