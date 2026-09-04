@@ -268,6 +268,30 @@ def test_dedupe_keeps_both_layers_when_the_two_find_the_same_profile():
     assert deduped[0].metadata_info["source_tools"] == ["username_finder", "social_verifier"]
 
 
+@pytest.mark.asyncio
+async def test_the_agentic_engine_does_not_claim_a_hybrid_layer(monkeypatch):
+    """
+    "Capa" significa exactamente "una de las dos mitades del motor híbrido". El
+    agente autónomo tiene una sola, así que no debe etiquetar `engine_layer`: su
+    procedencia va en el prefijo `agent:` del `source_tool`.
+    """
+    from app.agent.autonomous_agent import autonomous_agent
+    from app.agent import tool_dispatch
+
+    async def fake_execute(ctx):
+        return [_finding(metadata_info={})]
+
+    tool = tool_registry.get_tool("username_finder")
+    monkeypatch.setattr(tool, "execute", fake_execute)
+
+    findings = await autonomous_agent._execute_agent_tool(
+        "username_finder", {"username": "jperez"}, _target()
+    )
+
+    assert findings[0].metadata_info["source_tool"] == "agent:username_finder"
+    assert "engine_layer" not in findings[0].metadata_info
+
+
 def test_dedupe_marks_a_profile_that_only_the_llm_found():
     findings = [
         _finding(metadata_info={"source_tool": "social_verifier", "engine_layer": REFINEMENT_LAYER})

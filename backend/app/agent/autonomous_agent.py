@@ -171,13 +171,17 @@ class AutonomousOSINTAgent:
         Delega en el despachador compartido, conservando el prefijo `agent:` de
         `source_tool` para no romper la trazabilidad de los expedientes ya
         guardados.
+
+        No se etiqueta `engine_layer`: este motor tiene una sola capa, y "capa"
+        significa exactamente "cuál de las dos mitades del motor híbrido". Su
+        procedencia ya la lleva el prefijo `agent:` del `source_tool`, que la
+        interfaz muestra.
         """
         return await dispatch_tool_call(
             name,
             args,
             target,
             source_prefix="agent",
-            engine_layer="agentic",
         )
 
 
