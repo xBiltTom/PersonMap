@@ -20,7 +20,7 @@ funcionando al 100% sin configurar nada.
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 from urllib.parse import unquote
 
 import httpx
@@ -133,6 +133,24 @@ class Dork:
         return f"{self.query} ({sites})"
 
 
+@dataclass(frozen=True)
+class SearchBackend:
+    """
+    Un motor de búsqueda enchufable.
+
+    `is_available` decide si el motor puede usarse ahora mismo (una clave
+    configurada, por ejemplo) y `build_client` construye su cliente HTTP, que
+    no es el mismo para todos: Tavily es una API y quiere un User-Agent
+    estable, mientras que el raspado de DuckDuckGo necesita cabeceras de
+    navegador.
+    """
+
+    name: str
+    is_available: Callable[[], bool]
+    build_client: Callable[[], Any]
+    search: Callable[..., Awaitable[List[ToolFinding]]]
+
+
 class SearchDorkerTool(BaseTool):
     name = "search_dorker"
     description = (
@@ -142,6 +160,38 @@ class SearchDorkerTool(BaseTool):
     )
     category = ToolCategory.SEARCH
     required_inputs = ["full_name", "username", "email", "dni"]
+
+    def _backends(self) -> List["SearchBackend"]:
+        """
+        Motores en orden de preferencia.
+
+        Estructura de tabla en lugar de un `if/else`: añadir un motor nuevo es
+        una entrada más, no una rama nueva dentro de `execute`. La caída de uno
+        al siguiente es la misma que antes.
+
+        Sobre SearXNG, que el plan contemplaba: no se añade porque no funciona.
+        Las instancias públicas traen la salida JSON desactivada, y una
+        auto-hospedada recibe CAPTCHA de Google/Brave/Startpage desde una sola
+        IP. Queda como entrada futura de esta tabla si algún día cambia.
+        """
+        return [
+            SearchBackend(
+                name="tavily",
+                is_available=lambda: settings.tavily_enabled,
+                build_client=lambda: http_client.build_client(
+                    timeout=20.0, rotate_ua=False
+                ),
+                search=self._search_tavily,
+            ),
+            SearchBackend(
+                name="duckduckgo",
+                is_available=lambda: True,
+                build_client=lambda: http_client.build_client(
+                    timeout=12.0, headers=HEADERS
+                ),
+                search=self._search_duckduckgo,
+            ),
+        ]
 
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
         dorks = self._generate_dorks(context)
@@ -154,18 +204,18 @@ class SearchDorkerTool(BaseTool):
         findings: List[ToolFinding] = []
         seen_urls: set[str] = set()
 
-        if settings.tavily_enabled:
-            async with http_client.build_client(timeout=20.0, rotate_ua=False) as client:
+        for backend in self._backends():
+            if not backend.is_available():
+                continue
+
+            async with backend.build_client() as client:
                 for dork in dorks:
-                    findings.extend(await self._search_tavily(client, dork, seen_urls))
-            # Si Tavily no devolvió nada (clave inválida, cuota agotada, caída),
-            # se cae al motor gratuito en lugar de quedarse sin resultados.
+                    findings.extend(await backend.search(client, dork, seen_urls))
+
+            # Si un motor no devolvió nada (clave inválida, cuota agotada,
+            # caída), se pasa al siguiente en lugar de quedarse sin resultados.
             if findings:
                 return findings
-
-        async with http_client.build_client(timeout=12.0, headers=HEADERS) as client:
-            for dork in dorks:
-                findings.extend(await self._search_duckduckgo(client, dork, seen_urls))
 
         return findings
 

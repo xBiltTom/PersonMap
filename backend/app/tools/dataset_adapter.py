@@ -56,6 +56,12 @@ WMN_LICENSE = "CC BY-SA 4.0"
 # Categorías que no se escanean nunca.
 EXCLUDED_CATEGORIES = {"xx NSFW xx", "archived"}
 
+# Etiquetas equivalentes en Maigret. WhatsMyName marca lo adulto con la
+# categoría "xx NSFW xx" y Maigret con estas etiquetas: sin traducirlas, 19
+# sitios porno se colaban en el catálogo de una herramienta educativa que se
+# usa con estudiantes y cuyo informe se le enseña a la persona investigada.
+EXCLUDED_TAGS = {"adult", "porn", "nsfw", "xxx"}
+
 # Protecciones que hacen inalcanzable un sitio con un cliente HTTP normal.
 # Intentarlo solo gasta reintentos y aumenta el ruido: se saltan y se cuentan.
 UNREACHABLE_PROTECTIONS = {
@@ -230,6 +236,10 @@ def load_maigret() -> List[SiteCheck]:
         if protections & UNREACHABLE_PROTECTIONS:
             continue
 
+        raw_tags = {t.lower() for t in _as_tuple(raw.get("tags"))}
+        if raw_tags & EXCLUDED_TAGS:
+            continue
+
         # El engine aporta los valores base; lo que el sitio declare manda.
         merged: Dict[str, Any] = {}
         engine_name = raw.get("engine")
@@ -266,6 +276,30 @@ def load_maigret() -> List[SiteCheck]:
             )
         )
     return sites
+
+
+def _is_trustworthy(site: SiteCheck) -> bool:
+    """
+    ¿Puede este sitio afirmar algo, o solo devolver 200 a cualquier cosa?
+
+    1.098 de los 3.077 sitios de Maigret (36 %) no traen NINGUNA cadena de
+    validación: su única comprobación es el código de estado. Muchos responden
+    200 a cualquier URL de perfil, así que "encuentran" una cuenta para
+    cualquier alias. Medido sobre un alias sintético que no existe en ningún
+    sitio: 255 hallazgos, todos falsos.
+
+    Se admiten solo si traen alguna forma de comprobar el CONTENIDO. Una
+    versión anterior de esta regla hacía además una excepción con los sitios de
+    ranking alto, suponiendo que una plataforma popular devuelve un 404 de
+    verdad. Medido, es falso: seis de los doce falsos positivos restantes eran
+    justo eso — WordPressOrg (ranking 12), AllKPop, Datpiff, Studfile, Avizo y
+    Runitonce, todos rankeados, todos sin una sola cadena, todos respondiendo
+    200 a un alias inexistente. La excepción se retiró.
+
+    Es la regla que convierte "4x cobertura" en precisión, que es lo que este
+    apartado del plan pedía vender.
+    """
+    return bool(site.presence or site.absence)
 
 
 def _sort_key(site: SiteCheck) -> Tuple[int, int, str]:
@@ -349,9 +383,12 @@ def build_catalog(limit: Optional[int] = None) -> List[SiteCheck]:
     #    comparten plataforma con uno ya presente, para no consultar dos veces
     #    el mismo sitio por dos rutas distintas.
     for site in maigret:
-        if _platform_key(site.url) not in used_maigret:
-            catalog.append(site)
-            used_maigret.add(_platform_key(site.url))
+        if _platform_key(site.url) in used_maigret:
+            continue
+        if not _is_trustworthy(site):
+            continue
+        catalog.append(site)
+        used_maigret.add(_platform_key(site.url))
 
     catalog.sort(key=_sort_key)
     return catalog[:limit] if limit else catalog

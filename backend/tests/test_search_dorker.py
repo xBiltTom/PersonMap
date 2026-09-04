@@ -300,3 +300,57 @@ async def test_malformed_tavily_payload_does_not_raise(context, with_tavily_key)
     respx.post(DDG_URL).mock(return_value=httpx.Response(500))
 
     assert await SearchDorkerTool().execute(context) == []
+
+
+# --- Motores enchufables (Fase 4.5) ---------------------------------------
+
+
+def test_the_engines_are_a_table_not_a_branch():
+    """
+    Añadir un motor debe ser una entrada más en la tabla, no una rama nueva
+    dentro de `execute`. Es la única mejora que pedía este apartado del plan:
+    arquitectónica, no de cobertura.
+    """
+    from app.tools.search_dorker import SearchDorkerTool
+
+    backends = SearchDorkerTool()._backends()
+
+    assert [b.name for b in backends] == ["tavily", "duckduckgo"]
+
+
+def test_the_free_engine_is_always_available():
+    """
+    El de respaldo no puede depender de configuración: si lo hiciera, un
+    proyecto sin claves se quedaría sin dorking en silencio.
+    """
+    from app.tools.search_dorker import SearchDorkerTool
+
+    duckduckgo = SearchDorkerTool()._backends()[-1]
+
+    assert duckduckgo.name == "duckduckgo"
+    assert duckduckgo.is_available() is True
+
+
+def test_tavily_is_only_offered_when_configured(monkeypatch):
+    from app.core.config import settings
+    from app.tools.search_dorker import SearchDorkerTool
+
+    tavily = SearchDorkerTool()._backends()[0]
+
+    monkeypatch.setattr(settings, "tavily_api_key", None)
+    assert tavily.is_available() is False
+
+    monkeypatch.setattr(settings, "tavily_api_key", "tvly-x")
+    assert tavily.is_available() is True
+
+
+def test_each_engine_brings_its_own_client():
+    """
+    No comparten cliente a propósito: Tavily es una API y quiere un User-Agent
+    estable; el raspado de DuckDuckGo necesita cabeceras de navegador.
+    """
+    from app.tools.search_dorker import SearchDorkerTool
+
+    for backend in SearchDorkerTool()._backends():
+        client = backend.build_client()
+        assert client is not None

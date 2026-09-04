@@ -15,11 +15,10 @@
 | 2 · Corregir el modelo de identidad | ✅ **Completada** | `941b5a5`, `d3cc158` |
 | 3 · `hybrid` como tercera estrategia | ✅ **Completada** | `da1cb85`, `3070e26` |
 | 3.5 · Presupuesto de concurrencia y progreso | ✅ **Completada** | `45eebe7` |
-| 4.2 · Hudson Rock (infostealer) | ✅ **Completada** | `e7610f5` |
-| 4 · Resto de cobertura de fuentes | ⬜ Pendiente | — |
+| 4 · Cobertura de fuentes | ✅ **Completada** | `e7610f5`, `80472a0`, `bc3e1e6`, `899e68e` |
 | 5 · Cosecha activa de avatares | ⬜ Pendiente | — |
 
-**Línea base al retomar:** 129 tests en ~35 s sin red · `tsc` limpio · backend `:8000` y frontend `:3000`.
+**Línea base al retomar:** 170 tests en ~75 s sin red · `tsc` limpio · backend `:8000` y frontend `:3000`.
 
 ### Cómo retomar en otra sesión
 
@@ -607,7 +606,112 @@ ninguna finge ceros).
 
 ---
 
-## Fase 4 — Cobertura de fuentes ⬜ PENDIENTE
+## Fase 4 — Cobertura de fuentes ✅ COMPLETADA
+
+> **Resultado medido.** Catálogo de 2.441 sitios (667 de WhatsMyName + 1.774 de
+> Maigret). Frente a solo WhatsMyName: **+48 % de cobertura** (86 → 127 hallazgos
+> sobre `@torvalds`) **a cambio de 5 falsos positivos por alias**, todos con
+> atribución 0.10. Investigación híbrida completa: **6,4 min**, dentro del
+> presupuesto de 15 acordado.
+
+### El patrón que se repitió en los cuatro apartados
+
+Cada uno empezó con "añadir X" y terminó descubriendo que lo que ya había
+mentía. Merece leerse como una sola lección:
+
+| Apartado | Lo que se iba a hacer | Lo que hubo que arreglar antes |
+|---|---|---|
+| 4.1 | Ampliar el catálogo | Ordenar por ranking **quitaba** Reddit e Instagram del top 500 |
+| 4.2 | Añadir Hudson Rock | Un registro hallado buscando el alias puntuaba 0.893 por **tautología** |
+| 4.3 | Añadir vectores de correo | 7 de 20 sondas apuntaban a endpoints muertos, 1 inventaba hallazgos y 1 **intentaba iniciar sesión** |
+| 4.4 | Añadir crt.sh | — (salió limpio, reutilizando el filtro de plataformas de 4.1) |
+
+**Medir antes de añadir** dejó de ser una buena práctica y pasó a ser lo que
+más valor produjo en toda la fase.
+
+### 4.1 Catálogo unificado ✅ (`80472a0`)
+
+`dataset_adapter` normaliza WhatsMyName y Maigret **en memoria**: los ficheros
+siguen separados porque el ShareAlike de CC BY-SA se contagia a cualquier
+derivado que se redistribuya. Snapshot de Maigret fijado al commit `8f42a42`.
+
+Tres cosas que solo se supieron midiendo:
+
+1. **Emparejar por URL no funciona.** WhatsMyName apunta al endpoint de API
+   (`api.mixcloud.com/{username}`) y Maigret a la web: son el mismo sitio. La
+   clave es la plataforma, no la URL.
+2. **Ordenar por ranking era una regresión.** Los 681 sitios de Maigret con
+   `alexaRank` desplazaban a los de WhatsMyName sin ranking, y con tope 500
+   desaparecían Reddit e Instagram. Ahora el orden es en dos niveles: primero el
+   catálogo curado, después la cola larga, así que subir el tope solo añade.
+3. **El 36 % de Maigret no puede decir que no.** 1.098 sitios sin ninguna cadena
+   de validación, cuyo único criterio es el código de estado. Sobre un alias
+   sintético inexistente producían **255 "cuentas", todas falsas**. Se exige
+   validación de contenido; un ranking alto no la sustituye (WordPressOrg tiene
+   ranking 12, ninguna cadena, y responde 200 a cualquier cosa). Y **19 sitios
+   porno** se colaban porque Maigret los etiqueta distinto que WhatsMyName.
+
+`regexCheck` es la mejora de precisión que no depende del volumen:
+
+```
+@torvalds                     ->   3 sitios descartados (0,1%)
+@carloseduardo.mendozasilva   -> 692 sitios descartados (20,4%)
+```
+
+El patrón dominante es "sin puntos ni guiones", así que el ahorro aparece justo
+en los alias que descubre el pivoteo. Cada petición ahorrada es además una
+oportunidad menos de falso positivo.
+
+**Y una tautología más, la cuarta del proyecto:** la heurística anti-página-
+genérica aceptaba si el alias aparecía en el cuerpo **o en la URL final** — y la
+URL la construimos nosotros con el alias, así que pasaba siempre. Para los
+sitios sin validación de contenido ahora se exige que aparezca en el CUERPO.
+
+### 4.2 Hudson Rock ✅ (`e7610f5`) · 4.4 crt.sh ✅ (`bc3e1e6`)
+
+Ver sus apartados propios más abajo. En los dos, el scorecard, el icono, los
+filtros y la recomendación pedagógica **ya existían desde la Fase 1**: solo
+faltaba la herramienta.
+
+### 4.3 Enumeración de correo ✅ (`899e68e`) — se corrigió, no se amplió
+
+La fase pedía añadir vectores. Medidos los 20 existentes: **0 útiles, 19 mudos y
+1 falso positivo garantizado**. La sonda de Quora marcaba todos los correos como
+registrados —su endpoint devuelve la portada HTML de 81 KB y la comprobación
+buscaba la palabra `"false"`— y llegó a un expediente real con un 90 % de
+confianza.
+
+Y la de Vimeo hacía **POST a `/log_in` con una contraseña**: un intento de acceso
+real contra la cuenta de una persona, que dispara alertas y puede bloquearla. Es
+el mismo criterio por el que el plan descarta `ignorant`.
+
+Sobre añadir: sondeados en vivo Instagram, Imgur, Archive.org, Zoho, Mercado
+Libre, Xbox y Bitmoji. **Ninguno sirve** (429 inmediato, 403, o no distinguen).
+El ecosistema se ha cerrado, coherente con que Holehe lleve años roto. Se
+documenta en vez de añadir sondas sin verificar, que es exactamente como llegó
+allí la de Quora.
+
+Hay ahora un test marcado `network` que pasa cada sonda por un correo de control
+imposible: cualquier "registrado" ahí es un falso positivo garantizado.
+
+### 4.5 Motores de búsqueda enchufables ✅
+
+`search_dorker` pasa de un `if/else` a una tabla de backends. Añadir un motor es
+una entrada más. **SearXNG no se añade**: las instancias públicas traen la salida
+JSON desactivada y una auto-hospedada recibe CAPTCHA desde una sola IP — queda
+como entrada futura de la tabla.
+
+### Presupuesto de tiempo
+
+Con el catálogo completo, la primera corrida tardó **14,5 min** y produjo 510
+entidades, de las cuales 508 eran homónimos descartados. Tras los filtros de
+calidad: **6,4 min y 30 entidades**. El tope de 3 alias por investigación
+(`USERNAME_SCAN_MAX_ALIASES`) es lo que acota la duración, porque cada alias
+cuesta un barrido entero del catálogo.
+
+---
+
+## Fase 4 — plan original de los apartados
 
 Cada tool nueva sigue el patrón `BaseTool` + `http_client.build_client()` + registro en `registry.py`. **No hace falta tocar el agente IA:** `_build_agent_tools()` ya genera el schema desde el registry, así que toda tool nueva es automáticamente visible para el LLM.
 

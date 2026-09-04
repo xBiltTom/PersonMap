@@ -229,3 +229,47 @@ def test_whatsmyname_still_loads_on_its_own():
 
     assert len(sites) > 500
     assert all(s.source == "whatsmyname" for s in sites)
+
+
+# --- Calidad de la cola larga (medido, no supuesto) ------------------------
+
+
+def test_a_site_that_cannot_say_no_is_not_in_the_catalog():
+    """
+    1.098 de los 3.077 sitios de Maigret no traen ninguna cadena de validación:
+    su único criterio es el código de estado, y muchos responden 200 a
+    cualquier URL de perfil. Medido sobre un alias sintético inexistente,
+    producían 255 "cuentas", todas falsas.
+    """
+    de_maigret = [s for s in build_catalog() if s.source == "maigret"]
+
+    assert de_maigret, "el catálogo debería incluir sitios de Maigret"
+    assert all(s.presence or s.absence for s in de_maigret)
+
+
+def test_a_high_rank_does_not_excuse_the_lack_of_validation():
+    """
+    Una versión de la regla hacía excepción con los sitios de ranking alto,
+    suponiendo que una plataforma popular devuelve un 404 de verdad. Es falso:
+    WordPressOrg tiene ranking 12, ninguna cadena, y responde 200 a un alias
+    que no existe.
+    """
+    from app.tools.dataset_adapter import _is_trustworthy
+
+    popular_sin_validacion = SiteCheck(
+        name="WordPressOrg", url="https://x.org/{username}", rank=12, source="maigret"
+    )
+
+    assert _is_trustworthy(popular_sin_validacion) is False
+
+
+def test_adult_sites_never_reach_the_catalog():
+    """
+    WhatsMyName marca lo adulto con la categoría "xx NSFW xx" y Maigret con
+    etiquetas. Sin traducirlas, 19 sitios porno se colaban en una herramienta
+    educativa cuyo informe se le enseña a la persona investigada.
+    """
+    nombres = " ".join(s.name.lower() for s in build_catalog())
+
+    for sitio in ("xvideos", "xhamster", "youporn", "redtube", "empflix", "erome"):
+        assert sitio not in nombres

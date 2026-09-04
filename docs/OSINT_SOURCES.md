@@ -28,7 +28,9 @@ Estados: 🟢 operativa · 🟡 degradada · 🔴 muerta · ⚪ evaluada, no ado
 
 | Fuente | Endpoint / dato | Key | Estado | Última verificación | Usada por |
 |---|---|---|---|---|---|
-| **WhatsMyName** | `wmn-data.json` bundleado, **667** sitios utilizables (500 escaneados por defecto) | No | 🟢 | 2026-09-04 | `username_finder` |
+| **WhatsMyName** | `wmn-data.json` bundleado, **667** sitios utilizables | No | 🟢 | 2026-09-04 | `username_finder`, vía `dataset_adapter` |
+| **Maigret** | `maigret-data.json` vendorizado @ `8f42a42` | No | 🟢 | 2026-09-04 | `username_finder`. De 4.020 sitios quedan **1.774** tras descartar deshabilitados, protegidos, adultos y los que no traen validación de contenido |
+| **crt.sh** | `crt.sh/?q={dominio}&output=json` | No | 🟡 **intermitente** | 2026-09-04 | `domain_finder` — Certificate Transparency. Medido el mismo día: 1 de 4 por la mañana, 6 de 6 por la tarde |
 | **XposedOrNot** | `api.xposedornot.com/v1/check-email/{email}` | No | 🟢 | 2026-09-04 | `breach_checker` |
 | **OpenAlex** | API de autores y trabajos | No | 🟢 | 2026-09-04 | `academic_finder` |
 | **Gravatar** | Perfil por hash MD5 del correo | No | 🟢 | 2026-09-04 | `gravatar_deep`, `email_enumerator` |
@@ -90,12 +92,37 @@ está integrado** —sería un dato sobre la institución, no sobre la persona, 
 mezclarlo en su expediente rompería el modelo de atribución—, pero es material
 de concientización de primer orden para un panel de contexto del informe.
 
+**Maigret — el 36 % de sus sitios no puede decir que no.** 1.098 de 3.077 no
+traen ninguna cadena de validación: su único criterio es el código de estado, y
+muchos responden 200 a cualquier URL de perfil. Medido sobre un alias sintético
+que no existe en ningún sitio, producían **255 "cuentas", todas falsas**. Se
+exige que un sitio de Maigret traiga alguna forma de comprobar el contenido.
+Un ranking alto **no** es sustituto: WordPressOrg tiene ranking 12, ninguna
+cadena, y responde 200 a un alias inexistente.
+
+**Maigret marca lo adulto con etiquetas, no con la categoría de WhatsMyName.**
+Sin traducirlas, 19 sitios porno se colaban en el catálogo de una herramienta
+educativa cuyo informe se le enseña a la persona investigada.
+
+**El ecosistema de enumeración por correo se ha cerrado.** Sondeados en vivo
+Instagram, Imgur, Archive.org, Zoho, Mercado Libre, Xbox y Bitmoji: ninguno
+sirve (429 inmediato, 403, o no distinguen entre un correo real y uno
+sintético). Es coherente con que Holehe lleve años roto. De las 20 sondas que el
+proyecto ya tenía, **7 apuntaban a endpoints muertos y 1 producía un falso
+positivo garantizado**; ver el historial de revisiones.
+
 ### Licencias que obligan a atribución
 
 - **WhatsMyName** — *CC BY-SA 4.0*, © 2015-2026 Micah Hoffman y colaboradores.
   El ShareAlike **se contagia a cualquier dataset derivado que se redistribuya**.
   Por eso el dataset se mantiene como fichero independiente y la normalización
-  con otras fuentes ocurre en memoria, nunca en un fichero fusionado.
+  con otras fuentes ocurre en memoria (`app/tools/dataset_adapter.py`), nunca en
+  un fichero fusionado. Hay un test que lo vigila.
+- **Maigret** — *MIT*, © soxoj y colaboradores. Snapshot vendorizado y fijado al
+  commit `8f42a42d0ebb117f265eeaf6c75ebda5249a79b4` (2026-09-04). No se
+  sincroniza en caliente: un fichero remoto sin firmar que decide a qué miles de
+  hosts se manda tráfico es un vector de cadena de suministro, y una lista
+  cambiante rompe la reproducibilidad de las mediciones del artículo.
 
 ---
 
@@ -106,10 +133,8 @@ conforme a la restricción del proyecto.
 
 | Fuente | Endpoint | Estado | Aporta | Fase |
 |---|---|---|---|---|
-| **crt.sh** | `crt.sh/?q={dominio}&output=json` | 🟡 **degradado** (2026-09-04: 1 de 4 peticiones HTTP 200, tres 502) | Certificate transparency → dominios y subdominios personales. **Exige reintentos con espera; no es fiable para una demo en vivo** | 4 |
 | **Avatar GitHub** | `github.com/{user}.png` | 🟢 HTTP 200, `image/jpeg` | Cosecha activa de avatares | 5 |
 | **Avatar Gravatar** | `gravatar.com/avatar/{md5}?d=404` | 🟢 HTTP 200 (404 si no existe) | Cosecha activa de avatares; el `d=404` da señal binaria limpia | 5 |
-| **Maigret `data.json`** | `raw.githubusercontent.com/soxoj/maigret/main/maigret/resources/data.json` | 🟢 MIT | **3653 sitios** (693 `disabled` → **2960 utilizables**; 278 con `protection` TLS a saltar; 1156 con `alexaRank`; 163 con `regexCheck`) | 4 |
 
 > **Nota sobre el snapshot de Maigret.** Maigret se auto-actualiza desde GitHub
 > cada 24 h. Aquí **no** se replica ese comportamiento: un fichero remoto sin
@@ -157,6 +182,8 @@ trae el dato o la técnica, reimplementados sobre `app/tools/http_client.py`.
 | 2026-09-03 | Revisión inicial del ecosistema para el plan de ejecución | Se verificaron en vivo Hudson Rock, crt.sh y los patrones directos de avatar (todos 🟢, sin key). Se midió el dataset de Maigret (3653 sitios). Se descartaron `ignorant` por motivos éticos y HIBP/Brave/SerpApi por coste |
 | 2026-09-04 | Integración de Tavily como motor de dorking | 🟢 operativa. Dos trampas detectadas solo al probar contra la API real, no en los tests con mock: `exact_match` devuelve cero resultados siempre, y la búsqueda es semántica (un correo inexistente devuelve la portada de su dominio). Ambas mitigadas en `search_dorker`; ver "Trampas verificadas en producción" |
 | 2026-09-04 | Barrido completo al abrir la **Fase 3** (`hybrid`) | 🟢 XposedOrNot, OpenAlex, Gravatar (404 limpio), Keybase, MediaWiki, GitHub API y avatar, Hudson Rock, Tavily y el `data.json` de Maigret (1,66 MB). 🟡 DuckDuckGo responde **202**, no 200. 🔴→🟡 **crt.sh se ha degradado**: 1 de 4 peticiones dio 200 y tres dieron 502, lo que obliga a reintentos en la Fase 4.4 |
+| 2026-09-04 | Auditoría en vivo de las 20 sondas de correo (Fase 4.3) | 🔴 **0 útiles, 19 mudas, 1 falso positivo garantizado.** La sonda de Quora marcaba TODOS los correos como registrados: su endpoint dejó de ser una API y devuelve la portada HTML de 81 KB, mientras la comprobación buscaba la palabra `"false"`, que aparece en cualquier JavaScript. Llegó a un expediente real. Auditados los 20 endpoints: 7 muertos (404/405/401) y 5 devuelven HTML donde el código espera JSON. Retiradas 8 sondas. **La de Vimeo hacía POST a `/log_in` con contraseña**, es decir, un intento de acceso real contra la cuenta de una persona: eliminada por el mismo criterio que descarta `ignorant` |
+| 2026-09-04 | Integración de Maigret y crt.sh (Fases 4.1 y 4.4) | 🟢 Catálogo unificado de 2.441 sitios. Frente a solo WhatsMyName: **+48 % de cobertura (86 → 127 hallazgos sobre `@torvalds`) a cambio de 5 falsos positivos por alias**, todos con atribución 0.10. `regexCheck` ahorra el 20 % de las peticiones en alias con punto o guion. crt.sh operativa pero intermitente |
 | 2026-09-04 | Integración de Hudson Rock (Fase 4.2) | 🟢 operativa, con consentimiento explícito. Tres trampas que **solo** aparecieron contra la API real: `top_logins` son correos enmascarados y no servicios afectados; `ip` y `malware_path` traen la cadena `"Not Found"` en vez de venir ausentes; y los totales aparecen tanto por registro como en la raíz. Ninguna se habría visto con los tests de mock, que es exactamente la lección de Tavily repitiéndose |
 | 2026-09-04 | Recuento real del catálogo de WhatsMyName | Los documentos decían **716 sitios**; los utilizables son **667**. La cifra antigua incluía entradas NSFW, archivadas y sin `uri_check`, que el cargador ya descartaba. Corregido aquí y expuesto en las métricas de cada investigación (`config_username_catalog_available`) para que el dato no vuelva a divergir del código |
 | 2026-09-04 | Alta de Gemini como proveedor LLM (cierre de la Fase 3) | 🟢 `gemini-3.6-flash` operativo y verificado con function calling. Dos trampas detectadas solo con `curl`: el listado de modelos incluye `gemini-2.5-flash`, que devuelve 404 para claves nuevas, y `gemini-3.5-flash` responde 200 pero no emite `functionCall`. La primera corrida real recibió además un **503 "high demand"** en el segundo turno; el motor degradó como estaba previsto y conservó el barrido heurístico completo |

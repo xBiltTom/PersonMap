@@ -315,12 +315,28 @@ class UsernameFinderTool(BaseTool):
         if site.presence and not any(marker in body for marker in site.presence):
             return False
 
-        # Heurística de Spiderfoot: si la respuesta no menciona el alias por
-        # ningún lado, muy probablemente sea una página genérica.
         is_json = resp.headers.get("content-type", "").startswith("application/json")
-        if not is_json:
-            lowered = username.lower()
-            if lowered not in body.lower() and lowered not in resp.url.path.lower():
-                return False
+        if is_json:
+            # Una API no tiene por qué devolver el alias en el cuerpo.
+            return True
 
-        return True
+        lowered = username.lower()
+        in_body = lowered in body.lower()
+        in_final_url = lowered in resp.url.path.lower()
+
+        if not site.presence and not site.absence:
+            # Sitio sin ninguna validación de contenido: su único criterio es el
+            # código de estado, y muchos devuelven 200 a cualquier URL de perfil.
+            #
+            # Aquí estaba la tautología: el criterio anterior aceptaba si el
+            # alias aparecía en el cuerpo **o en la URL final**, y la URL la
+            # construimos nosotros con el alias, así que pasaba siempre. Medido
+            # sobre un alias sintético inexistente: 255 "cuentas" encontradas,
+            # todas falsas. Para estos sitios se exige que el alias aparezca en
+            # el CUERPO, que es lo que hace una página de perfil de verdad.
+            return in_body
+
+        # Con validación de contenido basta la heurística de Spiderfoot: si el
+        # alias no aparece ni en el cuerpo ni en la URL final, nos redirigieron
+        # a una página genérica.
+        return in_body or in_final_url
