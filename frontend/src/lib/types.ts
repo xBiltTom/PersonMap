@@ -186,12 +186,29 @@ export interface EngineMetrics {
   avg_risk_score: number;
 }
 
+/**
+ * Histograma de las probabilidades de atribución.
+ *
+ * Sirve de diagnóstico del modelo: una distribución concentrada en pocos
+ * valores delata la patología que tenía el scorer anterior, que contaba las
+ * señales sin dato como desacuerdo y colapsaba todo en {0.05, 0.45, 0.95}.
+ */
+export interface IdentityScoreDistribution {
+  total_scored_entities: number;
+  buckets: Array<{ from: number; to: number; count: number }>;
+  attributed_count: number;
+  attributed_pct: number;
+  distinct_values: number;
+  scorer_versions: Record<string, number>;
+}
+
 export interface MetricsComparison {
   summary: {
     total_investigations: number;
     rule_based: EngineMetrics;
     agentic: EngineMetrics;
   };
+  identity_score_distribution?: IdentityScoreDistribution;
   latex_table: string;
   investigations_sample: Array<{
     id: string;

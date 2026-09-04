@@ -8,6 +8,53 @@ from app.models.investigation import Investigation
 
 router = APIRouter()
 
+# Umbral por encima del cual el resolutor atribuye un hallazgo al objetivo.
+CONFIRMED_THRESHOLD = 0.70
+
+
+def _score_distribution(investigations: List[Investigation]) -> Dict[str, Any]:
+    """
+    Histograma de las probabilidades de atribución en deciles.
+
+    Es la evidencia de que el modelo discrimina. Antes de la reescritura del
+    scorer la distribución era trimodal ({0.05, 0.45, 0.95}) porque las señales
+    sin dato se contaban como desacuerdo y unos atajos aplastaban lo
+    intermedio; un histograma plano o concentrado en pocos valores delata esa
+    patología de un vistazo.
+    """
+    scores: List[float] = []
+    versions: Dict[str, int] = {}
+
+    for inv in investigations:
+        for entity in inv.entities:
+            if entity.identity_score is None:
+                continue
+            scores.append(float(entity.identity_score))
+            version = entity.scorer_version or "sin versión"
+            versions[version] = versions.get(version, 0) + 1
+
+    buckets = [0] * 10
+    for score in scores:
+        index = min(9, max(0, int(score * 10)))
+        buckets[index] += 1
+
+    total = len(scores)
+    attributed = sum(1 for s in scores if s >= CONFIRMED_THRESHOLD)
+
+    return {
+        "total_scored_entities": total,
+        "buckets": [
+            {"from": round(i / 10, 1), "to": round((i + 1) / 10, 1), "count": count}
+            for i, count in enumerate(buckets)
+        ],
+        "attributed_count": attributed,
+        "attributed_pct": round(attributed / total * 100, 1) if total else 0.0,
+        "distinct_values": len({round(s, 3) for s in scores}),
+        # Las puntuaciones solo son comparables entre sí dentro de una misma
+        # versión del modelo; mezclarlas en un agregado invalidaría el análisis.
+        "scorer_versions": versions,
+    }
+
 
 @router.get("/investigations/metrics/comparison")
 async def get_scientific_comparison(db: AsyncSession = Depends(get_db)):
@@ -78,6 +125,7 @@ Score de Exposición Medio & {stats_rule['avg_risk_score']}/100 & {stats_agent['
             "rule_based": stats_rule,
             "agentic": stats_agent,
         },
+        "identity_score_distribution": _score_distribution(investigations),
         "latex_table": latex_table,
         "investigations_sample": [
             {

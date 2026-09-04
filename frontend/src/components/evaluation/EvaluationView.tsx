@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { getMetricsComparison, getSurveyStats } from "@/lib/api";
 import type { MetricsComparison, SurveyStats } from "@/lib/types";
+import { ScoreDistribution } from "@/components/evaluation/ScoreDistribution";
 
 export function EvaluationView() {
   const [data, setData] = useState<MetricsComparison | null>(null);
@@ -187,6 +188,10 @@ export function EvaluationView() {
       </div>
 
       {/* LaTeX Preview Block */}
+      {data.identity_score_distribution && (
+        <ScoreDistribution data={data.identity_score_distribution} />
+      )}
+
       <div className="panel-card p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-xs font-mono font-bold uppercase text-slate-300">
