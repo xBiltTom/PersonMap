@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 from app.agent.llm_client import llm_client
 from app.models.entity import Entity
@@ -32,12 +33,26 @@ class OSINTAgent:
                     "Eres un analista de ciberinteligencia (OSINT) y experto en concientización de seguridad digital para estudiantes. "
                     "Tu objetivo es explicar cómo los datos públicos dispersos de una persona pueden correlacionarse para reconstruir su identidad, "
                     "los riesgos de ingeniería social o doxxing que enfrenta, y cómo mitigar dicha exposición. "
-                    "Sé riguroso, analítico y formativo (estilo Palantir Intelligence Report)."
+                    "Sé riguroso, analítico y formativo (estilo Palantir Intelligence Report).\n\n"
+                    "REGLAS ESTRICTAS:\n"
+                    "- No inventes NINGÚN dato que no esté en los hallazgos entregados. Este "
+                    "informe se le enseña a la persona investigada: un dato falso destruye la "
+                    "credibilidad de todo lo demás.\n"
+                    "- No escribas fechas de tu cosecha. La fecha del análisis se te da y es la "
+                    "única válida.\n"
+                    "- Formato Markdown simple: `##` para las secciones, `**negrita**` para lo "
+                    "destacado y `-` para las listas. Nada de HTML ni de tablas."
                 ),
             },
             {
                 "role": "user",
                 "content": (
+                    # La fecha se inyecta porque el modelo se la inventaba: el
+                    # informe salía fechado dos años atrás. Mostrado a la persona
+                    # investigada, un dato así tira por tierra la credibilidad
+                    # del resto del expediente.
+                    f"Fecha del análisis (usa EXACTAMENTE esta): "
+                    f"{datetime.now(timezone.utc).strftime('%d/%m/%Y')}\n"
                     f"Objetivo de la investigación: {target.full_name or target.username or target.email}\n"
                     f"Correo: {target.email or 'No proporcionado'}\n"
                     f"Universidad: {target.university or 'No especificada'}\n"

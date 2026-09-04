@@ -3,6 +3,7 @@
 import { InvestigationData } from "@/lib/types";
 import { Lightbulb, FileCheck, Printer } from "lucide-react";
 import { AwarenessSurveyForm } from "@/components/report/AwarenessSurveyForm";
+import { Markdown } from "@/components/report/Markdown";
 
 export function ReportView({ investigation }: { investigation: InvestigationData }) {
   const score = investigation.risk_score || 0;
@@ -112,9 +113,10 @@ export function ReportView({ investigation }: { investigation: InvestigationData
         </h3>
 
         {investigation.summary ? (
-          <div className="prose prose-invert prose-sm max-w-none text-slate-300 text-xs leading-relaxed space-y-3 whitespace-pre-line font-sans">
-            {investigation.summary}
-          </div>
+          // La narrativa llega en Markdown y se insertaba tal cual, así que el
+          // informe --la pantalla que se imprime y se le enseña a la persona
+          // investigada-- mostraba los `###` y los `**` literales.
+          <Markdown>{investigation.summary}</Markdown>
         ) : (
           <div className="text-xs text-slate-500 font-mono italic">
             El resumen se generará una vez culminada la fase de correlación.

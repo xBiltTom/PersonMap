@@ -55,6 +55,17 @@ class UnionFind:
         return out
 
 
+def _plural(count: int, singular: str, plural: str) -> str:
+    """
+    Concuerda el sustantivo con la cifra.
+
+    Estos textos se muestran en la pantalla de reconstrucción de identidad, que
+    es una de las que se recorren en la sustentación. Un "1 hallazgos" delata
+    descuido justo donde el sistema está afirmando algo sobre una persona.
+    """
+    return f"{count} {singular if count == 1 else plural}"
+
+
 class IdentityResolver:
     """Resuelve qué hallazgos pertenecen a la misma identidad."""
 
@@ -145,7 +156,8 @@ class IdentityResolver:
                     entities=probable,
                     status="probable",
                     reasoning=(
-                        f"{len(probable)} perfiles con evidencia parcial: la probabilidad de "
+                        f"{_plural(len(probable), 'perfil', 'perfiles')} con evidencia parcial: "
+                        f"la probabilidad de "
                         f"atribución queda entre {self.PROBABLE_THRESHOLD:.0%} y "
                         f"{self.CONFIRMED_THRESHOLD:.0%}. Conviene confirmarlos o descartarlos a mano."
                     ),
@@ -160,7 +172,8 @@ class IdentityResolver:
                     entities=discarded,
                     status="homonym_discarded",
                     reasoning=(
-                        f"{len(discarded)} hallazgos sin evidencia suficiente de pertenecer al "
+                        f"{_plural(len(discarded), 'hallazgo', 'hallazgos')} sin evidencia "
+                        f"suficiente de pertenecer al "
                         f"objetivo. Coincidir en un alias no basta: puede tratarse de otra "
                         f"persona que registró el mismo nombre de usuario."
                     ),
@@ -225,18 +238,20 @@ class IdentityResolver:
         avatar_correlations: List[Dict[str, Any]],
     ) -> str:
         parts = [
-            f"{len(confirmed)} hallazgos atribuidos al objetivo por el modelo "
+            f"{_plural(len(confirmed), 'hallazgo atribuido', 'hallazgos atribuidos')} "
+            f"al objetivo por el modelo "
             f"Fellegi-Sunter (probabilidad de atribución ≥ {self.CONFIRMED_THRESHOLD:.0%})."
         ]
         if linked_components:
             parts.append(
-                f"{len(linked_components)} grupo(s) quedaron unidos por evidencia directa "
+                f"{_plural(len(linked_components), 'grupo quedó unido', 'grupos quedaron unidos')} "
+                f"por evidencia directa "
                 f"(correo compartido, enlace explícito o avatar idéntico), de modo que la "
                 f"certeza de un perfil se propaga a los que están conectados a él."
             )
         if avatar_correlations:
             parts.append(
-                f"Se detectaron {len(avatar_correlations)} coincidencias visuales de avatar "
+                f"Se detectaron {_plural(len(avatar_correlations), 'coincidencia visual', 'coincidencias visuales')} de avatar "
                 f"mediante hashing perceptual (dHash)."
             )
         return " ".join(parts)

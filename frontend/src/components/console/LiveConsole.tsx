@@ -137,6 +137,11 @@ export function LiveConsole({
   // veía una consola aparentemente detenida durante minutos.
   const progress = findLatestProgress(logs);
 
+  // Las líneas de progreso salen de la consola en cuanto hay barra: son ~20
+  // repeticiones de "Progreso: X/500" que dicen exactamente lo que la barra ya
+  // muestra, y sepultan los eventos que sí importan (rondas, pivoteos, capas).
+  const visibleLogs = progress ? logs.filter((l) => l.phase !== "progress") : logs;
+
   const handleManualReconnect = () => {
     retriesRef.current = 0;
     setStatus("connecting");
@@ -172,7 +177,9 @@ export function LiveConsole({
               </span>
             </span>
           )}
-          <span className="text-slate-400">{logs.length} eventos registrados</span>
+          <span className="text-slate-400" title="Total de eventos recibidos, incluidos los de progreso que resume la barra">
+            {logs.length} eventos registrados
+          </span>
           <ConnectionBadge
             status={status}
             isFinished={isFinished}
@@ -199,18 +206,18 @@ export function LiveConsole({
           </div>
         )}
 
-        {loadingHistory && logs.length === 0 ? (
+        {loadingHistory && visibleLogs.length === 0 ? (
           <div className="text-slate-400 italic flex items-center gap-2 py-4">
             <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" aria-hidden="true" />
             Recuperando registro de eventos...
           </div>
-        ) : logs.length === 0 ? (
+        ) : visibleLogs.length === 0 ? (
           <div className="text-slate-400 italic flex items-center gap-2 py-4">
             <Play className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
             Esperando inicio de la ejecución del motor...
           </div>
         ) : (
-          logs.map((log, i) => (
+          visibleLogs.map((log, i) => (
             <LogLine
               key={`${log.timestamp}-${i}`}
               log={log}

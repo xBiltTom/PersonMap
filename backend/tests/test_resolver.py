@@ -87,7 +87,10 @@ async def test_direct_evidence_propagates_certainty():
 
     confirmed = _labels(clusters)["confirmed"]
     assert {str(probado.id), str(debil.id)} == set(confirmed.entity_ids)
-    assert "unidos por evidencia directa" in confirmed.reasoning
+    # Sin el prefijo "unidos": el texto concuerda en número con la cifra, así que
+    # con un solo grupo dice "quedó unido". Lo que el test protege es que el
+    # razonamiento explique la propagación, no su redacción exacta.
+    assert "por evidencia directa" in confirmed.reasoning
 
 
 @pytest.mark.asyncio
