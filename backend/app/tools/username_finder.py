@@ -144,11 +144,28 @@ class UsernameFinderTool(BaseTool):
         )
         progress_counter = {"checked": 0}
 
+        # Alias ya barridos en esta investigación.
+        #
+        # El motor re-ejecuta esta herramienta en cada ronda, porque su clave de
+        # ejecución incluye la lista completa de alias y el pivoteo va añadiendo
+        # los que descubre. El efecto medido era que la ronda 2 volvía a
+        # comprobar el alias de la ronda 1, y la ronda 3 los dos anteriores:
+        # 23 s + 45 s + 68 s, con casi la mitad del trabajo repetido.
+        #
+        # El registro vive en `context.extra` y no en la instancia, porque la
+        # herramienta es un singleton del registry compartido por todas las
+        # investigaciones: guardarlo aquí lo haría crecer sin límite y, peor,
+        # una investigación silenciaría el barrido de la siguiente.
+        scanned: Set[str] = context.extra.setdefault("username_finder_scanned", set())
+
         async with http_client.build_client(timeout=6.0) as client:
             for username in usernames:
                 clean_user = username.strip()
                 if clean_user.lower() in self._generic_users or len(clean_user) < 3:
                     continue
+                if clean_user.lower() in scanned:
+                    continue
+                scanned.add(clean_user.lower())
 
                 progress_counter["checked"] = 0
                 tasks = [

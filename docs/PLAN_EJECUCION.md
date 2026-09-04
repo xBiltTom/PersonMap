@@ -116,9 +116,13 @@ la barra de progreso real (M2), conviene propagar la capa hasta la tool.
   host** (4), que es donde vive la cortesía real. `username_finder` ya no toma
   una constante de 30 escrita a mano, sino una cuota acotada al 60 % del
   presupuesto global. Medido: una investigación `rule_based` sobre el mismo
-  objetivo bajó de **318 s a 202 s**, y la herramienta en aislado, de 39,3 s a
-  28,0 s. La Fase 4 puede subir el catálogo sin que el barrido de alias mate de
-  inanición al resto de la ronda.
+  objetivo bajó de **318 s a 93 s** (el reparto de concurrencia puso 318→202, y
+  dejar de re-escanear alias ya barridos, 202→93). La Fase 4 puede subir el
+  catálogo sin que el barrido de alias mate de inanición al resto de la ronda.
+  **Y la mitigación que este plan recomendaba para demos —bajar
+  `USERNAME_SCAN_MAX_SITES`— ya no sirve de nada:** de 500 a 150 sitios el
+  tiempo no se movió. El coste escala con los **alias pivotados**, no con los
+  sitios.
 - **Fase 5 — la denylist de avatares por defecto sigue siendo obligatoria**, pero
   el riesgo bajó: ya no existe el atajo `confidence = max(conf, 0.99)` que
   convertía una coincidencia de avatar en "identidad confirmada" saltándose el
@@ -485,7 +489,9 @@ respetar los 50 req/10 s de Hudson Rock.
 
 | Medición | Antes | Después |
 |---|---|---|
-| Investigación `rule_based` completa, mismo objetivo | 318 s | **202 s** (−37 %) |
+| Investigación `rule_based` completa, mismo objetivo | 318 s | **93 s** (−71 %) |
+| — solo por el reparto de concurrencia | 318 s | 202 s |
+| — más el fin del re-escaneo de alias (3.5.3) | 202 s | **93 s** |
 | `username_finder` en aislado sobre `@torvalds` | 39,3 s | **28,0 s** (−29 %) |
 
 La primera comparación mostraba 25 → 21 entidades, lo que parecía un precio.
@@ -509,7 +515,40 @@ buscó otra cosa.
 > **Para el artículo:** ese ~5 % es el suelo de ruido de la medición. Cualquier
 > diferencia menor entre dos configuraciones no es una diferencia.
 
-### 3.5.3 Barra de progreso real (M2)
+### 3.5.3 El verdadero cuello de botella: alias re-escaneados
+
+Con la concurrencia repartida, bajar el catálogo de 500 a 150 sitios **no
+cambió nada** (205 s frente a 202 s). Eso desmintió la mitigación que este
+mismo plan recomendaba para las demos —"bajar `USERNAME_SCAN_MAX_SITES`"— y
+obligó a medir dónde se iba el tiempo de verdad. Perfilando los eventos
+`tool_start`/`tool_complete`:
+
+```
+username_finder  ronda 1:  23,0 s
+username_finder  ronda 2:  45,4 s
+username_finder  ronda 3:  68,0 s
+                          -------
+                          136,4 s  de 205 s totales
+```
+
+**El coste no escalaba con los sitios, sino con los alias, y crecía porque se
+repetía.** La clave de ejecución del motor incluye la lista completa de alias,
+así que cada vez que el pivoteo descubre uno nuevo la herramienta se vuelve a
+lanzar **sobre todos**, re-comprobando los que ya había barrido. Con tres
+rondas eso son 1+2+3 = 6 barridos donde bastaban 3: casi la mitad del trabajo,
+tirado.
+
+La corrección es un registro de alias ya barridos en `context.extra` —no en la
+instancia de la herramienta, que es un singleton del registry compartido por
+todas las investigaciones—. Resultado: **202 s → 93 s**, con el catálogo
+completo de 500 sitios.
+
+> **Consecuencia para la Fase 4:** el catálogo de Maigret asusta menos de lo que
+> parecía. Lo que multiplica el coste es el número de alias pivotados, no el de
+> sitios. Pero sigue habiendo un techo: cada alias nuevo cuesta un barrido
+> entero del catálogo.
+
+### 3.5.4 Barra de progreso real (M2)
 
 El evento `phase: "progress"` ya se emitía y se desperdiciaba como una línea de
 log más. Ahora viaja con `checked`, `total`, `pct` y `subject`, y la consola
@@ -518,7 +557,7 @@ pinta una barra con sus atributos ARIA. Cadencia cada 25 sitios (antes 40).
 Sin esto, el barrido de 500 plataformas son minutos de pantalla aparentemente
 congelada. Con un jurado delante, eso no se puede defender.
 
-### 3.5.4 Huella de configuración (`app/core/fingerprint.py`)
+### 3.5.5 Huella de configuración (`app/core/fingerprint.py`)
 
 `scorer_version` protegía el modelo de identidad; el resto de la configuración
 no lo protegía nadie. Cada investigación registra ahora, con prefijo `config_`:

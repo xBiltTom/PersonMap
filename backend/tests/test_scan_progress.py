@@ -89,6 +89,55 @@ async def test_progress_advances_monotonically():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_an_alias_is_never_rescanned_within_one_investigation():
+    """
+    El motor re-ejecuta la herramienta en cada ronda, porque su clave de
+    ejecución incluye la lista de alias y el pivoteo la va ampliando. Sin este
+    registro, la ronda 2 volvía a comprobar el alias de la ronda 1 y la ronda 3
+    los dos anteriores: medido, 23 s + 45 s + 68 s con casi la mitad del trabajo
+    repetido.
+    """
+    route = respx.route().mock(return_value=httpx.Response(404))
+
+    tool = UsernameFinderTool()
+    context = TargetContext(username="alias_uno", extra={})
+
+    await tool.execute(context)
+    first_pass = route.call_count
+    assert first_pass > 0
+
+    # Segunda ronda: el motor añade un alias descubierto y vuelve a llamar con
+    # el MISMO contexto acumulado.
+    context.discovered_usernames.append("alias_dos")
+    await tool.execute(context)
+    second_pass = route.call_count - first_pass
+
+    # Solo se comprueba el alias nuevo, no los dos.
+    assert second_pass == first_pass
+
+    # Tercera ronda sin alias nuevos: no debe gastar ni una petición.
+    await tool.execute(context)
+    assert route.call_count == first_pass + second_pass
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_a_fresh_investigation_scans_the_alias_again():
+    """El registro es por investigación, no global: la tool es un singleton."""
+    route = respx.route().mock(return_value=httpx.Response(404))
+
+    tool = UsernameFinderTool()
+
+    await tool.execute(TargetContext(username="alias_uno", extra={}))
+    first = route.call_count
+
+    await tool.execute(TargetContext(username="alias_uno", extra={}))
+
+    assert route.call_count == first * 2
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_the_scan_stays_silent_without_an_investigation_id():
     """
     Sin investigación a la que publicar no debe emitirse nada: el bus retiene
