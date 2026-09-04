@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -25,7 +26,7 @@ class Investigation(Base):
     summary = Column(Text, nullable=True)
 
     # Metrics for academic paper: execution_time, tool_calls, entities_count, etc.
-    metrics = Column(JSONB, default=dict)
+    metrics = Column(MutableDict.as_mutable(JSONB), default=dict)
 
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     completed_at = Column(DateTime(timezone=True), nullable=True)

@@ -6,12 +6,23 @@
 import type {
   CreateInvestigationPayload,
   GraphResponse,
+  HealthStatus,
   InvestigationData,
+  MetricsComparison,
+  StreamLog,
 } from "@/lib/types";
 
-const API_BASE =
+export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
   "http://localhost:8000/api/v1";
+
+/**
+ * Origen del backend, sin el prefijo /api/v1. Necesario para los endpoints que
+ * viven fuera de la API versionada (`/health`) y para construir URLs que no
+ * consume `fetch` sino el navegador (EventSource del stream SSE, descarga
+ * directa del GraphML).
+ */
+export const API_ORIGIN = API_BASE.replace(/\/api\/v1$/, "");
 
 /** Extrae un mensaje legible del cuerpo de error de FastAPI. */
 function parseErrorDetail(body: unknown, fallback: string): string {
@@ -115,4 +126,40 @@ export function verifyEntity(
 
 export function getInvestigationGraph(id: string): Promise<GraphResponse> {
   return request<GraphResponse>(`/investigations/${id}/graph`);
+}
+
+/** URL de descarga del GraphML para Gephi/Cytoscape (la abre el navegador). */
+export function getGraphmlUrl(id: string): string {
+  return `${API_BASE}/investigations/${id}/graphml`;
+}
+
+// ---------------------------------------------------------------------
+// Consola en vivo (logs + stream SSE)
+// ---------------------------------------------------------------------
+
+export function getInvestigationLogs(id: string): Promise<StreamLog[]> {
+  return request<StreamLog[]>(`/investigations/${id}/logs`);
+}
+
+/** URL del stream SSE. La consume `EventSource`, no `fetch`. */
+export function getInvestigationStreamUrl(id: string): string {
+  return `${API_BASE}/investigations/${id}/stream`;
+}
+
+// ---------------------------------------------------------------------
+// Métricas y salud
+// ---------------------------------------------------------------------
+
+export function getMetricsComparison(): Promise<MetricsComparison> {
+  return request<MetricsComparison>("/investigations/metrics/comparison");
+}
+
+/**
+ * Comprueba si el backend responde. Vive fuera de `/api/v1`, de ahí que use
+ * `API_ORIGIN` en lugar del helper `request`.
+ */
+export async function checkHealth(): Promise<HealthStatus> {
+  const res = await fetch(`${API_ORIGIN}/health`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Backend respondió ${res.status}`);
+  return (await res.json()) as HealthStatus;
 }

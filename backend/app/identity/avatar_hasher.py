@@ -5,6 +5,8 @@ import httpx
 import imagehash
 from PIL import Image
 
+from app.tools import http_client
+
 
 class AvatarHasher:
     """
@@ -59,9 +61,12 @@ class AvatarHasher:
         if len(targets_with_avatars) < 2:
             return []
 
-        # Download and hash concurrently
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        async with httpx.AsyncClient(timeout=6.0, follow_redirects=True, headers=headers, verify=False) as client:
+        # Descarga y hashing concurrentes a través de la capa HTTP compartida.
+        # Antes este módulo construía su propio httpx.AsyncClient con verify=False,
+        # quedando fuera del semáforo global, del backoff y de la rotación de
+        # User-Agent — y desactivando la verificación TLS en un proyecto de
+        # seguridad de la información.
+        async with http_client.build_client(timeout=6.0) as client:
             tasks = [self.compute_dhash_from_url(client, item["avatar_url"]) for item in targets_with_avatars]
             hashes = await asyncio.gather(*tasks, return_exceptions=True)
 

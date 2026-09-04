@@ -1,65 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  BarChart3,
+  AlertTriangle,
   Copy,
   Check,
   Download,
   BookOpen,
-  HelpCircle,
   Award,
-  Sparkles,
-  Workflow,
-  Cpu,
 } from "lucide-react";
-
-interface ComparisonData {
-  summary: {
-    total_investigations: number;
-    rule_based: {
-      count: number;
-      avg_execution_time: number;
-      avg_entities: number;
-      avg_clusters: number;
-      avg_risk_score: number;
-    };
-    agentic: {
-      count: number;
-      avg_execution_time: number;
-      avg_entities: number;
-      avg_clusters: number;
-      avg_risk_score: number;
-    };
-  };
-  latex_table: string;
-  investigations_sample: Array<{
-    id: string;
-    strategy: string;
-    execution_time: number;
-    entities_count: number;
-    risk_score: number;
-    created_at: string | null;
-  }>;
-}
+import { getMetricsComparison } from "@/lib/api";
+import type { MetricsComparison } from "@/lib/types";
 
 export function EvaluationView() {
-  const [data, setData] = useState<ComparisonData | null>(null);
+  const [data, setData] = useState<MetricsComparison | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Pre-test / Post-test state for educational evaluation
-  const [preTestScore, setPreTestScore] = useState<number | null>(null);
-  const [postTestScore, setPostTestScore] = useState<number | null>(null);
+  // NOTA: el cuestionario de concientización es hoy una maqueta sin estado ni
+  // envío. Los antiguos `preTestScore`/`postTestScore` se declaraban y no se
+  // leían nunca. Se cablea de verdad contra POST /api/v1/surveys en la Fase 1.
   const [showSurvey, setShowSurvey] = useState(false);
 
-  useEffect(() => {
-    fetch("http://localhost:8000/api/v1/investigations/metrics/comparison")
-      .then((res) => res.json())
-      .then((d) => setData(d))
-      .catch((err) => console.error("Error loading comparison metrics", err))
+  const loadMetrics = useCallback(() => {
+    setLoading(true);
+    getMetricsComparison()
+      .then((d) => {
+        setData(d);
+        setError(null);
+      })
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : "No se pudieron cargar las métricas")
+      )
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadMetrics();
+  }, [loadMetrics]);
 
   const handleCopyLatex = () => {
     if (!data?.latex_table) return;
@@ -88,8 +67,33 @@ export function EvaluationView() {
 
   if (loading) {
     return (
-      <div className="panel-card p-12 text-center text-xs font-mono text-slate-500">
+      <div role="status" className="panel-card p-12 text-center text-xs font-mono text-slate-400">
         Cargando métricas de evaluación científica...
+      </div>
+    );
+  }
+
+  // Sin esto, un fallo de red renderizaba el dashboard completo con todos los
+  // valores a 0 y el bloque LaTeX vacío, sin ningún aviso: una pantalla titulada
+  // "Módulo de Evaluación para Artículo Científico" mostrando cifras inventadas.
+  if (error || !data) {
+    return (
+      <div className="panel-card p-10 text-center border border-rose-500/30">
+        <AlertTriangle className="w-9 h-9 text-rose-400 mx-auto mb-3" aria-hidden="true" />
+        <h3 className="text-sm font-semibold text-slate-200">
+          No se pudieron cargar las métricas de evaluación
+        </h3>
+        <p className="text-xs text-slate-400 mt-1.5 max-w-md mx-auto">
+          {error || "El backend no devolvió datos."} Las cifras no se muestran para no
+          presentar valores incorrectos como si fueran resultados reales.
+        </p>
+        <button
+          type="button"
+          onClick={loadMetrics}
+          className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#182334] hover:bg-[#223148] text-slate-200 text-xs font-mono border border-[#2b3a52] transition-colors cursor-pointer"
+        >
+          Reintentar
+        </button>
       </div>
     );
   }
@@ -222,7 +226,7 @@ export function EvaluationView() {
         </div>
 
         {showSurvey && (
-          <div className="mt-4 pt-4 border-t border-[#1e293b] space-y-4 animate-in fade-in duration-200 text-xs">
+          <div className="mt-4 pt-4 border-t border-[#1e293b] space-y-4 animate-fade-in text-xs">
             <div className="p-3.5 rounded bg-[#0c111a] border border-[#1e293b] space-y-2">
               <span className="font-semibold text-slate-200 block">
                 1. ¿Creías que tu correo universitario o personal era inaccesible si no lo publicabas en tu bio?

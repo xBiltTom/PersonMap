@@ -1,17 +1,40 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Shield, Radio, Layers } from "lucide-react";
 import { useEffect, useState } from "react";
+import { checkHealth } from "@/lib/api";
+
+/**
+ * Cada cuánto se re-comprueba la salud del backend. Antes se comprobaba una sola
+ * vez al montar: si el backend arrancaba después, la pill se quedaba en rojo
+ * hasta recargar la página; y si se caía después, seguía en verde.
+ */
+const HEALTH_POLL_MS = 15000;
 
 export function Navbar() {
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+  const pathname = usePathname();
 
   useEffect(() => {
-    fetch("http://localhost:8000/health")
-      .then((res) => res.json())
-      .then((data) => setBackendOnline(data.status === "healthy"))
-      .catch(() => setBackendOnline(false));
+    let cancelled = false;
+
+    const ping = async () => {
+      try {
+        const data = await checkHealth();
+        if (!cancelled) setBackendOnline(data.status === "healthy");
+      } catch {
+        if (!cancelled) setBackendOnline(false);
+      }
+    };
+
+    ping();
+    const interval = setInterval(ping, HEALTH_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   return (
@@ -58,15 +81,25 @@ export function Navbar() {
 
           <Link
             href="/"
-            className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-md bg-[#182234] hover:bg-[#202c42] text-slate-200 border border-[#2b3a52] transition-colors"
+            aria-current={pathname === "/" ? "page" : undefined}
+            className={`flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-md border transition-colors ${
+              pathname === "/"
+                ? "bg-sky-500/20 text-sky-200 border-sky-500/50 font-semibold"
+                : "bg-[#182234] hover:bg-[#202c42] text-slate-200 border-[#2b3a52]"
+            }`}
           >
-            <Layers className="w-3.5 h-3.5 text-sky-400" />
+            <Layers className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
             <span>Investigaciones</span>
           </Link>
 
           <Link
             href="/evaluation"
-            className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-md bg-purple-950/40 hover:bg-purple-900/50 text-purple-200 border border-purple-500/30 transition-colors"
+            aria-current={pathname === "/evaluation" ? "page" : undefined}
+            className={`flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-md border transition-colors ${
+              pathname === "/evaluation"
+                ? "bg-purple-500/25 text-purple-100 border-purple-400/60 font-semibold"
+                : "bg-purple-950/40 hover:bg-purple-900/50 text-purple-200 border-purple-500/30"
+            }`}
           >
             <span>Métricas Paper</span>
           </Link>

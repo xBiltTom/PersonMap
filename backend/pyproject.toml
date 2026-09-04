@@ -31,4 +31,19 @@ packages = ["app"]
 dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    # Mock del transporte de httpx: permite probar el parseo de cada tool OSINT
+    # contra respuestas grabadas, en vez de depender de que el sitio real siga
+    # vivo y accesible desde la máquina que corre los tests.
+    "respx>=0.22.0",
+]
+
+[tool.pytest.ini_options]
+# Por defecto se excluyen los tests que tocan la red o PostgreSQL, de modo que
+# `uv run pytest` sea rápido, determinista y funcione sin conexión. La suite
+# completa se lanza explícitamente:
+#   uv run pytest -m "network or db"    (o `-m ""` para absolutamente todo)
+addopts = "-m 'not network and not db'"
+markers = [
+    "network: requiere acceso real a Internet (fuentes OSINT externas)",
+    "db: requiere una base de datos PostgreSQL operativa",
 ]

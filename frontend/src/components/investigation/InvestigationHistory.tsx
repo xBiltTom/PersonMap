@@ -20,12 +20,22 @@ import {
 export function InvestigationHistory() {
   const [investigations, setInvestigations] = useState<InvestigationData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const loadData = () => {
     setLoading(true);
     listInvestigations()
-      .then(setInvestigations)
-      .catch(() => setInvestigations([]))
+      .then((data) => {
+        setInvestigations(data);
+        setError(null);
+      })
+      // Un fallo de red NO es una lista vacía. Antes se tragaba el error y se
+      // mostraba "No hay investigaciones registradas", haciendo creer al usuario
+      // que la base de datos estaba vacía cuando el backend simplemente no
+      // respondía.
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : "No se pudo cargar el historial")
+      )
       .finally(() => setLoading(false));
   };
 
@@ -36,17 +46,45 @@ export function InvestigationHistory() {
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
-    if (confirm("¿Estás seguro de eliminar esta investigación?")) {
+    if (!confirm("¿Estás seguro de eliminar esta investigación?")) return;
+    try {
       await deleteInvestigation(id);
       loadData();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "No se pudo eliminar la investigación");
     }
   };
 
   if (loading) {
     return (
-      <div className="panel-card p-6 flex items-center justify-center text-xs font-mono text-slate-500 py-12">
-        <span className="w-4 h-4 border-2 border-sky-500/30 border-t-sky-400 rounded-full animate-spin mr-2"></span>
+      <div
+        role="status"
+        className="panel-card p-6 flex items-center justify-center text-xs font-mono text-slate-400 py-12"
+      >
+        <span
+          className="w-4 h-4 border-2 border-sky-500/30 border-t-sky-400 rounded-full animate-spin mr-2"
+          aria-hidden="true"
+        />
         Cargando expediente histórico...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="panel-card p-8 text-center border border-rose-500/30">
+        <AlertTriangle className="w-10 h-10 text-rose-400 mx-auto mb-2" aria-hidden="true" />
+        <h3 className="text-sm font-semibold text-slate-200">
+          No se pudo cargar el historial de expedientes
+        </h3>
+        <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">{error}</p>
+        <button
+          type="button"
+          onClick={loadData}
+          className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#182334] hover:bg-[#223148] text-slate-200 text-xs font-mono border border-[#2b3a52] transition-colors cursor-pointer"
+        >
+          Reintentar
+        </button>
       </div>
     );
   }

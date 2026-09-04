@@ -8,13 +8,12 @@ import {
   MiniMap,
   useNodesState,
   useEdgesState,
-  NodeProps,
   Handle,
   Position,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { GraphResponse, GraphNode } from "@/lib/types";
-import { getInvestigationGraph } from "@/lib/api";
+import { GraphResponse } from "@/lib/types";
+import { getGraphmlUrl, getInvestigationGraph } from "@/lib/api";
 import {
   User,
   Mail,
@@ -22,7 +21,6 @@ import {
   FileText,
   Search,
   ExternalLink,
-  ShieldCheck,
   Globe,
   Code2,
   Briefcase,
@@ -31,7 +29,6 @@ import {
   AlertTriangle,
   Phone,
   Filter,
-  Layers,
 } from "lucide-react";
 
 // Platform Icon Helper
@@ -147,6 +144,7 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
   const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<any>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [activeCategory, setActiveCategory] = useState<string>("all");
 
@@ -166,8 +164,11 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
       setAllEdges(data.edges);
       setNodes(data.nodes);
       setEdges(data.edges);
-    } catch (err) {
-      console.error("Error loading graph", err);
+      setError(null);
+    } catch (err: unknown) {
+      // Antes esto solo hacía console.error y el usuario veía un lienzo vacío
+      // sin ninguna explicación, indistinguible de una investigación sin nodos.
+      setError(err instanceof Error ? err.message : "No se pudo cargar el mapa digital");
     } finally {
       setLoading(false);
     }
@@ -213,7 +214,7 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
   };
 
   const handleExportGephiGraphml = () => {
-    window.open(`http://localhost:8000/api/v1/investigations/${investigationId}/graphml`, "_blank");
+    window.open(getGraphmlUrl(investigationId), "_blank");
   };
 
   const categories = [
@@ -270,12 +271,52 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
         </div>
       </div>
 
+      {/* Fila: lienzo + panel lateral de detalle.
+          El panel usa `w-80 border-l shrink-0`, estilos de barra lateral que solo
+          funcionan dentro de un contenedor en fila. Antes era hijo directo del
+          contenedor `flex-col` raíz, así que se apilaba debajo del lienzo y
+          quedaba recortado por el `overflow-hidden` de altura fija. */}
+      <div className="flex-1 flex min-h-0">
       {/* React Flow Canvas */}
-      <div className="flex-1 h-full relative">
+      <div className="flex-1 h-full relative min-w-0">
         {loading ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#0b0f17]/80 z-20 text-xs font-mono text-slate-400">
-            <span className="w-4 h-4 border-2 border-sky-400/30 border-t-sky-400 rounded-full animate-spin mr-2"></span>
+          <div
+            role="status"
+            className="absolute inset-0 flex items-center justify-center bg-[#0b0f17]/80 z-20 text-xs font-mono text-slate-300"
+          >
+            <span
+              className="w-4 h-4 border-2 border-sky-400/30 border-t-sky-400 rounded-full animate-spin mr-2"
+              aria-hidden="true"
+            />
             Construyendo mapa de relaciones...
+          </div>
+        ) : null}
+
+        {!loading && error ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0b0f17]/90 z-20 px-6 text-center">
+            <AlertTriangle className="w-8 h-8 text-rose-400 mb-2" aria-hidden="true" />
+            <p className="text-xs font-mono text-slate-200 font-semibold">
+              No se pudo cargar el mapa digital
+            </p>
+            <p className="text-[11px] text-slate-400 mt-1 max-w-sm">{error}</p>
+            <button
+              type="button"
+              onClick={loadGraph}
+              className="mt-3 px-3 py-1.5 rounded-md bg-[#182334] hover:bg-[#223148] text-slate-200 text-xs font-mono border border-[#2b3a52] transition-colors cursor-pointer"
+            >
+              Reintentar
+            </button>
+          </div>
+        ) : null}
+
+        {!loading && !error && nodes.length === 0 ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0b0f17]/90 z-20 px-6 text-center">
+            <p className="text-xs font-mono text-slate-300">
+              No hay nodos que mostrar en esta capa.
+            </p>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Prueba con otro filtro o espera a que el motor termine la extracción.
+            </p>
           </div>
         ) : null}
 
@@ -302,7 +343,10 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
 
       {/* Detail Slideout for Clicked Entity */}
       {selectedNode && (
-        <div className="w-80 border-l border-[#1e293b] bg-[#0e131d] p-4 overflow-y-auto shrink-0 animate-in slide-in-from-right duration-200">
+        <aside
+          aria-label="Detalle de la entidad seleccionada"
+          className="w-72 lg:w-80 border-l border-[#1e293b] bg-[#0e131d] p-4 overflow-y-auto shrink-0"
+        >
           <div className="flex items-center justify-between pb-3 border-b border-[#1e293b] mb-4">
             <h4 className="text-xs font-mono font-bold text-slate-200 uppercase tracking-wider">
               Detalle de Entidad
@@ -367,8 +411,9 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
               </div>
             )}
           </div>
-        </div>
+        </aside>
       )}
+      </div>
     </div>
   );
 }

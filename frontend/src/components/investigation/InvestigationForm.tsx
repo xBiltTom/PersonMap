@@ -186,7 +186,7 @@ export function InvestigationForm() {
         </div>
 
         {showAdvanced && (
-          <div className="p-4 rounded-md bg-[#0d121c] border border-[#1e293b] space-y-4 animate-in fade-in duration-200">
+          <div className="p-4 rounded-md bg-[#0d121c] border border-[#1e293b] space-y-4 animate-fade-in">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-mono text-slate-300 mb-1.5 flex items-center gap-1.5">

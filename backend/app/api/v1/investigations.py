@@ -6,6 +6,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db
+from app.core.events import event_bus
 from app.engine.orchestrator import orchestrator
 from app.models.entity import Entity
 from app.models.identity_cluster import IdentityCluster
@@ -140,4 +141,9 @@ async def delete_investigation(
 
     await db.delete(inv)
     await db.commit()
+
+    # El bus de eventos guarda el historial de logs en memoria; sin esto quedaría
+    # retenido para una investigación que ya no existe.
+    await event_bus.clear(str(id))
+
     return {"status": "success", "message": "Investigación eliminada"}

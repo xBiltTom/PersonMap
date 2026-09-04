@@ -5,9 +5,8 @@ import litellm
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.events import event_bus
-from app.identity.scorer import compute_identity_score
+from app.engine.persistence import build_relationships, persist_findings
 from app.models.entity import Entity
-from app.models.relationship import Relationship
 from app.models.target import Target
 from app.tools.base import TargetContext, ToolFinding
 from app.tools.registry import tool_registry
@@ -182,57 +181,21 @@ class AutonomousOSINTAgent:
                 })
                 break
 
-        # Persist all discovered entities into PostgreSQL
-        entities: List[Entity] = []
-        for f in all_findings:
-            score, breakdown = compute_identity_score(
-                display_name=f.display_name,
-                value=f.value,
-                metadata=f.metadata_info,
-                target=target,
-            )
-            final_conf = round(max(f.confidence, score), 2)
+        # Deduplicación, scoring y persistencia compartidos con el motor de reglas.
+        # Antes esto estaba duplicado aquí en una versión degradada: sin
+        # deduplicación (el agente puede invocar la misma tool en varios turnos y
+        # generaba entidades repetidas) y con una detección de relaciones reducida
+        # a same_platform/uses_email. Al delegar en app.engine.persistence el modo
+        # agéntico hereda exactamente el mismo comportamiento que el heurístico.
+        entities = await persist_findings(
+            investigation_id=investigation_id,
+            findings=all_findings,
+            target=target,
+            db=db,
+            default_source_tool="agent_autonomous",
+        )
+        await build_relationships(investigation_id, entities, db)
 
-            entity = Entity(
-                investigation_id=investigation_id,
-                entity_type=f.entity_type,
-                platform=f.platform,
-                value=f.value,
-                display_name=f.display_name or f.value,
-                metadata_info=f.metadata_info,
-                confidence=final_conf,
-                verified=False,
-                source_tool=f.metadata_info.get("source_tool", "agent_autonomous"),
-            )
-            db.add(entity)
-            entities.append(entity)
-
-        await db.flush()
-
-        # Build relationships between entities (graph edges)
-        for i, ent_a in enumerate(entities):
-            for ent_b in entities[i + 1 :]:
-                if ent_a.platform == ent_b.platform:
-                    rel = Relationship(
-                        investigation_id=investigation_id,
-                        source_entity_id=ent_a.id,
-                        target_entity_id=ent_b.id,
-                        relation_type="same_platform",
-                        strength=0.5,
-                    )
-                    db.add(rel)
-                elif ent_a.entity_type == "email" and ent_b.metadata_info.get("emails"):
-                    if ent_a.value.lower() in [e.lower() for e in ent_b.metadata_info["emails"]]:
-                        rel = Relationship(
-                            investigation_id=investigation_id,
-                            source_entity_id=ent_a.id,
-                            target_entity_id=ent_b.id,
-                            relation_type="uses_email",
-                            strength=0.95,
-                        )
-                        db.add(rel)
-
-        await db.flush()
         return entities
 
     async def _execute_agent_tool(

@@ -140,7 +140,7 @@ def build_client(
     *,
     timeout: float = 10.0,
     follow_redirects: bool = True,
-    verify: bool = False,
+    verify: bool = True,
     headers: Optional[dict] = None,
     max_retries: int = 2,
     rotate_ua: bool = True,
@@ -157,6 +157,13 @@ def build_client(
     explicitly ask for this as part of their public API etiquette/"polite pool"
     policies) -- impersonating a rotating browser UA against those APIs would
     be counterproductive, not stealthier.
+
+    `verify` defaults to True. It used to default to False, which silently
+    disabled TLS certificate verification for every tool in the registry --
+    an indefensible default in a platform whose subject matter is information
+    security, and one that exposed every request to trivial interception.
+    A tool that genuinely needs to reach a host with a broken chain must opt
+    out explicitly at its own call site and document why.
     """
     transport = ResilientTransport(verify=verify, max_retries=max_retries, rotate_ua=rotate_ua)
     merged_headers = build_headers(headers)

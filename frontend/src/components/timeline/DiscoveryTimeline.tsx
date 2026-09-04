@@ -1,7 +1,7 @@
 "use client";
 
 import { EntityData } from "@/lib/types";
-import { Clock, ExternalLink, ShieldCheck } from "lucide-react";
+import { Clock, ExternalLink } from "lucide-react";
 
 export function DiscoveryTimeline({ entities }: { entities: EntityData[] }) {
   const sorted = [...entities].sort(
@@ -26,7 +26,7 @@ export function DiscoveryTimeline({ entities }: { entities: EntityData[] }) {
       </div>
 
       <div className="relative pl-6 border-l border-[#1e293b] space-y-6">
-        {sorted.map((item, i) => {
+        {sorted.map((item) => {
           const time = new Date(item.discovered_at).toLocaleTimeString("es-ES", {
             hour: "2-digit",
             minute: "2-digit",
@@ -40,7 +40,7 @@ export function DiscoveryTimeline({ entities }: { entities: EntityData[] }) {
 
               <div className="flex items-baseline gap-2 mb-1">
                 <span className="text-[10px] font-mono text-slate-500">[{time}]</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 uppercase font-semibold">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 uppercase font-semibold">
                   {item.source_tool}
                 </span>
                 <span className="text-xs font-bold text-slate-200">

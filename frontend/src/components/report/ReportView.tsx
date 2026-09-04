@@ -1,17 +1,7 @@
 "use client";
 
 import { InvestigationData } from "@/lib/types";
-import {
-  ShieldAlert,
-  ShieldCheck,
-  AlertTriangle,
-  Lightbulb,
-  Clock,
-  Cpu,
-  Layers,
-  FileCheck,
-  Printer,
-} from "lucide-react";
+import { Lightbulb, FileCheck, Printer } from "lucide-react";
 
 export function ReportView({ investigation }: { investigation: InvestigationData }) {
   const score = investigation.risk_score || 0;

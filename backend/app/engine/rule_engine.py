@@ -3,10 +3,9 @@ import time
 from typing import List, Set
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.events import event_bus
+from app.engine.persistence import build_relationships, persist_findings
 from app.engine.pivot_rules import extract_and_apply_pivots
-from app.identity.scorer import compute_identity_score
 from app.models.entity import Entity
-from app.models.relationship import Relationship
 from app.models.target import Target
 from app.tools.base import TargetContext, ToolFinding
 from app.tools.registry import tool_registry
@@ -117,60 +116,15 @@ class RuleEngine:
             else:
                 break
 
-        # Deduplicate findings by (entity_type, platform, normalized value), preserving highest confidence
-        deduped_findings: dict[tuple[str, str, str], ToolFinding] = {}
-        for f in all_findings:
-            key = (
-                f.entity_type,
-                (f.platform or "").lower(),
-                f.value.strip().rstrip("/").lower(),
-            )
-            if key not in deduped_findings or f.confidence > deduped_findings[key].confidence:
-                deduped_findings[key] = f
-
-        # Persist entities and compute identity resolution scores
-        entities: List[Entity] = []
-        for f in deduped_findings.values():
-            score, breakdown = compute_identity_score(
-                display_name=f.display_name,
-                value=f.value,
-                metadata=f.metadata_info,
-                target=target,
-            )
-            # Combine tool baseline with score
-            final_conf = round(max(f.confidence, score), 2)
-
-            entity = Entity(
-                investigation_id=investigation_id,
-                entity_type=f.entity_type,
-                platform=f.platform,
-                value=f.value,
-                display_name=f.display_name or f.value,
-                metadata_info=f.metadata_info,
-                confidence=final_conf,
-                verified=False,
-                source_tool=f.metadata_info.get("source_tool", "osint_engine"),
-            )
-            db.add(entity)
-            entities.append(entity)
-
-        await db.flush()
-
-        # Build relationships between entities (graph edges)
-        for i, ent_a in enumerate(entities):
-            for ent_b in entities[i + 1 :]:
-                rel_type, strength = self._detect_relationship(ent_a, ent_b)
-                if rel_type:
-                    rel = Relationship(
-                        investigation_id=investigation_id,
-                        source_entity_id=ent_a.id,
-                        target_entity_id=ent_b.id,
-                        relation_type=rel_type,
-                        strength=strength,
-                    )
-                    db.add(rel)
-
-        await db.flush()
+        # Deduplicación, scoring y persistencia compartidos con el agente autónomo
+        entities = await persist_findings(
+            investigation_id=investigation_id,
+            findings=all_findings,
+            target=target,
+            db=db,
+            default_source_tool="osint_engine",
+        )
+        await build_relationships(investigation_id, entities, db)
 
         elapsed = round(time.time() - start_time, 2)
         await event_bus.publish(investigation_id, {
@@ -218,29 +172,6 @@ class RuleEngine:
                 "timestamp": time.time(),
             })
             return []
-
-    def _detect_relationship(self, a: Entity, b: Entity) -> tuple[str | None, float]:
-        # Same platform or shared username
-        user_a = a.metadata_info.get("username", "").lower()
-        user_b = b.metadata_info.get("username", "").lower()
-        if user_a and user_b and user_a == user_b:
-            return "same_username", 0.85
-
-        # Email linkage
-        if a.entity_type == "email" and b.metadata_info.get("emails"):
-            if a.value.lower() in [e.lower() for e in b.metadata_info["emails"]]:
-                return "uses_email", 0.95
-
-        # Cross link
-        links_a = a.metadata_info.get("linked_profiles", [])
-        if any(b.value in l for l in links_a):
-            return "linked_to", 0.90
-
-        # General correlation by common domain / context
-        if a.platform == b.platform:
-            return "same_platform", 0.50
-
-        return None, 0.0
 
 
 rule_engine = RuleEngine()

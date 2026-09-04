@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -23,7 +24,10 @@ class Entity(Base):
     display_name = Column(String(255), nullable=True)
 
     # Rich metadata: bio, photo_url, extracted links, emails, etc.
-    metadata_info = Column(JSONB, default=dict)
+    # MutableDict: sin esto, las mutaciones in-place posteriores al flush no las
+    # detecta SQLAlchemy y nunca llegan a la BD (p. ej. el flag avatar_correlated
+    # que escribe identity/resolver.py tras puntuar las entidades).
+    metadata_info = Column(MutableDict.as_mutable(JSONB), default=dict)
 
     # Identity Confidence Score (0.0 to 1.0)
     confidence = Column(Float, default=0.5, nullable=False)

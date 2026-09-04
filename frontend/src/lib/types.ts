@@ -124,6 +124,65 @@ export interface GraphResponse {
 }
 
 // ---------------------------------------------------------------------
+// Consola en vivo — eventos del EventBus (backend/app/core/events.py)
+// ---------------------------------------------------------------------
+
+/**
+ * Un evento del stream SSE.
+ *
+ * Convención del backend: los eventos de progreso viajan con `type: "log"` y
+ * llevan la etapa en `phase` (`init`, `round_N`, `pivot`, `progress`,
+ * `complete`, `agent_*`). Los de herramienta y de cierre usan un `type` propio
+ * (`tool_start`, `tool_complete`, `tool_error`, `investigation_complete`,
+ * `investigation_error`) y no traen `phase`.
+ */
+export interface StreamLog {
+  type: string;
+  message: string;
+  timestamp: number;
+  tool?: string;
+  phase?: string;
+  findings_count?: number;
+  error?: string;
+}
+
+// ---------------------------------------------------------------------
+// Métricas comparativas (backend/app/api/v1/metrics.py)
+// ---------------------------------------------------------------------
+
+export interface EngineMetrics {
+  count: number;
+  avg_execution_time: number;
+  avg_entities: number;
+  avg_clusters: number;
+  avg_risk_score: number;
+}
+
+export interface MetricsComparison {
+  summary: {
+    total_investigations: number;
+    rule_based: EngineMetrics;
+    agentic: EngineMetrics;
+  };
+  latex_table: string;
+  investigations_sample: Array<{
+    id: string;
+    strategy: string;
+    execution_time: number;
+    entities_count: number;
+    risk_score: number;
+    created_at: string;
+  }>;
+}
+
+export interface HealthStatus {
+  status: string;
+  service: string;
+  ai_enabled: boolean;
+  llm_model: string | null;
+}
+
+// ---------------------------------------------------------------------
 // Payloads de entrada
 // ---------------------------------------------------------------------
 

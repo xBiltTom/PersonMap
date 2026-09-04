@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { EntityData } from "@/lib/types";
-import { Search, ExternalLink, Filter, CheckCircle, Clock } from "lucide-react";
+import { Search, ExternalLink, CheckCircle, Clock } from "lucide-react";
 
 export function FindingsTable({ entities }: { entities: EntityData[] }) {
   const [search, setSearch] = useState("");

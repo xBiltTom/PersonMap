@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Column, DateTime, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -22,7 +23,7 @@ class Target(Base):
     # Optional description for LLM reasoning / context
     description = Column(Text, nullable=True)
 
-    extra_data = Column(JSONB, default=dict)
+    extra_data = Column(MutableDict.as_mutable(JSONB), default=dict)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     investigations = relationship("Investigation", back_populates="target", cascade="all, delete-orphan")
