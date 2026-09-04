@@ -29,14 +29,14 @@ Estados: 🟢 operativa · 🟡 degradada · 🔴 muerta · ⚪ evaluada, no ado
 | Fuente | Endpoint / dato | Key | Estado | Última verificación | Usada por |
 |---|---|---|---|---|---|
 | **WhatsMyName** | `wmn-data.json` bundleado, 716 sitios | No | 🟢 | 2026-09-03 | `username_finder` |
-| **XposedOrNot** | `api.xposedornot.com/v1/check-email/{email}` | No | 🟢 | 2026-09-03 | `breach_checker` |
-| **OpenAlex** | API de autores y trabajos | No | 🟢 | 2026-09-03 | `academic_finder` |
-| **Gravatar** | Perfil por hash MD5 del correo | No | 🟢 | 2026-09-03 | `gravatar_deep`, `email_enumerator` |
-| **Keybase** | API pública de resolución de identidad | No | 🟢 | 2026-09-03 | `keybase_resolver` |
-| **MediaWiki** | API de contribuciones | No | 🟢 | 2026-09-03 | `wikipedia_edits` |
-| **GitHub** | API pública sin autenticar | No | 🟢 | 2026-09-03 | `github_deep_scanner`, `email_checker` |
+| **XposedOrNot** | `api.xposedornot.com/v1/check-email/{email}` | No | 🟢 | 2026-09-04 | `breach_checker` |
+| **OpenAlex** | API de autores y trabajos | No | 🟢 | 2026-09-04 | `academic_finder` |
+| **Gravatar** | Perfil por hash MD5 del correo | No | 🟢 | 2026-09-04 | `gravatar_deep`, `email_enumerator` |
+| **Keybase** | API pública de resolución de identidad | No | 🟢 | 2026-09-04 | `keybase_resolver` |
+| **MediaWiki** | API de contribuciones | No | 🟢 | 2026-09-04 | `wikipedia_edits` |
+| **GitHub** | API pública sin autenticar | No | 🟢 | 2026-09-04 | `github_deep_scanner`, `email_checker` |
 | **Tavily** | `POST api.tavily.com/search` | Sí (gratuita) | 🟢 | 2026-09-04 | `search_dorker` — motor principal. 1.000 créditos/mes; 1 crédito por búsqueda `basic`, 2 por `advanced` |
-| **DuckDuckGo** | Scraping HTML de resultados | No | 🟡 | 2026-09-03 | `search_dorker` — motor de respaldo automático |
+| **DuckDuckGo** | Scraping HTML de resultados | No | 🟡 | 2026-09-04 | `search_dorker` — motor de respaldo automático. Responde HTTP 202, no 200 |
 | **Google (Scholar/YouTube)** | Endpoints públicos sin key | No | 🟡 | 2026-09-03 | `google_account_osint` — el `lookup` de Gmail es históricamente inestable |
 
 ### Trampas verificadas en producción
@@ -72,8 +72,8 @@ conforme a la restricción del proyecto.
 
 | Fuente | Endpoint | Estado | Aporta | Fase |
 |---|---|---|---|---|
-| **Hudson Rock Cavalier** | `cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email\|username\|domain` | 🟢 HTTP 200 con datos reales | Logs de infostealer: `date_compromised`, `computer_name`, `operating_system`, `malware_path`, `total_user_services`. Límite **50 req/10 s por host** | 4 |
-| **crt.sh** | `crt.sh/?q={dominio}&output=json` | 🟢 HTTP 200 | Certificate transparency → dominios y subdominios personales | 4 |
+| **Hudson Rock Cavalier** | `cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email\|username\|domain` | 🟢 HTTP 200 (re-verificado 2026-09-04) | Logs de infostealer: `date_compromised`, `computer_name`, `operating_system`, `malware_path`, `total_user_services`. Límite **50 req/10 s por host** | 4 |
+| **crt.sh** | `crt.sh/?q={dominio}&output=json` | 🟡 **degradado** (2026-09-04: 1 de 4 peticiones HTTP 200, tres 502) | Certificate transparency → dominios y subdominios personales. **Exige reintentos con espera; no es fiable para una demo en vivo** | 4 |
 | **Avatar GitHub** | `github.com/{user}.png` | 🟢 HTTP 200, `image/jpeg` | Cosecha activa de avatares | 5 |
 | **Avatar Gravatar** | `gravatar.com/avatar/{md5}?d=404` | 🟢 HTTP 200 (404 si no existe) | Cosecha activa de avatares; el `d=404` da señal binaria limpia | 5 |
 | **Maigret `data.json`** | `raw.githubusercontent.com/soxoj/maigret/main/maigret/resources/data.json` | 🟢 MIT | **3653 sitios** (693 `disabled` → **2960 utilizables**; 278 con `protection` TLS a saltar; 1156 con `alexaRank`; 163 con `regexCheck`) | 4 |
@@ -123,3 +123,5 @@ trae el dato o la técnica, reimplementados sobre `app/tools/http_client.py`.
 |---|---|---|
 | 2026-09-03 | Revisión inicial del ecosistema para el plan de ejecución | Se verificaron en vivo Hudson Rock, crt.sh y los patrones directos de avatar (todos 🟢, sin key). Se midió el dataset de Maigret (3653 sitios). Se descartaron `ignorant` por motivos éticos y HIBP/Brave/SerpApi por coste |
 | 2026-09-04 | Integración de Tavily como motor de dorking | 🟢 operativa. Dos trampas detectadas solo al probar contra la API real, no en los tests con mock: `exact_match` devuelve cero resultados siempre, y la búsqueda es semántica (un correo inexistente devuelve la portada de su dominio). Ambas mitigadas en `search_dorker`; ver "Trampas verificadas en producción" |
+| 2026-09-04 | Barrido completo al abrir la **Fase 3** (`hybrid`) | 🟢 XposedOrNot, OpenAlex, Gravatar (404 limpio), Keybase, MediaWiki, GitHub API y avatar, Hudson Rock, Tavily y el `data.json` de Maigret (1,66 MB). 🟡 DuckDuckGo responde **202**, no 200. 🔴→🟡 **crt.sh se ha degradado**: 1 de 4 peticiones dio 200 y tres dieron 502, lo que obliga a reintentos en la Fase 4.4 |
+| 2026-09-04 | Revisión de reutilización para la Fase 3 | **No se adoptó ningún proyecto externo, y es la conclusión correcta.** El híbrido es orquestación interna: encadena dos motores que ya existían en el repositorio. Lo único importable habría sido un patrón de orquestación de agentes, y traerse un framework (LangGraph, CrewAI y similares) habría sustituido la arquitectura `BaseTool` + `ToolRegistry` en lugar de aprovecharla — justamente lo que el principio de no reinventar la rueda pretende evitar. La referencia seguida es §5.3 de `ANALISIS_OSINT_MUNDIAL.md`, corregida a "tercera estrategia" en vez de reemplazo |

@@ -13,11 +13,11 @@
 | 1 · Hacer visible lo que ya existe | ✅ **Completada** | `3021b53` |
 | — · Tavily para dorking *(añadido a petición)* | ✅ **Completada** | `3021b53`, `6a85719` |
 | 2 · Corregir el modelo de identidad | ✅ **Completada** | `941b5a5`, `d3cc158` |
-| 3 · `hybrid` como tercera estrategia | ⬜ Pendiente | — |
+| 3 · `hybrid` como tercera estrategia | ✅ **Completada** | `da1cb85` |
 | 4 · Cobertura de fuentes | ⬜ Pendiente | — |
 | 5 · Cosecha activa de avatares | ⬜ Pendiente | — |
 
-**Línea base al retomar:** 71 tests en ~23 s sin red · `tsc` limpio · backend `:8000` y frontend `:3000`.
+**Línea base al retomar:** 94 tests en ~25 s sin red · `tsc` limpio · backend `:8000` y frontend `:3000`.
 
 ### Cómo retomar en otra sesión
 
@@ -65,6 +65,32 @@ fuente nueva debe verificarse en vivo con `curl` antes de darla por integrada.**
 descubrir que el backend servía código viejo. Reiniciar a mano y confirmar en el
 log que el arranque completó.
 
+**`npx next lint` ya no existe** (Next 16 lo retiró: devuelve *"Invalid project
+directory provided, no such directory: .../lint"*). El comando real es
+`npx eslint src`, y su **línea base son 19 errores preexistentes** (`no-explicit-any`
+y `react-hooks/set-state-in-effect`, sobre todo en `DigitalMapGraph`). No son
+regresiones: para saber si una tanda de cambios introduce alguno, comparar contra
+esa cifra con `git stash`.
+
+**La capa IA se puede verificar en vivo sin clave de proveedor.** LiteLLM
+respeta `OPENAI_BASE_URL`, así que un servidor OpenAI-compatible de tres
+funciones en `localhost` permite ejercitar el camino HTTP completo — esquema de
+funciones, parseo de `tool_calls`, secuencia `assistant`/`tool` del segundo
+turno — que es justo donde los mocks no llegan. **No sustituye a una prueba
+contra un proveedor real** (la lección de Tavily fue que el fallo estaba en el
+comportamiento del proveedor, no en el formato), pero cubre todo lo demás.
+
+**crt.sh está degradado y hay que planificarlo.** Medido el 2026-09-04: 1 de 4
+peticiones devolvió HTTP 200 y las otras tres, 502. Afecta directamente a la
+Fase 4.4: sin reintentos con espera no se puede depender de él, y en una
+sustentación en vivo es una fuente que se cae delante del jurado.
+
+**Los eventos de progreso de las tools no llevan capa.** `username_finder`
+publica su `phase: "progress"` directamente al bus, sin pasar por el motor, así
+que en una corrida híbrida esas líneas salen sin `layer`. La consola les reserva
+el hueco del distintivo para no romper la alineación. Si en la Fase 4 se cablea
+la barra de progreso real (M2), conviene propagar la capa hasta la tool.
+
 ### Correcciones al plan de las fases pendientes
 
 - **Fase 4 — el presupuesto de concurrencia es bloqueante, no una nota.** Medido:
@@ -79,6 +105,15 @@ log que el arranque completó.
   modelo. Ahora entra como una señal más, ponderada.
 - **La señal semántica está lista pero inactiva.** `enrichment.py` la calcula si
   se configura `LLM_EMBEDDING_MODEL`; sin él degrada a cotejo léxico.
+- **Fase 4 — el filtro anti-repetición del híbrido depende de la clave de
+  ejecución.** `RuleEngine._get_tool_run_key` es hoy la única frontera entre "el
+  híbrido refina" y "el híbrido repite el barrido entero". Toda tool nueva debe
+  declarar bien sus `required_inputs`, o su clave no distinguirá dos llamadas
+  distintas y la capa 2 saltará trabajo que sí hacía falta (o repetirá el que no).
+- **El expediente `d2c282f8` es dato de verificación, no muestra.** Se creó para
+  probar la capa 2 contra un LLM simulado, y su hallazgo de GitHub lo pidió el
+  stub, no un modelo real. Conviene borrarlo antes de recoger las cifras
+  definitivas del artículo.
 
 ---
 
@@ -309,15 +344,73 @@ Introducir Alembic con **baseline aplanado**: `alembic stamp head` sobre la BD e
 
 ---
 
-## Fase 3 — `hybrid` como tercera estrategia ⬜ SIGUIENTE
+## Fase 3 — `hybrid` como tercera estrategia ✅ COMPLETADA (`da1cb85`)
 
-El análisis (§5.3) recomienda un orquestador híbrido: `rule_engine` siempre primero, y el LLM como capa de refinamiento. **Pero implementarlo como reemplazo del `if/else` de `orchestrator.py:44-53` destruiría una feature existente**: el commit `f2ab953` añadió el apartado de comparativas de motores, y si el rule engine corre siempre, `rules` y `agentic` dejan de ser condiciones independientes — se pierde el diseño experimental más limpio que tiene el proyecto.
+> **Resultado medido** contra la API real: una investigación `hybrid` con la capa
+> IA activa registra `engine_used: hybrid`, 13 hallazgos heurísticos + 1 de
+> refinamiento, **1 llamada del LLM descartada** por haberla hecho ya el barrido,
+> y **1 entidad que solo existe gracias a la IA** (7,1 % del total). Sin LLM, la
+> misma estrategia registra `engine_used: rules` y `hybrid_degraded: true`.
 
-**Corrección: añadir, no reemplazar.** Tres estrategias seleccionables: `rules`, `agentic`, `hybrid`. Coste marginal cero y la tabla de resultados pasa de dos filas a tres.
+El análisis (§5.3) recomienda un orquestador híbrido: `rule_engine` siempre primero, y el LLM como capa de refinamiento. **Pero implementarlo como reemplazo del `if/else` de `orchestrator.py` destruiría una feature existente**: el commit `f2ab953` añadió el apartado de comparativas de motores, y si el rule engine corre siempre, `rules` y `agentic` dejan de ser condiciones independientes — se pierde el diseño experimental más limpio que tiene el proyecto.
 
-El **arbitraje de clusters ambiguos por LLM** (zona 0.40–0.70) queda como condición **opcional y logueada**, nunca por defecto: es no determinista, y en una demo en vivo significa que la misma entrada puede dar clusters distintos delante del jurado.
+**Se añadió, no se reemplazó.** Cuatro valores de `strategy` (`auto`, `rule_based`, `agentic`, `hybrid`) y tres motores comparables. Los dos brazos anteriores no se tocaron.
 
-**Frontend emparejado:** la consola distingue visualmente las dos capas (heurística vs refinamiento IA); la vista comparativa pasa de 2 a 3 columnas. Nota: hoy `EvaluationView` clasifica `strategy == "auto"` como agéntico aunque el orquestador haya caído al rule engine por no haber LLM — esa métrica hay que redefinirla.
+### 3.1 El motor de dos capas
+
+`backend/app/engine/hybrid_engine.py`:
+
+- **Capa 1** — `rule_engine.collect_findings()`, la barrida heurística completa. Se extrajo de `execute_investigation` precisamente para poder encadenarla sin persistir.
+- **Capa 2** — el LLM recibe un **resumen agregado** (hallazgos por tipo, plataformas con presencia, identificadores tras pivotar, herramientas ya ejecutadas y las que no llegaron a ejecutarse) y pide solo lo que falta. No se le manda el volcado de hallazgos: gastaría contexto sin mejorar la decisión de dónde mirar.
+- **Persistencia única al final**, con los hallazgos de las dos capas juntos. Si cada capa persistiera por su cuenta, la deduplicación no vería a la otra y un perfil hallado por ambas produciría dos entidades.
+
+**Lo que distingue al híbrido del agente autónomo es el filtro anti-repetición.** `HybridEngine._run_key()` reconstruye la misma clave de ejecución que usó la capa 1 (`RuleEngine._get_tool_run_key`), de modo que una llamada ya cubierta se descarta sin gastar red. Sin ese filtro el híbrido sería el agente corriendo dos veces.
+
+### 3.2 `engine_used`: la métrica que estaba mal
+
+`EvaluationView` clasificaba `strategy == "auto"` como agéntico aunque el orquestador hubiera caído al rule engine por no haber LLM. Corregido en las dos puntas:
+
+- El orquestador anota `engine_used` — el motor que **realmente** corrió — junto a `strategy_used`.
+- `metrics.py:engine_of()` agrupa por ese campo y, para los expedientes anteriores a esta fase, lo reconstruye desde `ai_enhanced`, que ya registraba si había LLM en el momento de ejecutar. Sobre las 8 investigaciones existentes, las 8 se reclasificaron a `rules`.
+- Una `hybrid` sin LLM **no se acredita al híbrido**: es una corrida de reglas con otro nombre, y así se contabiliza.
+
+`InvestigationCreate.strategy` pasó de `str` libre a `Literal`. Antes una errata (`"hybird"`) devolvía HTTP 201 y caía al motor de reglas en silencio, contaminando la muestra con una condición que nadie pidió; ahora devuelve 422.
+
+### 3.3 Arbitraje por LLM — opcional, apagado y sin contaminar el modelo
+
+`backend/app/identity/arbitration.py`, tras `HYBRID_LLM_ARBITRATION` (por defecto `false`). Somete al LLM los hallazgos de la franja 0.40–0.70 y **nunca sobrescribe `identity_score`**: escribe el veredicto en `metadata_info["llm_arbitration"]` y el resolutor lo lee como *puntuación efectiva* para agrupar. Así el histograma y la curva de calibración siguen midiendo Fellegi-Sunter puro, y el expediente muestra las dos cifras (`0.62 del modelo → 0.72 efectivo`) con la justificación y el modelo que la emitió.
+
+Los veredictos aplican 0.72 / 0.38, justo al otro lado del umbral: el arbitraje decide de qué lado cae un caso fronterizo, no cuánta certeza hay. Fingir un 0.99 sería el mismo atajo que se le quitó al avatar en la Fase 2.
+
+### 3.4 Frontend emparejado
+
+- **Selector de estrategia** con las cuatro opciones, cada una con su explicación, y **aviso previo** si el backend no tiene LLM: la estrategia degradará y quedará registrada como reglas.
+- **Consola**: cada evento viaja con `layer` (`heuristic` / `refinement`) y la consola pinta un distintivo `H` / `IA` con su leyenda **solo cuando la investigación tuvo dos capas** — en una corrida heurística marcaría todas las líneas igual y sería ruido.
+- **Cabecera del expediente**: motor real, aviso de híbrido degradado, y contador de hallazgos aportados en exclusiva por la IA.
+- **Tabla de hallazgos**: distintivo de capa por fila. Un perfil visto por las dos lleva los dos.
+- **`EvaluationView`**: las 4 tarjetas de dos cifras se sustituyeron por una tabla métrica × motor de tres columnas (con dos motores ya se leía mal; con tres, imposible), más un panel de **aportación de la capa IA** y la columna `engine_used` en el CSV.
+- **`lib/engines.ts`**: fuente única de la presentación de motores y capas, en la línea de `entityTypes.ts` (M1).
+
+### 3.5 Variables de entorno nuevas
+
+```bash
+# backend/.env — la capa 2 solo se activa si hay LLM configurado
+LLM_MODEL=gemini/gemini-2.0-flash
+LLM_API_KEY=...
+
+HYBRID_MAX_REFINEMENT_TURNS=2      # turnos de la capa de refinamiento
+HYBRID_LLM_ARBITRATION=false       # arbitraje de la franja ambigua (no determinista)
+HYBRID_ARBITRATION_MAX_ENTITIES=12 # tope de hallazgos a arbitrar por investigación
+```
+
+### 3.6 Qué queda sin verificar
+
+La capa 2 se probó **en vivo contra un servidor OpenAI-compatible local**
+(HTTP real a través de LiteLLM: esquema de funciones, `tool_calls`, secuencia
+`assistant`/`tool`), no contra un proveedor de verdad, porque `.env` no tiene
+`LLM_MODEL`. Falta una corrida con clave real —Gemini o Groq, ambos con nivel
+gratuito— para confirmar que el proveedor respeta el `tools` que se le envía.
+Es exactamente el hueco que dejó al descubierto el caso de Tavily.
 
 ---
 
@@ -430,9 +523,10 @@ Línea base: **16 passed** (~3 min). Tras la Fase 0 debe correr **sin Internet**
 
 **Frontend**
 ```bash
-cd frontend && npx tsc --noEmit && npx next lint
+cd frontend && npx tsc --noEmit && npx eslint src
 ```
-Línea base: `tsc` limpio.
+Línea base: `tsc` limpio; `eslint` con **19 errores preexistentes** (ver
+"Correcciones aprendidas"). `npx next lint` ya no existe en Next 16.
 
 **End-to-end por fase**
 1. Levantar backend (`uv run uvicorn app.main:app --reload`) y frontend (`pnpm dev`).
