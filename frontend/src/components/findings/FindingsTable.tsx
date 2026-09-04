@@ -11,10 +11,14 @@ import {
 import { IdentityEvidence } from "@/components/identity/IdentityEvidence";
 import { LAYER_META } from "@/lib/engines";
 
+/** Filas por página. Suficiente para desplazarse sin ahogar al navegador. */
+const PAGE_SIZE = 50;
+
 export function FindingsTable({ entities }: { entities: EntityData[] }) {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(0);
 
   const toggleExpanded = (id: string) =>
     setExpanded((prev) => {
@@ -41,6 +45,17 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
     });
   }, [entities, search, filterType]);
 
+  // Paginación. Antes se renderizaban todas las filas de golpe, y con el
+  // catálogo ampliado a 3.400 sitios una sola investigación pasa de decenas a
+  // varios cientos de hallazgos: el navegador se atasca justo al abrir la
+  // pestaña delante del jurado.
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const visible = useMemo(
+    () => filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE),
+    [filtered, currentPage]
+  );
+
   // Los filtros se derivan de los tipos realmente presentes, así que un
   // `entity_type` nuevo del backend aparece solo y no quedan categorías vacías.
   const categories = useMemo(
@@ -59,7 +74,12 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
               type="text"
               placeholder="Buscar en hallazgos..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                // Volver al principio: quedarse en la página 7 de un resultado
+                // que ahora tiene 2 mostraría una tabla vacía sin explicación.
+                setPage(0);
+              }}
               className="bg-[#0b0f17] border border-[#1e293b] rounded-md pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-sky-500 w-56 font-mono"
             />
           </div>
@@ -70,7 +90,10 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
             <button
               key={cat.id}
               type="button"
-              onClick={() => setFilterType(cat.id)}
+              onClick={() => {
+                setFilterType(cat.id);
+                setPage(0);
+              }}
               title={cat.description}
               aria-pressed={filterType === cat.id}
               className={`text-[11px] font-mono px-2.5 py-1 rounded transition-colors whitespace-nowrap cursor-pointer border ${
@@ -106,7 +129,7 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                 </td>
               </tr>
             ) : (
-              filtered.map((item) => {
+              visible.map((item) => {
                 const meta = getEntityTypeMeta(item.entity_type);
                 const Icon = getFindingIcon(item.platform, item.entity_type);
                 return (
@@ -257,6 +280,46 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
           </tbody>
         </table>
       </div>
+
+      {filtered.length > 0 && (
+        <div className="px-4 py-3 border-t border-[#1e293b] flex flex-wrap items-center justify-between gap-3 text-[11px] font-mono">
+          <span className="text-slate-400">
+            Mostrando{" "}
+            <span className="text-slate-200">
+              {currentPage * PAGE_SIZE + 1}-
+              {Math.min((currentPage + 1) * PAGE_SIZE, filtered.length)}
+            </span>{" "}
+            de <span className="text-slate-200">{filtered.length}</span> hallazgos
+            {filtered.length !== entities.length && (
+              <span className="text-slate-500"> (de {entities.length} totales)</span>
+            )}
+          </span>
+
+          {totalPages > 1 && (
+            <nav className="flex items-center gap-2" aria-label="Paginación de hallazgos">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={currentPage === 0}
+                className="px-2.5 py-1 rounded border border-[#2b3a52] bg-[#182334] text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#223148] transition-colors cursor-pointer"
+              >
+                Anterior
+              </button>
+              <span className="text-slate-400" aria-live="polite">
+                Página {currentPage + 1} de {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={currentPage >= totalPages - 1}
+                className="px-2.5 py-1 rounded border border-[#2b3a52] bg-[#182334] text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#223148] transition-colors cursor-pointer"
+              >
+                Siguiente
+              </button>
+            </nav>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -14,7 +14,10 @@ class EmailEnumeratorTool(BaseTool):
     """
 
     name = "email_enumerator"
-    description = "Chequeo pasivo y silencioso de registro de email en 20+ plataformas masivas (Spotify, Discord, GitHub, Duolingo, etc.)"
+    description = (
+        "Chequeo pasivo de registro de correo en plataformas masivas mediante sus "
+        "endpoints de validación de alta (Spotify, Discord, GitHub, Duolingo, Steam...)"
+    )
     category = ToolCategory.EMAIL
     required_inputs = ["email"]
 
@@ -36,21 +39,13 @@ class EmailEnumeratorTool(BaseTool):
                     self._check_twitter(client, clean_email),
                     self._check_github(client, clean_email),
                     self._check_duolingo(client, clean_email),
-                    self._check_pinterest(client, clean_email),
                     self._check_firefox(client, clean_email),
-                    self._check_wordpress(client, clean_email),
-                    self._check_patreon(client, clean_email),
                     self._check_chess(client, clean_email),
-                    self._check_buymeacoffee(client, clean_email),
-                    self._check_gravatar(client, clean_email),
                     self._check_lastpass(client, clean_email),
                     self._check_adobe(client, clean_email),
                     self._check_steam(client, clean_email),
                     self._check_strava(client, clean_email),
                     self._check_tumblr(client, clean_email),
-                    self._check_vimeo(client, clean_email),
-                    self._check_dockerhub(client, clean_email),
-                    self._check_quora(client, clean_email),
                 ]
 
                 results = await asyncio.gather(*probes, return_exceptions=True)
@@ -145,18 +140,6 @@ class EmailEnumeratorTool(BaseTool):
             pass
         return None
 
-    async def _check_pinterest(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = f"https://api.pinterest.com/v3/register/email/?email={email}"
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("data", {}).get("exists") is True or "already" in resp.text.lower():
-                    return {"platform": "Pinterest", "registered": True, "category": "images", "url": "https://pinterest.com"}
-        except Exception:
-            pass
-        return None
-
     async def _check_firefox(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
         try:
             url = "https://api.accounts.firefox.com/v1/account/status"
@@ -165,30 +148,6 @@ class EmailEnumeratorTool(BaseTool):
                 data = resp.json()
                 if data.get("exists") is True:
                     return {"platform": "Firefox Accounts", "registered": True, "category": "tech", "url": "https://firefox.com"}
-        except Exception:
-            pass
-        return None
-
-    async def _check_wordpress(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = f"https://public-api.wordpress.com/rest/v1.1/users/{email}/auth-options"
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                data = resp.json()
-                if not data.get("error") and ("has_password" in data or "username" in data):
-                    return {"platform": "WordPress", "registered": True, "category": "blog", "url": "https://wordpress.com"}
-        except Exception:
-            pass
-        return None
-
-    async def _check_patreon(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = "https://www.patreon.com/api/auth/email-check"
-            resp = await client.post(url, json={"email": email})
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("is_registered") is True:
-                    return {"platform": "Patreon", "registered": True, "category": "art", "url": "https://patreon.com"}
         except Exception:
             pass
         return None
@@ -202,29 +161,6 @@ class EmailEnumeratorTool(BaseTool):
                 # If available is False, the email is already in use
                 if data.get("available") is False:
                     return {"platform": "Chess.com", "registered": True, "category": "gaming", "url": "https://chess.com"}
-        except Exception:
-            pass
-        return None
-
-    async def _check_buymeacoffee(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = "https://www.buymeacoffee.com/api/v1/check-email"
-            resp = await client.post(url, json={"email": email})
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("status") is False or data.get("available") is False:
-                    return {"platform": "BuyMeACoffee", "registered": True, "category": "business", "url": "https://buymeacoffee.com"}
-        except Exception:
-            pass
-        return None
-
-    async def _check_gravatar(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            md5_hash = hashlib.md5(email.encode()).hexdigest()
-            url = f"https://en.gravatar.com/{md5_hash}.json"
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                return {"platform": "Gravatar", "registered": True, "category": "social", "url": f"https://gravatar.com/{md5_hash}"}
         except Exception:
             pass
         return None
@@ -283,32 +219,3 @@ class EmailEnumeratorTool(BaseTool):
             pass
         return None
 
-    async def _check_vimeo(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = "https://vimeo.com/log_in"
-            resp = await client.post(url, data={"email": email, "password": "DummyPassword123!"})
-            if resp.status_code in [400, 401, 200] and "already registered" in resp.text.lower():
-                return {"platform": "Vimeo", "registered": True, "category": "video", "url": "https://vimeo.com"}
-        except Exception:
-            pass
-        return None
-
-    async def _check_dockerhub(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = "https://hub.docker.com/v2/users/signup/"
-            resp = await client.post(url, json={"email": email, "username": "testdummy1234", "password": "Password123!"})
-            if resp.status_code in [400, 409] and "email" in resp.text.lower() and "already" in resp.text.lower():
-                return {"platform": "DockerHub", "registered": True, "category": "tech", "url": "https://hub.docker.com"}
-        except Exception:
-            pass
-        return None
-
-    async def _check_quora(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = "https://www.quora.com/web/signup/check_email"
-            resp = await client.post(url, data={"email": email})
-            if resp.status_code == 200 and ("false" in resp.text.lower() or "taken" in resp.text.lower()):
-                return {"platform": "Quora", "registered": True, "category": "social", "url": "https://quora.com"}
-        except Exception:
-            pass
-        return None
