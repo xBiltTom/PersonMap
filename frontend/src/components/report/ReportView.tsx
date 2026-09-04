@@ -2,6 +2,7 @@
 
 import { InvestigationData } from "@/lib/types";
 import { Lightbulb, FileCheck, Printer } from "lucide-react";
+import { AwarenessSurveyForm } from "@/components/report/AwarenessSurveyForm";
 
 export function ReportView({ investigation }: { investigation: InvestigationData }) {
   const score = investigation.risk_score || 0;
@@ -150,6 +151,11 @@ export function ReportView({ investigation }: { investigation: InvestigationData
           </div>
         </div>
       )}
+
+      {/* El cuestionario cierra el informe: se responde justo después de leer
+          los hallazgos y las recomendaciones, que es cuando el cambio de
+          percepción que el estudio mide acaba de producirse. */}
+      <AwarenessSurveyForm investigationId={investigation.id} />
     </div>
   );
 }

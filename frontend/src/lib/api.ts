@@ -10,6 +10,9 @@ import type {
   InvestigationData,
   MetricsComparison,
   StreamLog,
+  SurveyPayload,
+  SurveyRead,
+  SurveyStats,
 } from "@/lib/types";
 
 export const API_BASE =
@@ -162,4 +165,19 @@ export async function checkHealth(): Promise<HealthStatus> {
   const res = await fetch(`${API_ORIGIN}/health`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Backend respondió ${res.status}`);
   return (await res.json()) as HealthStatus;
+}
+
+// ---------------------------------------------------------------------
+// Encuesta de concientización
+// ---------------------------------------------------------------------
+
+export function createSurvey(payload: SurveyPayload): Promise<SurveyRead> {
+  return request<SurveyRead>("/surveys", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getSurveyStats(): Promise<SurveyStats> {
+  return request<SurveyStats>("/surveys/stats");
 }

@@ -9,8 +9,8 @@ import {
   BookOpen,
   Award,
 } from "lucide-react";
-import { getMetricsComparison } from "@/lib/api";
-import type { MetricsComparison } from "@/lib/types";
+import { getMetricsComparison, getSurveyStats } from "@/lib/api";
+import type { MetricsComparison, SurveyStats } from "@/lib/types";
 
 export function EvaluationView() {
   const [data, setData] = useState<MetricsComparison | null>(null);
@@ -226,50 +226,178 @@ export function EvaluationView() {
         </div>
 
         {showSurvey && (
-          <div className="mt-4 pt-4 border-t border-[#1e293b] space-y-4 animate-fade-in text-xs">
-            <div className="p-3.5 rounded bg-[#0c111a] border border-[#1e293b] space-y-2">
-              <span className="font-semibold text-slate-200 block">
-                1. ¿Creías que tu correo universitario o personal era inaccesible si no lo publicabas en tu bio?
-              </span>
-              <div className="flex gap-3 text-slate-400 font-mono">
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="q1" /> Sí, creía que era privado
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="q1" /> No, sabía que los commits git lo revelan
-                </label>
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded bg-[#0c111a] border border-[#1e293b] space-y-2">
-              <span className="font-semibold text-slate-200 block">
-                2. ¿Reutilizas el mismo alias de usuario en cuentas académicas, de ocio y redes sociales?
-              </span>
-              <div className="flex gap-3 text-slate-400 font-mono">
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="q2" /> Sí, en la mayoría de servicios
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="q2" /> No, mantengo identidades separadas
-                </label>
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded bg-[#0c111a] border border-[#1e293b] space-y-2">
-              <span className="font-semibold text-slate-200 block">
-                3. Tras visualizar tu mapa digital y las recomendaciones, ¿modificarás tus hábitos de privacidad?
-              </span>
-              <div className="flex gap-3 text-slate-400 font-mono">
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="q3" /> Sí, cambiaré alias y activaré 2FA
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="q3" /> No considero necesario cambiar nada
-                </label>
-              </div>
-            </div>
+          <div className="mt-4 pt-4 border-t border-[#1e293b] animate-fade-in">
+            <SurveyStatsPanel />
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Resultados agregados del cuestionario de concientización.
+ *
+ * Antes aquí había una maqueta de tres preguntas con radios sin estado ni
+ * envío. La captura se ha movido al informe de cada investigación (donde
+ * ocurre el momento pedagógico) y esta pantalla, que es la orientada al
+ * artículo, muestra el agregado.
+ */
+function SurveyStatsPanel() {
+  const [stats, setStats] = useState<SurveyStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    getSurveyStats()
+      .then((s) => {
+        setStats(s);
+        setError(null);
+      })
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : "No se pudieron cargar las respuestas")
+      )
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) {
+    return (
+      <p role="status" className="text-xs font-mono text-slate-400">
+        Cargando respuestas del cuestionario...
+      </p>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-rose-300">
+        <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+        <span>{error}</span>
+        <button
+          type="button"
+          onClick={load}
+          className="ml-2 underline hover:text-rose-200 cursor-pointer"
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
+
+  if (!stats || stats.total_responses === 0) {
+    return (
+      <p className="text-xs text-slate-400 leading-relaxed max-w-2xl">
+        Todavía no hay respuestas. El cuestionario se contesta al final del{" "}
+        <span className="text-slate-200 font-semibold">
+          Informe de Concientización
+        </span>{" "}
+        de cada investigación, justo después de que la persona ve su propia huella
+        digital. El delta pre/post que se agrega aquí es la métrica pedagógica del
+        estudio.
+      </p>
+    );
+  }
+
+  const delta = stats.delta_awareness;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatTile
+          label="Respuestas"
+          value={String(stats.total_responses)}
+          hint="Tamaño de muestra (n)"
+        />
+        <StatTile
+          label="Percepción previa"
+          value={stats.avg_pre_awareness.toFixed(2)}
+          hint="Media de exposición percibida ANTES de ver el expediente (escala 1-5)"
+        />
+        <StatTile
+          label="Percepción posterior"
+          value={stats.avg_post_awareness.toFixed(2)}
+          hint="Media DESPUÉS de ver el expediente (escala 1-5)"
+        />
+        <StatTile
+          label="Delta de concienciación"
+          value={`${delta > 0 ? "+" : ""}${delta.toFixed(2)}`}
+          hint="Diferencia post - pre. Es la variable dependiente del estudio."
+          highlight={delta > 0}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+        <PctBar
+          label="Reutiliza el mismo alias"
+          pct={stats.reused_alias_pct}
+          tone="bg-amber-400"
+        />
+        <PctBar
+          label="Ignoraba la fuga por commits"
+          pct={stats.ignorant_commit_leak_pct}
+          tone="bg-rose-400"
+        />
+        <PctBar
+          label="Cambiará sus hábitos"
+          pct={stats.will_change_habits_pct}
+          tone="bg-emerald-400"
+        />
+      </div>
+    </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  hint,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      title={hint}
+      className={`p-3.5 rounded-md border ${
+        highlight
+          ? "bg-emerald-500/10 border-emerald-500/30"
+          : "bg-[#0c111a] border-[#1e293b]"
+      }`}
+    >
+      <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+        {label}
+      </div>
+      <div
+        className={`text-xl font-bold font-mono mt-1 ${
+          highlight ? "text-emerald-300" : "text-slate-100"
+        }`}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function PctBar({ label, pct, tone }: { label: string; pct: number; tone: string }) {
+  return (
+    <div className="p-3.5 rounded-md bg-[#0c111a] border border-[#1e293b]">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-slate-300">{label}</span>
+        <span className="font-mono font-bold text-slate-100">{pct.toFixed(1)}%</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-[#161f2e] overflow-hidden">
+        <div
+          className={`h-full rounded-full ${tone}`}
+          style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+        />
       </div>
     </div>
   );

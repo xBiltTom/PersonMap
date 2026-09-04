@@ -16,6 +16,19 @@ export interface TargetData {
   created_at: string;
 }
 
+/**
+ * Desglose del modelo Fellegi-Sunter que persiste `app/engine/persistence.py`.
+ *
+ * Por cada señal hay dos claves: `<señal>` con el grado de acuerdo γ ∈ [0,1] y
+ * `<señal>_weight` con su peso en bits de log-verosimilitud (positivo si la
+ * señal apoya la atribución, negativo si la contradice). `log_likelihood_ratio`
+ * es la suma.
+ */
+export interface IdentityBreakdown {
+  log_likelihood_ratio?: number;
+  [signal: string]: number | undefined;
+}
+
 export interface EntityData {
   id: string;
   investigation_id: string;
@@ -27,6 +40,11 @@ export interface EntityData {
     bio?: string;
     university?: string;
     extracted_emails?: string[];
+    identity_breakdown?: IdentityBreakdown;
+    identity_score?: number;
+    snippet?: string;
+    rationale?: string;
+    engine?: string;
   };
   confidence: number;
   verified: boolean;
@@ -180,6 +198,39 @@ export interface HealthStatus {
   service: string;
   ai_enabled: boolean;
   llm_model: string | null;
+}
+
+// ---------------------------------------------------------------------
+// Encuesta de concientización (backend/app/api/v1/surveys.py)
+// Es la variable dependiente del estudio: mide el delta de percepción de
+// riesgo antes y después de ver el propio expediente.
+// ---------------------------------------------------------------------
+
+export interface SurveyPayload {
+  investigation_id: string;
+  /** Percepción de exposición ANTES de ver el expediente (1-5). */
+  pre_awareness: number;
+  /** Percepción DESPUÉS (1-5). */
+  post_awareness: number;
+  reused_alias: boolean;
+  knew_commit_leak: boolean;
+  will_change_habits: boolean;
+}
+
+export interface SurveyRead extends SurveyPayload {
+  id: string;
+  created_at: string;
+}
+
+export interface SurveyStats {
+  total_responses: number;
+  avg_pre_awareness: number;
+  avg_post_awareness: number;
+  delta_awareness: number;
+  reused_alias_pct: number;
+  /** % que NO sabía que sus commits filtran el correo. */
+  ignorant_commit_leak_pct: number;
+  will_change_habits_pct: number;
 }
 
 // ---------------------------------------------------------------------

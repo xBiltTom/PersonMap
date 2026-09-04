@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { createElement, useEffect, useState, useMemo, useCallback } from "react";
 import {
   ReactFlow,
   Background,
@@ -15,37 +15,18 @@ import "@xyflow/react/dist/style.css";
 import { GraphResponse } from "@/lib/types";
 import { getGraphmlUrl, getInvestigationGraph } from "@/lib/api";
 import {
-  User,
-  Mail,
-  GraduationCap,
-  FileText,
-  Search,
-  ExternalLink,
-  Globe,
-  Code2,
-  Briefcase,
-  AtSign,
-  Share2,
-  AlertTriangle,
-  Phone,
-  Filter,
-} from "lucide-react";
+  buildEntityFilters,
+  getEntityTypeMeta,
+  getFindingIcon,
+} from "@/lib/entityTypes";
+import { IdentityEvidence } from "@/components/identity/IdentityEvidence";
+import { User, ExternalLink, AlertTriangle, Filter } from "lucide-react";
 
-// Platform Icon Helper
-function getPlatformIcon(platform?: string | null, type?: string) {
-  const p = (platform || "").toLowerCase();
-  if (type === "breach") return <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />;
-  if (type === "phone") return <Phone className="w-3.5 h-3.5 text-violet-400" />;
-  if (p.includes("github")) return <Code2 className="w-3.5 h-3.5 text-slate-200" />;
-  if (p.includes("instagram")) return <Share2 className="w-3.5 h-3.5 text-pink-400" />;
-  if (p.includes("twitter") || p.includes("x_twitter")) return <AtSign className="w-3.5 h-3.5 text-sky-400" />;
-  if (p.includes("linkedin")) return <Briefcase className="w-3.5 h-3.5 text-blue-400" />;
-  if (p.includes("openalex") || type === "academic") return <GraduationCap className="w-3.5 h-3.5 text-emerald-400" />;
-  if (type === "email") return <Mail className="w-3.5 h-3.5 text-amber-400" />;
-  if (type === "document") return <FileText className="w-3.5 h-3.5 text-violet-400" />;
-  if (type === "search_mention") return <Search className="w-3.5 h-3.5 text-sky-300" />;
-  return <Globe className="w-3.5 h-3.5 text-slate-400" />;
-}
+/**
+ * Icono de un nodo. Delega en `lib/entityTypes`, que es la fuente única
+ * compartida con la tabla de hallazgos: así un `entity_type` nuevo se
+ * representa igual en ambas vistas sin tocar este fichero.
+ */
 
 // 1. Root Person Node Component
 function PersonRootNode({ data }: { data: any }) {
@@ -77,33 +58,41 @@ function PersonRootNode({ data }: { data: any }) {
 function CustomEntityNode({ data, selected }: { data: any; selected?: boolean }) {
   const isHighConf = Number(data.confidence || 0) >= 0.70;
   const isVerified = Boolean(data.verified);
-  const isBreach = data.entity_type === "breach";
-  const isPhone = data.entity_type === "phone";
-  const platform = String(data.platform || data.entity_type || "");
+  const entityType = data.entity_type as string | undefined;
+  const meta = getEntityTypeMeta(entityType);
+  const platform = String(data.platform || meta.label);
+  const icon = getFindingIcon(data.platform, entityType);
+
+  // El estilo del nodo lo decide su tipo, no solo la confianza. Antes solo
+  // `breach` y `phone` tenían tratamiento propio y los otros ocho tipos eran
+  // visualmente idénticos entre sí.
+  const nodeClass = selected
+    ? "border-sky-400 ring-2 ring-sky-500/30 bg-[#162030]"
+    : isVerified
+    ? `${meta.node} ring-1 ring-emerald-500/40`
+    : isHighConf
+    ? meta.node
+    : `${meta.node} opacity-85`;
 
   return (
     <div
-      className={`px-3 py-2.5 rounded-lg border transition-all min-w-[170px] max-w-[220px] shadow-lg ${
-        selected
-          ? "border-sky-400 ring-2 ring-sky-500/20 bg-[#162030]"
-          : isBreach
-          ? "border-rose-500/70 bg-[#210d14] ring-1 ring-rose-500/20 text-rose-200"
-          : isPhone
-          ? "border-violet-500/50 bg-[#161224]"
-          : isVerified
-          ? "border-emerald-500/50 bg-[#0f1b1a]"
-          : isHighConf
-          ? "border-[#2c3d59] hover:border-sky-500/50 bg-[#111722]"
-          : "border-[#1e293b] bg-[#111722] opacity-85"
-      }`}
+      className={`px-3 py-2.5 rounded-lg border transition-all min-w-[170px] max-w-[220px] shadow-lg ${nodeClass}`}
+      title={meta.description}
     >
       <Handle type="target" position={Position.Top} className="!bg-slate-500 !w-1.5 !h-1.5" />
       <Handle type="source" position={Position.Bottom} className="!bg-slate-500 !w-1.5 !h-1.5" />
 
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-1.5 truncate">
-          {getPlatformIcon(data.platform, data.entity_type)}
-          <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider truncate">
+          {/* `createElement` en vez de `<Icon/>`: la regla react-hooks/static-components
+              interpreta una variable capitalizada en JSX como un componente definido
+              durante el render. Aquí `Icon` es una referencia a un icono ya existente
+              que se elige por tipo/plataforma, no un componente nuevo. */}
+          {createElement(icon, {
+            className: `w-3.5 h-3.5 shrink-0 ${meta.accent}`,
+            "aria-hidden": true,
+          })}
+          <span className="text-[10px] font-mono text-slate-300 uppercase tracking-wider truncate">
             {platform}
           </span>
         </div>
@@ -130,6 +119,10 @@ function CustomEntityNode({ data, selected }: { data: any; selected?: boolean })
           {String(data.display_name)}
         </div>
       )}
+
+      <div className={`text-[9px] font-mono uppercase tracking-wide mt-1 ${meta.accent}`}>
+        {meta.label}
+      </div>
     </div>
   );
 }
@@ -217,14 +210,14 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
     window.open(getGraphmlUrl(investigationId), "_blank");
   };
 
-  const categories = [
-    { id: "all", label: "Todas las Capas" },
-    { id: "social_account", label: "Redes Sociales" },
-    { id: "email", label: "Correos" },
-    { id: "breach", label: "Brechas (Leaks)" },
-    { id: "phone", label: "Telefonía" },
-    { id: "academic", label: "Académico" },
-  ];
+  // Los filtros se derivan de los tipos presentes en el grafo. La lista fija
+  // anterior solo cubría 6 de los 10 tipos que el backend emite, dejando
+  // `image_match`, `google_account`, `academic_profile`, `search_mention` y
+  // `document` sin capa aislable.
+  const categories = useMemo(
+    () => buildEntityFilters(allNodes.map((n) => n.data?.entity_type)),
+    [allNodes]
+  );
 
   return (
     <div className="h-[680px] w-full panel-card relative flex flex-col overflow-hidden border border-[#1e293b]">
@@ -235,19 +228,35 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
             <Filter className="w-3.5 h-3.5" />
             <span>FILTRAR CAPAS:</span>
           </div>
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
-              className={`text-xs font-mono px-3 py-1 rounded-md transition-all whitespace-nowrap cursor-pointer ${
-                activeCategory === cat.id
-                  ? "bg-sky-500 text-white font-bold shadow-md shadow-sky-950 border border-sky-400"
-                  : "bg-[#151e2c] text-slate-300 hover:text-white hover:bg-[#1e2b3e] border border-[#2b3a52]"
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
+          {categories.map((cat) => {
+            const meta = getEntityTypeMeta(cat.id);
+            const CatIcon = cat.id === "all" ? null : meta.Icon;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setActiveCategory(cat.id)}
+                title={cat.description}
+                aria-pressed={activeCategory === cat.id}
+                className={`flex items-center gap-1.5 text-xs font-mono px-3 py-1 rounded-md transition-all whitespace-nowrap cursor-pointer border ${
+                  activeCategory === cat.id
+                    ? "bg-sky-500 text-white font-bold shadow-md shadow-sky-950 border-sky-400"
+                    : "bg-[#151e2c] text-slate-300 hover:text-white hover:bg-[#1e2b3e] border-[#2b3a52]"
+                }`}
+              >
+                {CatIcon && (
+                  <CatIcon
+                    className={`w-3.5 h-3.5 ${
+                      activeCategory === cat.id ? "text-white" : meta.accent
+                    }`}
+                    aria-hidden="true"
+                  />
+                )}
+                <span>{cat.label}</span>
+                <span className="opacity-70">{cat.count}</span>
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex items-center gap-3">
@@ -384,11 +393,15 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
               )}
             </div>
 
-            <div>
-              <span className="text-[10px] font-mono text-slate-500 uppercase block">Nivel de Confianza</span>
-              <span className="font-mono text-emerald-400 font-bold">
-                {intPercent(selectedNode.data.confidence)}
+            <div className="pt-3 border-t border-[#1e293b]">
+              <span className="text-[10px] font-mono text-slate-400 uppercase block mb-2">
+                ¿Por qué creemos que es esta persona?
               </span>
+              <IdentityEvidence
+                breakdown={selectedNode.data.metadata_info?.identity_breakdown}
+                identityScore={selectedNode.data.metadata_info?.identity_score}
+                finalConfidence={Number(selectedNode.data.confidence || 0)}
+              />
             </div>
 
             {selectedNode.data.metadata_info?.bio && (

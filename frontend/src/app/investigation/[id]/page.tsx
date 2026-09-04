@@ -150,7 +150,7 @@ export default function InvestigationDetailPage({
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-3 shrink-0 print:hidden">
             <div className="text-right">
               <div className="text-xs font-mono font-bold text-slate-200">
                 Score: {investigation.risk_score}/100
@@ -188,21 +188,28 @@ export default function InvestigationDetailPage({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-1 overflow-x-auto border-t border-[#1e293b] mt-5 pt-3">
+        <div
+          role="tablist"
+          aria-label="Secciones del expediente"
+          className="flex items-center gap-1 overflow-x-auto border-t border-[#1e293b] mt-5 pt-3 print:hidden"
+        >
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-mono transition-all whitespace-nowrap ${
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-mono transition-all whitespace-nowrap cursor-pointer border ${
                   isActive
-                    ? "bg-sky-500/20 text-sky-300 border border-sky-500/30 font-semibold"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-[#151e2c]"
+                    ? "bg-sky-500/20 text-sky-300 border-sky-500/30 font-semibold"
+                    : "text-slate-300 hover:text-slate-100 hover:bg-[#151e2c] border-transparent"
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
+                <Icon className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>{tab.label}</span>
               </button>
             );

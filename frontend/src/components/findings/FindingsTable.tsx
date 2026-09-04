@@ -1,40 +1,51 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { Fragment, useState, useMemo } from "react";
 import { EntityData } from "@/lib/types";
-import { Search, ExternalLink, CheckCircle, Clock } from "lucide-react";
+import { Search, ExternalLink, CheckCircle, ChevronDown, Clock } from "lucide-react";
+import {
+  buildEntityFilters,
+  getEntityTypeMeta,
+  getFindingIcon,
+} from "@/lib/entityTypes";
+import { IdentityEvidence } from "@/components/identity/IdentityEvidence";
 
 export function FindingsTable({ entities }: { entities: EntityData[] }) {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const filtered = useMemo(() => {
+    const needle = search.toLowerCase();
     return entities.filter((e) => {
       const matchSearch =
-        (e.display_name || "").toLowerCase().includes(search.toLowerCase()) ||
-        (e.value || "").toLowerCase().includes(search.toLowerCase()) ||
-        (e.platform || "").toLowerCase().includes(search.toLowerCase());
+        (e.display_name || "").toLowerCase().includes(needle) ||
+        (e.value || "").toLowerCase().includes(needle) ||
+        (e.platform || "").toLowerCase().includes(needle);
 
-      const matchType =
-        filterType === "all" ||
-        e.entity_type === filterType ||
-        (filterType === "social" && e.entity_type === "social_account") ||
-        (filterType === "academic" && e.entity_type === "academic");
+      // Antes había dos ramas muertas aquí: `filterType === "social"` (id que no
+      // existía en la lista de categorías) y una comparación de "academic"
+      // redundante con la igualdad de la línea anterior.
+      const matchType = filterType === "all" || e.entity_type === filterType;
 
       return matchSearch && matchType;
     });
   }, [entities, search, filterType]);
 
-  const categories = [
-    { id: "all", label: "Todos" },
-    { id: "social_account", label: "Redes / Cuentas" },
-    { id: "email", label: "Correos" },
-    { id: "breach", label: "Filtraciones / Brechas" },
-    { id: "phone", label: "Telefonía" },
-    { id: "academic", label: "Académico" },
-    { id: "search_mention", label: "Dorks / Menciones" },
-    { id: "document", label: "Documentos (DNI)" },
-  ];
+  // Los filtros se derivan de los tipos realmente presentes, así que un
+  // `entity_type` nuevo del backend aparece solo y no quedan categorías vacías.
+  const categories = useMemo(
+    () => buildEntityFilters(entities.map((e) => e.entity_type)),
+    [entities]
+  );
 
   return (
     <div className="panel-card overflow-hidden">
@@ -57,14 +68,18 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
           {categories.map((cat) => (
             <button
               key={cat.id}
+              type="button"
               onClick={() => setFilterType(cat.id)}
-              className={`text-[11px] font-mono px-2.5 py-1 rounded transition-colors whitespace-nowrap ${
+              title={cat.description}
+              aria-pressed={filterType === cat.id}
+              className={`text-[11px] font-mono px-2.5 py-1 rounded transition-colors whitespace-nowrap cursor-pointer border ${
                 filterType === cat.id
-                  ? "bg-sky-500/20 text-sky-400 border border-sky-500/30"
-                  : "bg-[#131b26] text-slate-400 hover:text-slate-200 border border-transparent"
+                  ? "bg-sky-500/20 text-sky-300 border-sky-500/40 font-semibold"
+                  : "bg-[#131b26] text-slate-300 hover:text-slate-100 border-[#233044]"
               }`}
             >
               {cat.label}
+              <span className="ml-1.5 opacity-70">{cat.count}</span>
             </button>
           ))}
         </div>
@@ -90,14 +105,26 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                 </td>
               </tr>
             ) : (
-              filtered.map((item) => (
-                <tr key={item.id} className="hover:bg-[#151e2c] transition-colors">
+              filtered.map((item) => {
+                const meta = getEntityTypeMeta(item.entity_type);
+                const Icon = getFindingIcon(item.platform, item.entity_type);
+                return (
+                <Fragment key={item.id}>
+                <tr className="hover:bg-[#151e2c] transition-colors">
                   <td className="py-3 px-4 whitespace-nowrap">
-                    <div className="font-semibold text-slate-200">
-                      {item.platform || item.entity_type}
-                    </div>
-                    <div className="text-[10px] font-mono text-slate-500 uppercase">
-                      {item.entity_type}
+                    <div className="flex items-center gap-2">
+                      <Icon className={`w-4 h-4 shrink-0 ${meta.accent}`} aria-hidden="true" />
+                      <div>
+                        <div className="font-semibold text-slate-200">
+                          {item.platform || meta.label}
+                        </div>
+                        <span
+                          title={meta.description}
+                          className={`inline-block mt-0.5 text-[10px] font-mono px-1.5 py-0.5 rounded border ${meta.badge}`}
+                        >
+                          {meta.label}
+                        </span>
+                      </div>
                     </div>
                   </td>
 
@@ -128,32 +155,60 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                   </td>
 
                   <td className="py-3 px-4 whitespace-nowrap text-center">
-                    <span
-                      className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded ${
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(item.id)}
+                      aria-expanded={expanded.has(item.id)}
+                      title="Ver por qué se atribuye este hallazgo al objetivo"
+                      className={`inline-flex items-center gap-1 font-mono text-[11px] font-bold px-2 py-0.5 rounded cursor-pointer transition-colors ${
                         item.confidence >= 0.70
-                          ? "bg-emerald-500/10 text-emerald-400"
+                          ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
                           : item.confidence >= 0.40
-                          ? "bg-sky-500/10 text-sky-400"
-                          : "bg-slate-800 text-slate-400"
+                          ? "bg-sky-500/10 text-sky-400 hover:bg-sky-500/20"
+                          : "bg-slate-800 text-slate-300 hover:bg-slate-700"
                       }`}
                     >
                       {Math.round(item.confidence * 100)}%
-                    </span>
+                      <ChevronDown
+                        className={`w-3 h-3 transition-transform ${
+                          expanded.has(item.id) ? "rotate-180" : ""
+                        }`}
+                        aria-hidden="true"
+                      />
+                    </button>
                   </td>
 
                   <td className="py-3 px-4 whitespace-nowrap text-right">
                     {item.verified ? (
                       <span className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-400">
-                        <CheckCircle className="w-3 h-3" /> Verificado
+                        <CheckCircle className="w-3 h-3" aria-hidden="true" /> Verificado
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-mono text-slate-500">
-                        <Clock className="w-3 h-3" /> Pendiente
+                      <span className="inline-flex items-center gap-1 text-[10px] font-mono text-slate-400">
+                        <Clock className="w-3 h-3" aria-hidden="true" /> Pendiente
                       </span>
                     )}
                   </td>
                 </tr>
-              ))
+                {expanded.has(item.id) && (
+                  <tr key={`${item.id}-evidence`} className="bg-[#0d131f]">
+                    <td colSpan={5} className="px-4 py-4">
+                      <div className="max-w-2xl">
+                        <div className="text-[10px] font-mono text-slate-400 uppercase mb-2">
+                          ¿Por qué creemos que es esta persona?
+                        </div>
+                        <IdentityEvidence
+                          breakdown={item.metadata_info?.identity_breakdown}
+                          identityScore={item.metadata_info?.identity_score}
+                          finalConfidence={item.confidence}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
+                );
+              })
             )}
           </tbody>
         </table>

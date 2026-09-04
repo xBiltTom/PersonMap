@@ -3,17 +3,27 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
+from app.models.investigation import Investigation
 from app.models.survey import AwarenessSurvey
 from app.schemas.survey import AwarenessSurveyCreate, AwarenessSurveyRead
 
 router = APIRouter(prefix="/surveys", tags=["Surveys"])
 
 
-@router.post("", response_model=AwarenessSurveyRead)
+@router.post("", response_model=AwarenessSurveyRead, status_code=201)
 async def submit_survey(
     payload: AwarenessSurveyCreate,
     db: AsyncSession = Depends(get_db),
 ):
+    # Sin esta comprobación, una investigation_id inexistente reventaba como
+    # IntegrityError de la clave foránea y el cliente recibía un 500 opaco.
+    exists = await db.get(Investigation, payload.investigation_id)
+    if not exists:
+        raise HTTPException(
+            status_code=404,
+            detail="La investigación indicada no existe; no se puede asociar la encuesta.",
+        )
+
     survey = AwarenessSurvey(
         investigation_id=payload.investigation_id,
         pre_awareness=payload.pre_awareness,

@@ -36,6 +36,24 @@ class Settings(BaseSettings):
     bing_visual_search_key: Optional[str] = None
     serpapi_key: Optional[str] = None
 
+    # --- Motor de búsqueda para dorking -------------------------------------
+    # Tavily (https://tavily.com) es un buscador diseñado para agentes: devuelve
+    # JSON estructurado con puntuación de relevancia, en lugar del HTML que hay
+    # que raspar de DuckDuckGo. Su nivel gratuito da 1.000 créditos al mes y una
+    # búsqueda `basic` cuesta 1 crédito.
+    #
+    # Sin clave, `search_dorker` cae automáticamente al scraping de DuckDuckGo,
+    # de modo que el sistema sigue funcionando al 100% sin configurar nada.
+    tavily_api_key: Optional[str] = None
+    # "basic" (1 crédito) o "advanced" (2 créditos, más contexto por resultado).
+    tavily_search_depth: str = "basic"
+    # Tope de dorks por investigación: acota el gasto de créditos, ya que el
+    # motor puede re-ejecutar la herramienta en rondas posteriores tras pivotar.
+    tavily_max_queries: int = 5
+    tavily_max_results: int = 8
+    # Sesga los resultados hacia el país del público objetivo. ISO en inglés.
+    tavily_country: Optional[str] = "peru"
+
     @property
     def ai_enabled(self) -> bool:
         """Returns True only if both model and API key are configured."""
@@ -45,6 +63,11 @@ class Settings(BaseSettings):
     def reverse_image_enabled(self) -> bool:
         """Returns True if at least one reverse-image-search backend is configured."""
         return bool(self.bing_visual_search_key or self.serpapi_key)
+
+    @property
+    def tavily_enabled(self) -> bool:
+        """True si hay clave de Tavily; si no, el dorker usa DuckDuckGo."""
+        return bool(self.tavily_api_key and self.tavily_api_key.strip())
 
     model_config = SettingsConfigDict(
         env_file=".env",
