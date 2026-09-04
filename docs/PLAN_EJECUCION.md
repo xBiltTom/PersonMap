@@ -18,7 +18,7 @@
 | 4 · Cobertura de fuentes | ⬜ Pendiente | — |
 | 5 · Cosecha activa de avatares | ⬜ Pendiente | — |
 
-**Línea base al retomar:** 110 tests en ~37 s sin red · `tsc` limpio · backend `:8000` y frontend `:3000`.
+**Línea base al retomar:** 112 tests en ~33 s sin red · `tsc` limpio · backend `:8000` y frontend `:3000`.
 
 ### Cómo retomar en otra sesión
 
@@ -572,6 +572,37 @@ distinguirlas**.
 De paso corrigió un dato que los documentos daban por bueno: el catálogo
 utilizable de WhatsMyName son **667** sitios, no 716. La cifra antigua contaba
 entradas NSFW, archivadas y sin `uri_check`.
+
+---
+
+## Ensayo de la sustentación (2026-09-04) ✅
+
+Recorrido completo de las seis pestañas, la impresión y el modo de fallo, con
+la demo a una semana. Cuatro defectos, corregidos en `b872679`:
+
+1. **El informe mostraba el Markdown en crudo.** La narrativa se insertaba tal
+   cual en un `div` con `whitespace-pre-line`: la pantalla que se imprime y se
+   le enseña a la persona investigada salía con los `###` y los `**` a la vista.
+   Nuevo `report/Markdown.tsx`, sin dependencia nueva: el texto lo escribe un
+   LLM y conviene controlar exactamente qué se renderiza (solo se construyen
+   elementos de React, nunca HTML, así que no hay vía de inyección).
+2. **La IA se inventaba la fecha** — el informe salía fechado "24 de mayo de
+   2024". Ahora se inyecta en el prompt, con prohibición explícita de inventar
+   datos. Verificado: `Fecha del análisis: 04/09/2026`.
+3. **La consola repetía ~20 líneas de "Progreso: X/500"** que la barra ya
+   muestra, sepultando los eventos que importan. Se filtran en cuanto hay barra;
+   el contador de la cabecera sigue contándolos todos para no mentir.
+4. **"1 hallazgos atribuidos"** — falta de concordancia en la pantalla de
+   identidad.
+
+Comprobado y **sin** defectos: las seis pestañas, el grafo, la barra de
+progreso en vivo, los 18 estilos de impresión, y las tres pantallas con el
+backend caído (portada, métricas y expediente muestran la causa y un reintento;
+ninguna finge ceros).
+
+> **Nota de método:** los cuatro defectos son de presentación y ninguno se veía
+> desde los tests. Un ensayo recorriendo la interfaz encuentra una clase de
+> fallo que la suite no cubre; conviene repetirlo antes de la sustentación real.
 
 ---
 
