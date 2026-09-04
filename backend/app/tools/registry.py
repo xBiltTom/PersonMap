@@ -12,6 +12,7 @@ from app.tools.social_verifier import SocialVerifierTool
 from app.tools.search_dorker import SearchDorkerTool
 from app.tools.academic_finder import AcademicFinderTool
 from app.tools.dni_lookup import DniLookupTool
+from app.tools.domain_finder import DomainFinderTool
 from app.tools.breach_checker import BreachCheckerTool
 from app.tools.infostealer_checker import InfostealerCheckerTool
 from app.tools.phone_lookup import PhoneLookupTool
@@ -48,6 +49,9 @@ class ToolRegistry:
         # Search Engines & Academic Footprint
         self.register(SearchDorkerTool())
         self.register(AcademicFinderTool())
+
+        # Infraestructura personal (Certificate Transparency)
+        self.register(DomainFinderTool())
 
         # National Identity & Telephony
         self.register(DniLookupTool())

@@ -357,6 +357,24 @@ def build_catalog(limit: Optional[int] = None) -> List[SiteCheck]:
     return catalog[:limit] if limit else catalog
 
 
+_platform_hosts_cache: Optional[set] = None
+
+
+def platform_hosts() -> set:
+    """
+    Todos los dominios que el catálogo conoce como plataformas.
+
+    Es la lista más completa que este proyecto tiene de "esto es un servicio, no
+    la web personal de alguien", y la usa `domain_finder` para no confundir
+    `github.com` con `juan.dev`. Reutilizar el catálogo evita mantener a mano una
+    segunda lista que se desincronizaría.
+    """
+    global _platform_hosts_cache
+    if _platform_hosts_cache is None:
+        _platform_hosts_cache = {_platform_key(s.url) for s in build_catalog()}
+    return _platform_hosts_cache
+
+
 def catalog_stats(catalog: List[SiteCheck]) -> Dict[str, Any]:
     """Cifras del catálogo, para la huella de configuración y la interfaz."""
     return {
