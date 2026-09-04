@@ -47,7 +47,8 @@ async def test_progress_events_carry_the_numbers_the_bar_needs():
     respx.route().mock(return_value=httpx.Response(404))
 
     tool = UsernameFinderTool()
-    total_sites = len(tool._load_sites())
+    catalog = tool._load_sites()
+    aplicables = sum(1 for s in catalog if s.accepts_username("usuario_de_prueba"))
 
     await tool.execute(
         TargetContext(
@@ -61,7 +62,11 @@ async def test_progress_events_carry_the_numbers_the_bar_needs():
 
     for event in events:
         assert isinstance(event["checked"], int)
-        assert event["total"] == total_sites
+        # El total es el de sitios que SE VAN A PEDIR, no el del catálogo: los
+        # descartados por formato de alias nunca gastan una petición, así que
+        # incluirlos dejaría la barra clavada sin llegar nunca al 100%.
+        assert event["total"] == aplicables
+        assert aplicables <= len(catalog)
         assert 0 <= event["pct"] <= 100
         assert event["subject"] == "usuario_de_prueba"
         assert event["tool"] == "username_finder"

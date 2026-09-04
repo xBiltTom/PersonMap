@@ -158,6 +158,25 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                         refinamiento por IA sería una capacidad invisible: el
                         expediente no distinguiría un hallazgo del barrido
                         determinista de uno que solo existe porque lo pidió el LLM. */}
+                    {/* Catálogo del que salió la comprobación. Es lo que
+                        permite decir en el expediente de dónde vino el dato, y
+                        medir en el artículo qué aportó cada dataset. */}
+                    {item.metadata_info?.catalog_source && (
+                      <div
+                        className="text-[9px] text-slate-500 mt-0.5"
+                        title={
+                          item.metadata_info.catalog_enriched_by
+                            ? "Sitio del catálogo curado de WhatsMyName, enriquecido con los metadatos de Maigret (formato de alias, ranking, cadenas de ausencia)."
+                            : "Catálogo del que procede la comprobación de esta plataforma."
+                        }
+                      >
+                        {item.metadata_info.catalog_source === "maigret"
+                          ? "maigret"
+                          : "whatsmyname"}
+                        {item.metadata_info.catalog_enriched_by ? " +maigret" : ""}
+                      </div>
+                    )}
+
                     {item.metadata_info?.engine_layers?.length ? (
                       <div className="flex items-center gap-1 mt-1">
                         {item.metadata_info.engine_layers.map((layer) => {

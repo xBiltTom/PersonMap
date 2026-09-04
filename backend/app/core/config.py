@@ -77,10 +77,24 @@ class Settings(BaseSettings):
     http_max_concurrency: int = 120
     http_max_per_host: int = 4
 
-    # Username enumeration: how many sites from the bundled WhatsMyName dataset
-    # to actually check per username. The dataset itself has 700+ entries;
-    # raise this as high as your infrastructure/rate-limits comfortably allow.
-    username_scan_max_sites: int = 500
+    # Enumeración de alias: cuántos sitios del catálogo unificado
+    # (WhatsMyName + Maigret, normalizados en memoria) se comprueban por alias.
+    #
+    # El catálogo va ordenado en dos niveles —primero los 667 sitios curados de
+    # WhatsMyName, después la cola larga de Maigret—, así que recortar por aquí
+    # nunca quita cobertura de las plataformas importantes: solo acorta la cola.
+    #
+    # Medido sobre `@torvalds`: 500 sitios → 89 hallazgos en 29 s;
+    # 3.396 sitios → 234 hallazgos en 152 s.
+    username_scan_max_sites: int = 3400
+
+    # Tope de alias distintos que se barren por investigación.
+    #
+    # Es el que acota de verdad la duración: cada alias nuevo cuesta un barrido
+    # entero del catálogo, y el pivoteo puede descubrir muchos. Con el catálogo
+    # completo, tres alias son ~7,5 min de barrido, que deja margen dentro de un
+    # presupuesto de 15 minutos para el resto de herramientas y la capa de IA.
+    username_scan_max_aliases: int = 3
     # Ranuras simultáneas de `username_finder`. Antes era una constante de 30 en
     # la propia tool, invisible desde la configuración y descuadrada con el tope
     # global. Se expone aquí porque es la palanca que decide cuánto dura una

@@ -75,6 +75,12 @@ export interface EntityData {
     engine?: string;
     /** Capa del motor híbrido que descubrió el hallazgo. */
     engine_layers?: EngineLayer[];
+    /** Catálogo del que salió la comprobación de esta plataforma. */
+    catalog_source?: "whatsmyname" | "maigret";
+    /** Catálogo que aportó metadatos extra (regexCheck, ranking, ausencias). */
+    catalog_enriched_by?: string | null;
+    /** Ranking de popularidad del sitio, si el catálogo lo conoce. */
+    site_rank?: number | null;
     /** Veredicto del arbitraje opcional por LLM (apagado por defecto). */
     llm_arbitration?: LlmArbitration;
   };
@@ -121,6 +127,11 @@ export interface InvestigationMetrics {
   config_username_scan_concurrency?: number;
   config_tools_registered?: number;
   config_search_engine?: string;
+  config_catalog_from_whatsmyname?: number;
+  config_catalog_from_maigret?: number;
+  config_catalog_enriched?: number;
+  config_catalog_with_regex_check?: number;
+  config_maigret_commit?: string | null;
   hybrid_heuristic_findings?: number;
   hybrid_refinement_findings?: number;
   hybrid_refinement_calls?: number;

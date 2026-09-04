@@ -35,8 +35,22 @@ def run_fingerprint() -> Dict[str, Any]:
             # se puede leer, se registra en cero y se ve en el análisis.
             catalog = {"available": 0, "scanned": 0}
 
+    breakdown: Dict[str, Any] = {}
+    if finder is not None and hasattr(finder, "catalog_breakdown"):
+        try:
+            breakdown = finder.catalog_breakdown()
+        except Exception:
+            breakdown = {}
+
     return {
         "tools_registered": len(tool_registry.get_all()),
+        # Composición del catálogo unificado. `maigret_commit` es lo que hace
+        # reproducible una medición: "N sitios, snapshot Maigret @ <sha>".
+        "catalog_from_whatsmyname": breakdown.get("from_whatsmyname", 0),
+        "catalog_from_maigret": breakdown.get("from_maigret", 0),
+        "catalog_enriched": breakdown.get("enriched", 0),
+        "catalog_with_regex_check": breakdown.get("with_regex_check", 0),
+        "maigret_commit": breakdown.get("maigret_commit"),
         "username_catalog_available": catalog.get("available", 0),
         "username_catalog_scanned": catalog.get("scanned", 0),
         "http_max_concurrency": settings.http_max_concurrency,

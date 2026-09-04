@@ -395,6 +395,10 @@ function logLineStyle(log: StreamLog): string {
   if (phase === "hybrid_degraded" || phase === "hybrid_refine_error") {
     return "text-amber-300";
   }
+  if (phase === "catalog_filter") {
+    // Trabajo ahorrado, no trabajo hecho: se distingue de una comprobación real.
+    return "text-emerald-300/80";
+  }
   if (phase === "hybrid_refine_skipped") {
     // Una llamada que el barrido ya cubrió y el motor ahorró: no es un error,
     // pero conviene que se distinga de una que sí se ejecutó.
