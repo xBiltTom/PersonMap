@@ -127,6 +127,11 @@ export function LiveConsole({
     }
   }, [logs]);
 
+  // El distintivo de capa solo tiene sentido cuando la investigación tiene DOS:
+  // en una corrida puramente heurística marcaría cada línea con la misma
+  // etiqueta y sería ruido. Se activa en cuanto aparece una línea de refinamiento.
+  const hasTwoLayers = logs.some((l) => l.layer === "refinement");
+
   const handleManualReconnect = () => {
     retriesRef.current = 0;
     setStatus("connecting");
@@ -146,6 +151,22 @@ export function LiveConsole({
         </div>
 
         <div className="flex items-center gap-3 text-[11px] font-mono">
+          {hasTwoLayers && (
+            <span className="flex items-center gap-2 text-slate-400">
+              <span className="flex items-center gap-1">
+                <span className="w-4 text-center text-[9px] font-bold px-1 py-px rounded border bg-sky-500/10 text-sky-300 border-sky-500/30">
+                  H
+                </span>
+                <span>Capa 1 · heurística</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-6 text-center text-[9px] font-bold px-1 py-px rounded border bg-purple-500/10 text-purple-300 border-purple-500/30">
+                  IA
+                </span>
+                <span>Capa 2 · refinamiento</span>
+              </span>
+            </span>
+          )}
           <span className="text-slate-400">{logs.length} eventos registrados</span>
           <ConnectionBadge
             status={status}
@@ -182,7 +203,13 @@ export function LiveConsole({
             Esperando inicio de la ejecución del motor...
           </div>
         ) : (
-          logs.map((log, i) => <LogLine key={`${log.timestamp}-${i}`} log={log} />)
+          logs.map((log, i) => (
+            <LogLine
+              key={`${log.timestamp}-${i}`}
+              log={log}
+              showLayer={hasTwoLayers}
+            />
+          ))
         )}
         <div ref={bottomRef} />
       </div>
@@ -267,7 +294,21 @@ function logLineStyle(log: StreamLog): string {
   if (phase === "pivot") {
     return "text-amber-300";
   }
-  if (phase === "agent_reasoning") {
+  if (phase === "hybrid_start" || phase === "hybrid_layer1_complete") {
+    return "text-slate-100 font-semibold";
+  }
+  if (phase === "hybrid_degraded" || phase === "hybrid_refine_error") {
+    return "text-amber-300";
+  }
+  if (phase === "hybrid_refine_skipped") {
+    // Una llamada que el barrido ya cubrió y el motor ahorró: no es un error,
+    // pero conviene que se distinga de una que sí se ejecutó.
+    return "text-slate-400 italic";
+  }
+  if (phase === "hybrid_arbitration_verdict" || phase === "hybrid_arbitration") {
+    return "text-fuchsia-300";
+  }
+  if (phase === "agent_reasoning" || phase === "hybrid_refine_reasoning") {
     return "text-purple-300 italic";
   }
   if (phase === "agent_start" || phase === "agent_tool_dispatch" || phase === "agent_concluded") {
@@ -285,7 +326,20 @@ function logLineStyle(log: StreamLog): string {
   return "text-slate-300";
 }
 
-function LogLine({ log }: { log: StreamLog }) {
+const LAYER_BADGE: Record<string, { text: string; className: string; title: string }> = {
+  heuristic: {
+    text: "H",
+    className: "bg-sky-500/10 text-sky-300 border-sky-500/30",
+    title: "Capa 1 · barrido heurístico determinista",
+  },
+  refinement: {
+    text: "IA",
+    className: "bg-purple-500/10 text-purple-300 border-purple-500/30",
+    title: "Capa 2 · refinamiento por IA sobre los huecos del barrido",
+  },
+};
+
+function LogLine({ log, showLayer = false }: { log: StreamLog; showLayer?: boolean }) {
   const timeStr = log.timestamp
     ? new Date(log.timestamp * 1000).toLocaleTimeString("es-ES", {
         hour12: false,
@@ -295,9 +349,21 @@ function LogLine({ log }: { log: StreamLog }) {
       })
     : "--:--:--";
 
+  const badge = log.layer ? LAYER_BADGE[log.layer] : undefined;
+
   return (
     <div className={`flex items-start gap-2.5 leading-relaxed font-mono ${logLineStyle(log)}`}>
       <span className="text-slate-500 shrink-0 select-none">[{timeStr}]</span>
+      {showLayer && (
+        <span
+          title={badge?.title}
+          className={`shrink-0 select-none w-7 text-center text-[9px] font-bold px-1 py-px rounded border ${
+            badge?.className ?? "border-transparent text-transparent"
+          }`}
+        >
+          {badge?.text ?? ""}
+        </span>
+      )}
       {log.tool && (
         <span className="text-sky-400 shrink-0 font-bold select-none">
           [{log.tool.toUpperCase()}]

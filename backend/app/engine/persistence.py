@@ -54,6 +54,7 @@ def dedupe_findings(findings: List[ToolFinding]) -> List[ToolFinding]:
     """
     deduped: Dict[Tuple[str, str, str], ToolFinding] = {}
     provenance: Dict[Tuple[str, str, str], List[str]] = {}
+    layers: Dict[Tuple[str, str, str], List[str]] = {}
 
     for f in findings:
         key = (
@@ -62,17 +63,30 @@ def dedupe_findings(findings: List[ToolFinding]) -> List[ToolFinding]:
             f.value.strip().rstrip("/").lower(),
         )
 
-        tool = str((f.metadata_info or {}).get("source_tool") or "").removeprefix("agent:")
+        tool = normalize_source_tool((f.metadata_info or {}).get("source_tool"))
         tools = provenance.setdefault(key, [])
         if tool and tool not in tools:
             tools.append(tool)
+
+        # Igual que con la procedencia por herramienta, la capa que produjo el
+        # hallazgo se acumula en lugar de sobrescribirse: el motor híbrido
+        # necesita saber si un perfil lo aportó solo la IA, solo el barrido
+        # heurístico, o los dos. Es la cifra con la que se defiende (o se
+        # descarta) el valor del refinamiento en la comparativa del artículo.
+        layer = str((f.metadata_info or {}).get("engine_layer") or "")
+        seen_layers = layers.setdefault(key, [])
+        if layer and layer not in seen_layers:
+            seen_layers.append(layer)
 
         current = deduped.get(key)
         if current is None or f.confidence > current.confidence:
             deduped[key] = f
 
     for key, winner in deduped.items():
-        winner.metadata_info = {**(winner.metadata_info or {}), "source_tools": provenance[key]}
+        merged = {**(winner.metadata_info or {}), "source_tools": provenance[key]}
+        if layers[key]:
+            merged["engine_layers"] = layers[key]
+        winner.metadata_info = merged
 
     return list(deduped.values())
 
@@ -181,15 +195,23 @@ def detect_relationship(a: Entity, b: Entity) -> Tuple[Optional[str], float]:
     return None, 0.0
 
 
-def _are_enumeration_siblings(a: Entity, b: Entity) -> bool:
+def normalize_source_tool(source_tool: Optional[str]) -> str:
     """
-    True si ambas entidades salieron de la misma tool de enumeración.
+    Nombre de herramienta sin el prefijo del motor que la despachó.
 
-    El `source_tool` puede venir prefijado por el agente autónomo (`agent:<tool>`),
-    de ahí la normalización.
+    El `source_tool` puede venir etiquetado por el motor que hizo la llamada
+    (`agent:username_finder`). La comparación tiene que hacerse sobre el nombre
+    desnudo: si un prefijo nuevo se colara sin normalizar, dos hermanos de
+    enumeración dejarían de reconocerse como tales y volverían las aristas
+    tautológicas `same_username` que en su día inflaron el grafo a 3.835 aristas.
     """
-    tool_a = (a.source_tool or "").removeprefix("agent:")
-    tool_b = (b.source_tool or "").removeprefix("agent:")
+    return (source_tool or "").rsplit(":", 1)[-1]
+
+
+def _are_enumeration_siblings(a: Entity, b: Entity) -> bool:
+    """True si ambas entidades salieron de la misma tool de enumeración."""
+    tool_a = normalize_source_tool(a.source_tool)
+    tool_b = normalize_source_tool(b.source_tool)
     return tool_a == tool_b and tool_a in ENUMERATION_TOOLS
 
 

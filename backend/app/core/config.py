@@ -23,6 +23,27 @@ class Settings(BaseSettings):
     # Vacío = señal desactivada; el sistema sigue funcionando con cotejo léxico.
     llm_embedding_model: Optional[str] = None
 
+    # --- Motor híbrido (tercera estrategia del orquestador) -----------------
+    # `hybrid` ejecuta el barrido heurístico completo y después deja que el LLM
+    # pida solo las llamadas que cubran huecos. No sustituye a `rules` ni a
+    # `agentic`: los tres siguen siendo condiciones experimentales independientes.
+    #
+    # Turnos máximos de la capa de refinamiento. Dos bastan (uno para proponer,
+    # otro para reaccionar a lo que devolvieron las herramientas) y acotan el
+    # gasto de tokens y la latencia, que en una sustentación en vivo importa.
+    hybrid_max_refinement_turns: int = 2
+
+    # Arbitraje por LLM de los hallazgos en la zona ambigua (0.40-0.70 de
+    # probabilidad de atribución). Apagado a propósito: es no determinista, y en
+    # una demo en vivo significa que la misma entrada puede producir clusters
+    # distintos delante del jurado. Cuando se activa, el veredicto queda
+    # registrado en los metadatos del hallazgo y NUNCA sobrescribe el
+    # `identity_score` del modelo, de modo que el histograma y la calibración del
+    # artículo siguen midiendo Fellegi-Sunter puro.
+    hybrid_llm_arbitration: bool = False
+    # Tope de hallazgos que se envían a arbitrar por investigación.
+    hybrid_arbitration_max_entities: int = 12
+
     # Server & Security
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000

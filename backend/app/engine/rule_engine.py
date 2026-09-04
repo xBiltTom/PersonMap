@@ -1,6 +1,7 @@
 import asyncio
 import time
-from typing import List, Set
+from dataclasses import dataclass, field
+from typing import List, Optional, Set
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.events import event_bus
 from app.engine.persistence import build_relationships, persist_findings
@@ -9,6 +10,23 @@ from app.models.entity import Entity
 from app.models.target import Target
 from app.tools.base import TargetContext, ToolFinding
 from app.tools.registry import tool_registry
+
+
+@dataclass
+class SweepResult:
+    """
+    Resultado de una barrida heurística, ANTES de persistir.
+
+    `execute_investigation` la consume y persiste; el motor hibrido la consume
+    para encadenar después su capa de refinamiento por IA y persistir una sola
+    vez, de modo que la deduplicación vea los hallazgos de las dos capas juntos
+    en lugar de crear entidades repetidas.
+    """
+
+    findings: List[ToolFinding] = field(default_factory=list)
+    context: Optional[TargetContext] = None
+    executed_runs: Set[str] = field(default_factory=set)
+    rounds: int = 0
 
 
 class RuleEngine:
@@ -40,13 +58,24 @@ class RuleEngine:
                 parts.append(f"{req}:{val}")
         return "|".join(parts)
 
-    async def execute_investigation(
+    async def collect_findings(
         self,
         investigation_id: str,
         target: Target,
-        db: AsyncSession,
-    ) -> List[Entity]:
-        start_time = time.time()
+    ) -> SweepResult:
+        """
+        Ejecuta la barrida heuristica completa y devuelve los hallazgos en bruto.
+
+        Se separó de `execute_investigation` porque el motor hibrido necesita
+        exactamente esta etapa -- las rondas con pivoteo determinista -- pero
+        persistiendo después, junto con lo que añada su capa de refinamiento por
+        IA. Si cada capa persistiera por su cuenta, la deduplicacion de
+        `persist_findings` no vería los hallazgos de la otra y un mismo perfil
+        descubierto por ambas acabaría como dos entidades.
+
+        Todos los eventos que emite viajan con `layer: "heuristic"`, para que la
+        consola pueda distinguir a simple vista qué capa produjo cada línea.
+        """
         context = TargetContext(
             full_name=target.full_name,
             email=target.email,
@@ -64,10 +93,12 @@ class RuleEngine:
 
         all_findings: List[ToolFinding] = []
         executed_runs: Set[str] = set()
+        rounds_run = 0
 
         await event_bus.publish(investigation_id, {
             "type": "log",
             "phase": "init",
+            "layer": "heuristic",
             "message": f"Iniciando orquestador OSINT para el objetivo: {target.full_name or target.username or target.email}",
             "timestamp": time.time(),
         })
@@ -80,9 +111,12 @@ class RuleEngine:
             if not runnable:
                 break
 
+            rounds_run = round_idx
+
             await event_bus.publish(investigation_id, {
                 "type": "log",
                 "phase": f"round_{round_idx}",
+                "layer": "heuristic",
                 "message": f"Ronda {round_idx}: Despachando {len(runnable)} módulos OSINT ({', '.join(t.name for t in runnable)})",
                 "timestamp": time.time(),
             })
@@ -107,6 +141,7 @@ class RuleEngine:
                 await event_bus.publish(investigation_id, {
                     "type": "log",
                     "phase": "pivot",
+                    "layer": "heuristic",
                     "message": (
                         f"Pivoteo heurístico activado: Descubiertos {len(context.all_emails())} correos, "
                         f"{len(context.all_usernames())} alias y {len(context.extra.get('candidate_urls', []))} enlaces candidatos."
@@ -116,10 +151,27 @@ class RuleEngine:
             else:
                 break
 
+        return SweepResult(
+            findings=all_findings,
+            context=context,
+            executed_runs=executed_runs,
+            rounds=rounds_run,
+        )
+
+    async def execute_investigation(
+        self,
+        investigation_id: str,
+        target: Target,
+        db: AsyncSession,
+    ) -> List[Entity]:
+        start_time = time.time()
+
+        sweep = await self.collect_findings(investigation_id, target)
+
         # Deduplicación, scoring y persistencia compartidos con el agente autónomo
         entities = await persist_findings(
             investigation_id=investigation_id,
-            findings=all_findings,
+            findings=sweep.findings,
             target=target,
             db=db,
             default_source_tool="osint_engine",
@@ -130,6 +182,7 @@ class RuleEngine:
         await event_bus.publish(investigation_id, {
             "type": "log",
             "phase": "complete",
+            "layer": "heuristic",
             "message": f"Fase de extracción finalizada: {len(entities)} entidades públicas registradas en {elapsed}s",
             "timestamp": time.time(),
         })
@@ -145,6 +198,7 @@ class RuleEngine:
         await event_bus.publish(investigation_id, {
             "type": "tool_start",
             "tool": tool.name,
+            "layer": "heuristic",
             "message": f"Ejecutando [{tool.name}]: {tool.description[:60]}...",
             "timestamp": time.time(),
         })
@@ -158,6 +212,7 @@ class RuleEngine:
             await event_bus.publish(investigation_id, {
                 "type": "tool_complete",
                 "tool": tool.name,
+                "layer": "heuristic",
                 "findings_count": len(findings),
                 "message": f"[{tool.name}] completado: {len(findings)} hallazgos.",
                 "timestamp": time.time(),
@@ -167,6 +222,7 @@ class RuleEngine:
             await event_bus.publish(investigation_id, {
                 "type": "tool_error",
                 "tool": tool.name,
+                "layer": "heuristic",
                 "error": str(err),
                 "message": f"[{tool.name}] error: {err}",
                 "timestamp": time.time(),

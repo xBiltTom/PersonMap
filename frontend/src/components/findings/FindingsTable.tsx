@@ -9,6 +9,7 @@ import {
   getFindingIcon,
 } from "@/lib/entityTypes";
 import { IdentityEvidence } from "@/components/identity/IdentityEvidence";
+import { LAYER_META } from "@/lib/engines";
 
 export function FindingsTable({ entities }: { entities: EntityData[] }) {
   const [search, setSearch] = useState("");
@@ -151,7 +152,29 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                   </td>
 
                   <td className="py-3 px-4 whitespace-nowrap font-mono text-slate-400 text-[11px]">
-                    {item.source_tool}
+                    <div>{item.source_tool}</div>
+
+                    {/* Capa del motor híbrido que lo descubrió. Sin esto, el
+                        refinamiento por IA sería una capacidad invisible: el
+                        expediente no distinguiría un hallazgo del barrido
+                        determinista de uno que solo existe porque lo pidió el LLM. */}
+                    {item.metadata_info?.engine_layers?.length ? (
+                      <div className="flex items-center gap-1 mt-1">
+                        {item.metadata_info.engine_layers.map((layer) => {
+                          const meta = LAYER_META[layer];
+                          if (!meta) return null;
+                          return (
+                            <span
+                              key={layer}
+                              title={meta.description}
+                              className={`text-[9px] font-bold px-1 py-px rounded border ${meta.badge}`}
+                            >
+                              {meta.short}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                   </td>
 
                   <td className="py-3 px-4 whitespace-nowrap text-center">
@@ -202,6 +225,7 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                           identityScore={item.identity_score}
                           existenceConfidence={item.existence_confidence}
                           finalConfidence={item.confidence}
+                          arbitration={item.metadata_info?.llm_arbitration}
                         />
                       </div>
                     </td>

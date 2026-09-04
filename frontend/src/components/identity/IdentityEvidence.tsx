@@ -1,7 +1,7 @@
 "use client";
 
-import { HelpCircle, Minus, TrendingDown, TrendingUp } from "lucide-react";
-import type { IdentityBreakdown } from "@/lib/types";
+import { HelpCircle, Minus, Scale, TrendingDown, TrendingUp } from "lucide-react";
+import type { IdentityBreakdown, LlmArbitration } from "@/lib/types";
 
 /**
  * Explica por qué el sistema atribuye un hallazgo al objetivo.
@@ -59,6 +59,8 @@ interface Props {
   existenceConfidence?: number | null;
   finalConfidence: number;
   compact?: boolean;
+  /** Veredicto del arbitraje opcional por LLM, si esa condición estaba activa. */
+  arbitration?: LlmArbitration;
 }
 
 interface Signal {
@@ -110,6 +112,7 @@ export function IdentityEvidence({
   existenceConfidence,
   finalConfidence,
   compact = false,
+  arbitration,
 }: Props) {
   if (!breakdown || Object.keys(breakdown).length === 0) {
     return (
@@ -196,6 +199,65 @@ export function IdentityEvidence({
             help="Identifica la calibración usada. Las puntuaciones solo son comparables entre investigaciones con la misma versión."
           />
         )}
+      </div>
+
+      {arbitration && <ArbitrationNote arbitration={arbitration} />}
+    </div>
+  );
+}
+
+const VERDICT_COPY: Record<
+  LlmArbitration["verdict"],
+  { label: string; className: string }
+> = {
+  match: {
+    label: "sí es del objetivo",
+    className: "border-emerald-500/30 bg-emerald-500/5 text-emerald-300",
+  },
+  no_match: {
+    label: "no es del objetivo",
+    className: "border-rose-500/30 bg-rose-500/5 text-rose-300",
+  },
+  uncertain: {
+    label: "no concluyente",
+    className: "border-slate-600 bg-[#0c111a] text-slate-300",
+  },
+};
+
+/**
+ * Veredicto del arbitraje opcional por LLM.
+ *
+ * Se muestra siempre que exista, y junto a la puntuación del modelo, nunca en su
+ * lugar: un juicio de caja negra que mueve un hallazgo de "descartado" a
+ * "confirmado" sin dejar ver qué dijo el modelo y qué dijo la IA sería
+ * exactamente lo contrario de lo que esta herramienta enseña.
+ */
+function ArbitrationNote({ arbitration }: { arbitration: LlmArbitration }) {
+  const copy = VERDICT_COPY[arbitration.verdict] ?? VERDICT_COPY.uncertain;
+
+  return (
+    <div className={`mt-2 p-2.5 rounded border text-[11px] ${copy.className}`}>
+      <div className="flex items-start gap-1.5">
+        <Scale className="w-3.5 h-3.5 shrink-0 mt-px" aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="font-semibold">
+            Arbitraje por IA: {copy.label}
+            {typeof arbitration.applied_score === "number" && (
+              <span className="font-mono font-normal opacity-80">
+                {" "}
+                ({Math.round(arbitration.model_score * 100)}% del modelo →{" "}
+                {Math.round(arbitration.applied_score * 100)}% efectivo para agrupar)
+              </span>
+            )}
+          </p>
+          {arbitration.rationale && (
+            <p className="opacity-90 mt-0.5 leading-snug">{arbitration.rationale}</p>
+          )}
+          <p className="opacity-60 mt-1 font-mono text-[10px]">
+            Modelo: {arbitration.model} · condición opcional y no determinista; la
+            puntuación del scorer no se modifica.
+          </p>
+        </div>
       </div>
     </div>
   );

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createInvestigation } from "@/lib/api";
+import { checkHealth, createInvestigation } from "@/lib/api";
+import type { Strategy } from "@/lib/types";
 import {
   User,
   Mail,
@@ -16,6 +17,46 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 
+/**
+ * Las cuatro opciones del selector de motor.
+ *
+ * `hybrid` se añadió en la Fase 3 como TERCERA estrategia, no como reemplazo:
+ * si el motor de reglas corriera siempre, `rule_based` y `agentic` dejarían de
+ * ser condiciones experimentales independientes y la comparativa del artículo
+ * perdería su contraste más limpio.
+ */
+const STRATEGIES: Array<{
+  id: Strategy;
+  label: string;
+  help: string;
+  needsLlm: boolean;
+}> = [
+  {
+    id: "auto",
+    label: "Automático",
+    help: "Usa el agente IA si hay un LLM configurado en el backend; si no, el motor por reglas.",
+    needsLlm: false,
+  },
+  {
+    id: "rule_based",
+    label: "Reglas estáticas (sin IA)",
+    help: "Barrido heurístico determinista con pivoteo por reglas. Reproducible y sin coste de tokens: es la condición de control del experimento.",
+    needsLlm: false,
+  },
+  {
+    id: "agentic",
+    label: "Agente autónomo IA",
+    help: "El LLM planifica y despacha todas las herramientas por su cuenta, sin barrido previo. Es el brazo opuesto al de reglas.",
+    needsLlm: true,
+  },
+  {
+    id: "hybrid",
+    label: "Híbrido (reglas + refinamiento IA)",
+    help: "Primero el barrido heurístico completo; después el LLM solo pide lo que quedó sin cubrir, sin repetir ninguna consulta ya hecha.",
+    needsLlm: true,
+  },
+];
+
 export function InvestigationForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -28,8 +69,32 @@ export function InvestigationForm() {
   const [dni, setDni] = useState("");
   const [university, setUniversity] = useState("");
   const [description, setDescription] = useState("");
-  const [strategy, setStrategy] = useState("auto");
+  const [strategy, setStrategy] = useState<Strategy>("auto");
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Si el backend no tiene LLM, las estrategias que dependen de él degradan al
+  // motor de reglas. Avisarlo ANTES de lanzar evita la situación de creer que se
+  // está midiendo una condición experimental y estar midiendo otra.
+  const [aiEnabled, setAiEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    checkHealth()
+      .then((h) => {
+        if (!cancelled) setAiEnabled(h.ai_enabled);
+      })
+      .catch(() => {
+        // El estado del backend ya lo reporta el Navbar; aquí basta con no
+        // afirmar nada sobre el LLM.
+        if (!cancelled) setAiEnabled(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectedStrategy =
+    STRATEGIES.find((s) => s.id === strategy) ?? STRATEGIES[0];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,7 +150,7 @@ export function InvestigationForm() {
 
         <div className="flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded bg-[#182334] text-slate-300 border border-[#2b3a52]">
           <span>Estrategia:</span>
-          <span className="text-sky-400 font-semibold uppercase">{strategy}</span>
+          <span className="text-sky-400 font-semibold">{selectedStrategy.label}</span>
         </div>
       </div>
 
@@ -203,18 +268,40 @@ export function InvestigationForm() {
               </div>
 
               <div>
-                <label className="block text-xs font-mono text-slate-300 mb-1.5">
+                <label
+                  htmlFor="strategy-select"
+                  className="block text-xs font-mono text-slate-300 mb-1.5"
+                >
                   Modo de Orquestación
                 </label>
                 <select
+                  id="strategy-select"
                   value={strategy}
-                  onChange={(e) => setStrategy(e.target.value)}
+                  onChange={(e) => setStrategy(e.target.value as Strategy)}
+                  aria-describedby="strategy-help"
                   className="w-full bg-[#0b0f17] border border-[#1e293b] rounded-md px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500"
                 >
-                  <option value="auto">Automático (Usa IA si hay LLM configurado, o motor por reglas)</option>
-                  <option value="rule_based">Reglas Estáticas (Código puro sin IA - Comparativa Paper)</option>
-                  <option value="agentic">Agente Autónomo IA (Requiere LLM configurado)</option>
+                  {STRATEGIES.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
                 </select>
+
+                <p id="strategy-help" className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                  {selectedStrategy.help}
+                </p>
+
+                {selectedStrategy.needsLlm && aiEnabled === false && (
+                  <p className="text-[11px] text-amber-300 mt-1.5 flex items-start gap-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-px" aria-hidden="true" />
+                    <span>
+                      No hay LLM configurado en el backend, así que esta estrategia
+                      degradará al motor de reglas. Quedará registrada como tal en la
+                      comparativa, no como IA.
+                    </span>
+                  </p>
+                )}
               </div>
             </div>
 

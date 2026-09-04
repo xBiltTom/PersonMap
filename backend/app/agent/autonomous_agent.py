@@ -1,58 +1,21 @@
 import json
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 import litellm
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.events import event_bus
+from app.agent.tool_dispatch import build_tool_schemas, dispatch_tool_call
 from app.engine.persistence import build_relationships, persist_findings
 from app.models.entity import Entity
 from app.models.target import Target
-from app.tools.base import TargetContext, ToolFinding
-from app.tools.registry import tool_registry
+from app.tools.base import ToolFinding
 
 
-def _build_agent_tools() -> List[Dict[str, Any]]:
-    """
-    Builds the LiteLLM function-calling schema dynamically from the live ToolRegistry.
-
-    Previously this was a hardcoded list of 7 entries that covered only half of the
-    registered tools, making the agentic mode objectively weaker than the heuristic
-    mode. By generating the schema from tool_registry.get_all() every tool that is
-    registered — including future tools — is automatically visible to the LLM without
-    any manual synchronization step. This fixes P0#4 from ANALISIS_OSINT_MUNDIAL.md.
-    """
-    schemas: List[Dict[str, Any]] = []
-    for tool in tool_registry.get_all():
-        # Map required_inputs (TargetContext field names) to LLM-friendly parameter
-        # descriptions. We keep it simple: each required field becomes a string param.
-        properties: Dict[str, Any] = {}
-        for field in tool.required_inputs:
-            properties[field] = {
-                "type": "string",
-                "description": field.replace("_", " ").capitalize(),
-            }
-
-        schemas.append({
-            "type": "function",
-            "function": {
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": {
-                    "type": "object",
-                    "properties": properties,
-                    "required": [tool.required_inputs[0]] if tool.required_inputs else [],
-                },
-            },
-        })
-    return schemas
-
-
-# Built once at import time; reflects ALL registered tools including reverse_image_search,
-# email_enumerator, gravatar_deep, keybase_resolver, wikipedia_edits, dni_lookup,
-# social_url_extractor, google_account_osint — all of which were previously invisible to
-# the LLM when AGENT_TOOLS was a static list of 7 entries.
-AGENT_TOOLS = _build_agent_tools()
+# Construido una vez al importar; refleja TODAS las herramientas registradas.
+# La construcción vive ahora en app.agent.tool_dispatch, compartida con la capa
+# de refinamiento del motor híbrido.
+AGENT_TOOLS = build_tool_schemas()
 
 
 class AutonomousOSINTAgent:
@@ -204,45 +167,18 @@ class AutonomousOSINTAgent:
         args: Dict[str, Any],
         target: Target,
     ) -> List[ToolFinding]:
-        # Since AGENT_TOOLS now uses real tool names from the registry (not aliases
-        # like "check_username" → "username_finder"), we resolve directly.
-        # We keep a small backwards-compat alias map only for the old hardcoded names
-        # in case a model trained on previous prompts still emits them.
-        _legacy_alias: Dict[str, str] = {
-            "check_username": "username_finder",
-            "check_email": "email_checker",
-            "check_breaches": "breach_checker",
-            "lookup_phone": "phone_lookup",
-            "search_academic": "academic_finder",
-            "deep_scan_github": "github_deep_scanner",
-            "verify_profile": "social_verifier",
-        }
-        tool_id = _legacy_alias.get(name, name)
-        tool = tool_registry.get_tool(tool_id)
-        if not tool:
-            return []
-
-        # Build TargetContext from whatever the LLM passed in args, with the
-        # investigation target's known fields as fallback.
-        candidate_urls: List[str] = []
-        if "url" in args:
-            candidate_urls.append(args["url"])
-
-        ctx = TargetContext(
-            full_name=args.get("full_name") or target.full_name,
-            email=args.get("email") or target.email,
-            username=args.get("username") or target.username,
-            phone=args.get("phone") or target.phone,
-            dni=args.get("dni") or target.dni,
-            university=args.get("university") or target.university,
-            description=target.description,
-            extra={"candidate_urls": candidate_urls},
+        """
+        Delega en el despachador compartido, conservando el prefijo `agent:` de
+        `source_tool` para no romper la trazabilidad de los expedientes ya
+        guardados.
+        """
+        return await dispatch_tool_call(
+            name,
+            args,
+            target,
+            source_prefix="agent",
+            engine_layer="agentic",
         )
-
-        findings = await tool.execute(ctx)
-        for f in findings:
-            f.metadata_info["source_tool"] = f"agent:{tool_id}"
-        return findings
 
 
 autonomous_agent = AutonomousOSINTAgent()

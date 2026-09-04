@@ -201,6 +201,18 @@ class IdentityResolver:
         hacía que la constante escrita a mano en cada tool decidiera los
         clusters, dejando al modelo probabilístico sin efecto real.
         """
+        # Arbitraje por LLM (opcional y apagado por defecto): si un hallazgo de la
+        # franja ambigua recibió veredicto, esa es la puntuación EFECTIVA para
+        # agrupar. Se lee de los metadatos y no del propio `identity_score`
+        # justamente para no contaminarlo: el score persistido sigue siendo la
+        # salida pura del scorer, que es lo que miden el histograma y la curva de
+        # calibración del artículo.
+        arbitration = (entity.metadata_info or {}).get("llm_arbitration")
+        if isinstance(arbitration, dict):
+            applied = arbitration.get("applied_score")
+            if isinstance(applied, (int, float)):
+                return float(applied)
+
         if entity.identity_score is not None:
             return float(entity.identity_score)
         # Entidades anteriores a la separación de métricas.

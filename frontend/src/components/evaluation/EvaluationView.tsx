@@ -10,8 +10,57 @@ import {
   Award,
 } from "lucide-react";
 import { getMetricsComparison, getSurveyStats } from "@/lib/api";
-import type { MetricsComparison, SurveyStats } from "@/lib/types";
+import type {
+  EngineId,
+  EngineMetrics,
+  HybridContribution,
+  MetricsComparison,
+  SurveyStats,
+} from "@/lib/types";
 import { ScoreDistribution } from "@/components/evaluation/ScoreDistribution";
+
+const EMPTY_METRICS: EngineMetrics = {
+  count: 0,
+  avg_execution_time: 0,
+  avg_entities: 0,
+  avg_clusters: 0,
+  avg_risk_score: 0,
+};
+
+const METRIC_ROWS: Array<{
+  key: keyof EngineMetrics;
+  label: string;
+  hint: string;
+  suffix?: string;
+}> = [
+  {
+    key: "count",
+    label: "Muestras analizadas",
+    hint: "Investigaciones completadas con este motor (n)",
+  },
+  {
+    key: "avg_execution_time",
+    label: "Latencia media",
+    hint: "Segundos de extremo a extremo, incluido el scoring",
+    suffix: "s",
+  },
+  {
+    key: "avg_entities",
+    label: "Entidades descubiertas",
+    hint: "Media de hallazgos únicos por investigación",
+  },
+  {
+    key: "avg_clusters",
+    label: "Clusters de identidad",
+    hint: "Media de agrupaciones resueltas por union-find",
+  },
+  {
+    key: "avg_risk_score",
+    label: "Exposición media",
+    hint: "Score de exposición 0-100 del scorecard",
+    suffix: "/100",
+  },
+];
 
 export function EvaluationView() {
   const [data, setData] = useState<MetricsComparison | null>(null);
@@ -50,11 +99,15 @@ export function EvaluationView() {
 
   const handleExportCsv = () => {
     if (!data?.investigations_sample) return;
-    const headers = "id,strategy,execution_time_seconds,entities_count,risk_score,created_at\n";
+    // `engine_used` va en su propia columna, aparte de `strategy`: son cosas
+    // distintas, y confundirlas es lo que hacía que la comparativa contase como
+    // agéntica una investigación que había ejecutado el motor de reglas.
+    const headers =
+      "id,strategy,engine_used,execution_time_seconds,entities_count,risk_score,created_at\n";
     const rows = data.investigations_sample
       .map(
         (s) =>
-          `${s.id},${s.strategy},${s.execution_time},${s.entities_count},${s.risk_score},${s.created_at || ""}`
+          `${s.id},${s.strategy},${s.engine_used || ""},${s.execution_time},${s.entities_count},${s.risk_score},${s.created_at || ""}`
       )
       .join("\n");
     const blob = new Blob([headers + rows], { type: "text/csv" });
@@ -99,8 +152,34 @@ export function EvaluationView() {
     );
   }
 
-  const rb = data?.summary.rule_based || { count: 0, avg_execution_time: 0, avg_entities: 0, avg_clusters: 0, avg_risk_score: 0 };
-  const ag = data?.summary.agentic || { count: 0, avg_execution_time: 0, avg_entities: 0, avg_clusters: 0, avg_risk_score: 0 };
+  // Tres brazos experimentales, no dos. `hybrid` se añadió sin tocar los otros
+  // dos precisamente para que la tabla del artículo pase de dos filas a tres sin
+  // invalidar las mediciones ya tomadas.
+  const engines: Array<{
+    id: EngineId;
+    label: string;
+    tone: string;
+    metrics: EngineMetrics;
+  }> = [
+    {
+      id: "rules",
+      label: data.engine_labels?.rules ?? "Motor por Reglas",
+      tone: "text-sky-400",
+      metrics: data.summary.rule_based ?? EMPTY_METRICS,
+    },
+    {
+      id: "agentic",
+      label: data.engine_labels?.agentic ?? "Agente IA Autónomo",
+      tone: "text-purple-400",
+      metrics: data.summary.agentic ?? EMPTY_METRICS,
+    },
+    {
+      id: "hybrid",
+      label: data.engine_labels?.hybrid ?? "Híbrido (Reglas + IA)",
+      tone: "text-emerald-400",
+      metrics: data.summary.hybrid ?? EMPTY_METRICS,
+    },
+  ];
 
   return (
     <div className="space-y-8">
@@ -112,10 +191,14 @@ export function EvaluationView() {
             <span>Módulo de Evaluación para Artículo Científico</span>
           </div>
           <h2 className="text-base font-bold text-slate-100">
-            Comparativa Experimental: Motor por Reglas vs. Agente Autónomo IA
+            Comparativa Experimental: Reglas vs. Agente Autónomo IA vs. Híbrido
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Métricas de cobertura, latencia y precisión para contrastar ambas aproximaciones metodológicas.
+          <p className="text-xs text-slate-400 mt-0.5 max-w-2xl">
+            Métricas de cobertura, latencia y precisión para contrastar las tres aproximaciones
+            metodológicas. Cada investigación se agrupa por el motor que{" "}
+            <em>realmente</em> se ejecutó, no por la estrategia solicitada: sin LLM configurado,
+            las estrategias que dependen de él degradan al motor de reglas y se contabilizan
+            como tales.
           </p>
         </div>
 
@@ -138,54 +221,70 @@ export function EvaluationView() {
         </div>
       </div>
 
-      {/* Comparative Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {/* Metric 1: Muestras */}
-        <div className="panel-card p-4">
-          <span className="text-[10px] font-mono uppercase text-slate-500 block mb-1">Muestras Totales</span>
-          <div className="text-2xl font-bold font-mono text-slate-100">{data?.summary.total_investigations || 0}</div>
-          <div className="flex justify-between text-[11px] font-mono mt-2 pt-2 border-t border-[#1e293b]">
-            <span className="text-sky-400">Reglas: {rb.count}</span>
-            <span className="text-purple-400">Agente: {ag.count}</span>
-          </div>
+      {/* Tabla comparativa de los tres brazos experimentales.
+          Antes eran cuatro tarjetas con dos cifras cada una ("12s / 34s"); con
+          un tercer motor esa forma deja de leerse. Una tabla métrica × motor es
+          además la forma exacta en la que el dato acaba en el artículo. */}
+      <div className="panel-card overflow-hidden">
+        <div className="px-5 py-3 border-b border-[#1e293b] flex flex-wrap items-baseline justify-between gap-3">
+          <h3 className="text-xs font-mono font-bold uppercase text-slate-300">
+            Resultados por motor
+          </h3>
+          <span className="text-[11px] font-mono text-slate-400">
+            {data.summary.total_investigations} investigación(es) completada(s)
+          </span>
         </div>
 
-        {/* Metric 2: Tiempo de Ejecución */}
-        <div className="panel-card p-4">
-          <span className="text-[10px] font-mono uppercase text-slate-500 block mb-1">Latencia Media</span>
-          <div className="text-2xl font-bold font-mono text-slate-100">
-            {rb.avg_execution_time || ag.avg_execution_time ? `${rb.avg_execution_time}s / ${ag.avg_execution_time}s` : "0s"}
-          </div>
-          <div className="flex justify-between text-[11px] font-mono mt-2 pt-2 border-t border-[#1e293b]">
-            <span className="text-sky-400">Reglas: {rb.avg_execution_time}s</span>
-            <span className="text-purple-400">Agente: {ag.avg_execution_time}s</span>
-          </div>
-        </div>
-
-        {/* Metric 3: Entidades Promedio */}
-        <div className="panel-card p-4">
-          <span className="text-[10px] font-mono uppercase text-slate-500 block mb-1">Entidades Descubiertas</span>
-          <div className="text-2xl font-bold font-mono text-slate-100">
-            {rb.avg_entities || ag.avg_entities ? `${rb.avg_entities} vs ${ag.avg_entities}` : "0"}
-          </div>
-          <div className="flex justify-between text-[11px] font-mono mt-2 pt-2 border-t border-[#1e293b]">
-            <span className="text-sky-400">Reglas: {rb.avg_entities}</span>
-            <span className="text-purple-400">Agente: {ag.avg_entities}</span>
-          </div>
-        </div>
-
-        {/* Metric 4: Score de Riesgo */}
-        <div className="panel-card p-4">
-          <span className="text-[10px] font-mono uppercase text-slate-500 block mb-1">Exposición Promedio</span>
-          <div className="text-2xl font-bold font-mono text-slate-100">
-            {rb.avg_risk_score || ag.avg_risk_score ? `${rb.avg_risk_score}/100` : "0"}
-          </div>
-          <div className="flex justify-between text-[11px] font-mono mt-2 pt-2 border-t border-[#1e293b]">
-            <span className="text-sky-400">Reglas: {rb.avg_risk_score}</span>
-            <span className="text-purple-400">Agente: {ag.avg_risk_score}</span>
-          </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <caption className="sr-only">
+              Comparativa de latencia, cobertura y exposición entre los tres motores de
+              orquestación
+            </caption>
+            <thead className="bg-[#0c111a] text-[10px] font-mono uppercase tracking-wider text-slate-400 border-b border-[#1e293b]">
+              <tr>
+                <th scope="col" className="py-3 px-4">
+                  Métrica
+                </th>
+                {engines.map((e) => (
+                  <th key={e.id} scope="col" className={`py-3 px-4 text-right ${e.tone}`}>
+                    {e.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#161f2e] text-xs font-mono text-slate-200">
+              {METRIC_ROWS.map((row) => (
+                <tr key={row.key} className="hover:bg-[#111826] transition-colors">
+                  <th
+                    scope="row"
+                    title={row.hint}
+                    className="py-2.5 px-4 font-normal text-slate-300 font-sans text-xs"
+                  >
+                    {row.label}
+                  </th>
+                  {engines.map((e) => (
+                    <td key={e.id} className="py-2.5 px-4 text-right tabular-nums">
+                      {e.metrics.count === 0 && row.key !== "count" ? (
+                        <span className="text-slate-500" title="Sin muestras de este motor">
+                          —
+                        </span>
+                      ) : (
+                        `${e.metrics[row.key]}${row.suffix ?? ""}`
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
+
+      {/* Aportación específica del refinamiento por IA */}
+      {data.hybrid_contribution && data.hybrid_contribution.investigations > 0 && (
+        <HybridContributionPanel contribution={data.hybrid_contribution} />
+      )}
 
       {/* LaTeX Preview Block */}
       {data.identity_score_distribution && (
@@ -236,6 +335,82 @@ export function EvaluationView() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Qué aporta la capa de refinamiento por IA, en cifras.
+ *
+ * Es la pregunta que decide si la tercera condición experimental se justifica.
+ * "El híbrido encuentra más" no es una afirmación defendible sin separar cuánto
+ * puso el barrido heurístico y cuántas entidades existen únicamente porque el
+ * LLM las pidió. Las llamadas descartadas miden lo contrario: cuánto trabajo
+ * redundante propuso el modelo y el motor le ahorró al no repetirlo.
+ */
+function HybridContributionPanel({ contribution }: { contribution: HybridContribution }) {
+  const share =
+    contribution.avg_heuristic_findings + contribution.avg_refinement_findings > 0
+      ? (contribution.avg_refinement_findings /
+          (contribution.avg_heuristic_findings + contribution.avg_refinement_findings)) *
+        100
+      : 0;
+
+  return (
+    <div className="panel-card p-5 border-l-4 border-l-emerald-500">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+        <h3 className="text-sm font-bold text-slate-100">
+          Aportación de la capa de refinamiento IA
+        </h3>
+        <span className="text-[11px] font-mono text-slate-400">
+          sobre {contribution.investigations} investigación(es) híbrida(s)
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatTile
+          label="Hallazgos capa 1"
+          value={contribution.avg_heuristic_findings.toFixed(1)}
+          hint="Media de hallazgos en bruto del barrido heurístico determinista"
+        />
+        <StatTile
+          label="Hallazgos capa 2"
+          value={contribution.avg_refinement_findings.toFixed(1)}
+          hint="Media de hallazgos añadidos por las llamadas que pidió el LLM"
+        />
+        <StatTile
+          label="Entidades solo de la IA"
+          value={contribution.avg_entities_only_from_llm.toFixed(1)}
+          hint="Entidades finales que ninguna herramienta del barrido llegó a descubrir. Es la aportación neta del refinamiento."
+          highlight={contribution.avg_entities_only_from_llm > 0}
+        />
+        <StatTile
+          label="Llamadas evitadas"
+          value={String(contribution.refinement_calls_skipped)}
+          hint="Llamadas que el LLM pidió repetir y el motor descartó porque el barrido ya las había ejecutado"
+        />
+      </div>
+
+      <div className="mt-4">
+        <div className="flex items-center justify-between text-[11px] font-mono mb-1.5">
+          <span className="text-slate-300">Proporción de hallazgos aportados por la IA</span>
+          <span className="font-bold text-slate-100">{share.toFixed(1)}%</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-[#161f2e] overflow-hidden">
+          <div
+            className="h-full rounded-full bg-emerald-400"
+            style={{ width: `${Math.min(100, Math.max(0, share))}%` }}
+          />
+        </div>
+      </div>
+
+      {contribution.arbitration_used > 0 && (
+        <p className="text-[11px] text-fuchsia-300 mt-3">
+          {contribution.arbitration_used} investigación(es) usaron además el arbitraje por LLM
+          de la franja ambigua. Es una condición opcional y no determinista: los resultados
+          arbitrados no son comparables con los que resolvió solo el modelo.
+        </p>
+      )}
     </div>
   );
 }
