@@ -10,8 +10,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -21,6 +21,9 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# NOTE: los patrones Python de arriba se anclan a la raíz para no ocultar
+# rutas del frontend como frontend/src/lib/ (bug que dejó api.ts/types.ts sin commitear).
 .env
 .env.local
 .venv
