@@ -199,7 +199,8 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                         </div>
                         <IdentityEvidence
                           breakdown={item.metadata_info?.identity_breakdown}
-                          identityScore={item.metadata_info?.identity_score}
+                          identityScore={item.identity_score}
+                          existenceConfidence={item.existence_confidence}
                           finalConfidence={item.confidence}
                         />
                       </div>

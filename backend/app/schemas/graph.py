@@ -14,6 +14,9 @@ class GraphNodeData(BaseModel):
     value: str
     display_name: Optional[str] = None
     confidence: float
+    # Las dos métricas que `confidence` resume: detección y atribución.
+    existence_confidence: Optional[float] = None
+    identity_score: Optional[float] = None
     verified: bool
     metadata_info: Dict[str, Any] = {}
     is_root: bool = False

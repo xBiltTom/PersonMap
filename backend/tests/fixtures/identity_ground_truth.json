@@ -1,0 +1,198 @@
+{
+  "_comment": [
+    "Conjunto de casos etiquetados a mano para el modelo de resolución de identidad.",
+    "Cumple dos funciones: es el test de regresión que protege cualquier recalibrado",
+    "del scorer, y es la tabla de resultados (precisión/exhaustividad) reportable en",
+    "el artículo. Los casos están inspirados en hallazgos reales del sistema pero con",
+    "datos ficticios, para no publicar la huella digital de ninguna persona concreta.",
+    "",
+    "`is_match` es la etiqueta: ¿el hallazgo pertenece realmente al objetivo?",
+    "`rationale` explica por qué, para que la etiqueta sea auditable por un revisor."
+  ],
+  "targets": {
+    "estudiante_unt": {
+      "full_name": "Carlos Eduardo Mendoza",
+      "email": "cmendoza@untumbes.edu.pe",
+      "username": "cmendoza_dev",
+      "university": "Universidad Nacional de Tumbes",
+      "phone": "+51987654321"
+    },
+    "solo_alias": {
+      "username": "kirostudio",
+      "full_name": null,
+      "email": null,
+      "university": null,
+      "phone": null
+    },
+    "solo_nombre": {
+      "full_name": "Ana Lucia Ramirez",
+      "university": "Universidad Nacional Mayor de San Marcos",
+      "email": null,
+      "username": null,
+      "phone": null
+    }
+  },
+  "cases": [
+    {
+      "id": "email_declarado",
+      "target": "estudiante_unt",
+      "is_match": true,
+      "rationale": "El perfil declara el correo institucional exacto del objetivo. Es la evidencia individual más concluyente.",
+      "display_name": "Carlos Mendoza",
+      "value": "https://github.com/cmendoza_dev",
+      "metadata": {
+        "source_tool": "github_deep_scanner",
+        "og_title": "Carlos E. Mendoza",
+        "bio": "Estudiante de Ingeniería de Sistemas",
+        "emails": ["cmendoza@untumbes.edu.pe"],
+        "username": "cmendoza_dev"
+      }
+    },
+    {
+      "id": "prueba_criptografica",
+      "target": "estudiante_unt",
+      "is_match": true,
+      "rationale": "Keybase demuestra la propiedad de la identidad con firma criptográfica.",
+      "display_name": "cmendoza_dev",
+      "value": "https://keybase.io/cmendoza_dev",
+      "metadata": {
+        "source_tool": "keybase_resolver",
+        "cryptographically_proven": true,
+        "username": "cmendoza_dev",
+        "full_name": "Carlos Eduardo Mendoza"
+      }
+    },
+    {
+      "id": "nombre_y_universidad",
+      "target": "estudiante_unt",
+      "is_match": true,
+      "rationale": "Nombre completo y afiliación institucional coinciden en un perfil profesional.",
+      "display_name": "Carlos Eduardo Mendoza",
+      "value": "https://www.linkedin.com/in/carlos-mendoza-unt",
+      "metadata": {
+        "source_tool": "social_verifier",
+        "og_title": "Carlos Eduardo Mendoza",
+        "bio": "Estudiante de Ingeniería de Sistemas en la Universidad Nacional de Tumbes"
+      }
+    },
+    {
+      "id": "universidad_por_siglas",
+      "target": "solo_nombre",
+      "is_match": true,
+      "rationale": "La afiliación aparece por sus siglas (UNMSM). El cotejo por subcadena exacta fallaba aquí.",
+      "display_name": "Ana Lucia Ramirez",
+      "value": "https://scholar.google.com/citations?user=abc123",
+      "metadata": {
+        "source_tool": "google_account_osint",
+        "og_title": "Ana Lucia Ramirez",
+        "bio": "Investigadora en la UNMSM, Facultad de Ingeniería de Sistemas"
+      }
+    },
+    {
+      "id": "telefono_declarado",
+      "target": "estudiante_unt",
+      "is_match": true,
+      "rationale": "El perfil publica el teléfono del objetivo.",
+      "display_name": "Carlos M.",
+      "value": "https://ejemplo.pe/contacto",
+      "metadata": {
+        "source_tool": "search_dorker",
+        "snippet": "Contacto del delegado",
+        "phones": ["987654321"]
+      }
+    },
+    {
+      "id": "enlace_cruzado_al_alias",
+      "target": "estudiante_unt",
+      "is_match": true,
+      "rationale": "Un perfil independiente enlaza explícitamente al GitHub del objetivo.",
+      "display_name": "Portafolio personal",
+      "value": "https://cmendoza.dev",
+      "metadata": {
+        "source_tool": "social_url_extractor",
+        "linked_profiles": [
+          "https://github.com/cmendoza_dev",
+          "https://linkedin.com/in/carlos-mendoza-unt"
+        ]
+      }
+    },
+    {
+      "id": "homonimo_otro_pais",
+      "target": "estudiante_unt",
+      "is_match": false,
+      "rationale": "Mismo alias pero otra persona: nombre, correo y país distintos. Es el falso positivo clásico.",
+      "display_name": "Carlos Muller",
+      "value": "https://instagram.com/cmendoza_dev",
+      "metadata": {
+        "source_tool": "social_verifier",
+        "og_title": "Carlos Muller",
+        "bio": "Fotografo en Berlin, Alemania",
+        "emails": ["info@muller-berlin.de"],
+        "username": "cmendoza_dev"
+      }
+    },
+    {
+      "id": "mismo_apellido_distinta_persona",
+      "target": "estudiante_unt",
+      "is_match": false,
+      "rationale": "Comparte apellido y universidad, pero es otra persona. Prueba que la afiliación por sí sola no identifica.",
+      "display_name": "Rosa Mendoza Farfan",
+      "value": "https://www.linkedin.com/in/rosa-mendoza-farfan",
+      "metadata": {
+        "source_tool": "social_verifier",
+        "og_title": "Rosa Mendoza Farfan",
+        "bio": "Docente de la Universidad Nacional de Tumbes"
+      }
+    },
+    {
+      "id": "enumeracion_de_alias_sin_mas_evidencia",
+      "target": "estudiante_unt",
+      "is_match": false,
+      "rationale": "Cuenta encontrada al enumerar el alias en cientos de plataformas, sin ninguna otra señal. La coincidencia del alias está garantizada por el método de búsqueda, así que no es evidencia: podría ser cualquiera que registrase ese nombre.",
+      "display_name": "cmendoza_dev",
+      "value": "https://someforum.example/user/cmendoza_dev",
+      "metadata": {
+        "source_tool": "username_finder",
+        "username": "cmendoza_dev",
+        "platform": "SomeForum"
+      }
+    },
+    {
+      "id": "mencion_generica_de_la_universidad",
+      "target": "solo_nombre",
+      "is_match": false,
+      "rationale": "Página institucional que menciona la universidad pero no a la persona.",
+      "display_name": "Universidad Nacional Mayor de San Marcos",
+      "value": "https://unmsm.edu.pe/",
+      "metadata": {
+        "source_tool": "search_dorker",
+        "snippet": "Portal de la Universidad Nacional Mayor de San Marcos"
+      }
+    },
+    {
+      "id": "alias_sin_contexto",
+      "target": "solo_alias",
+      "is_match": false,
+      "rationale": "Objetivo del que solo se conoce el alias, hallazgo por enumeración. No hay ninguna señal evaluable: el sistema no debe afirmar nada.",
+      "display_name": "kirostudio",
+      "value": "https://otraplataforma.example/kirostudio",
+      "metadata": {
+        "source_tool": "username_finder",
+        "username": "kirostudio"
+      }
+    },
+    {
+      "id": "avatar_identico",
+      "target": "solo_alias",
+      "is_match": true,
+      "rationale": "La foto de perfil coincide perceptualmente con la de una cuenta ya atribuida. Correlaciona identidades que no comparten alias ni correo.",
+      "display_name": "Estudio Kiro",
+      "value": "https://otraredsocial.example/kiro_studio_oficial",
+      "metadata": {
+        "source_tool": "avatar_harvester",
+        "avatar_similarity": 1.0,
+        "username": "kiro_studio_oficial"
+      }
+    }
+  ]
+}

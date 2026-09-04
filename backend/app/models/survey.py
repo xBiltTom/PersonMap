@@ -10,7 +10,7 @@ class AwarenessSurvey(Base):
     __tablename__ = "awareness_surveys"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    investigation_id = Column(UUID(as_uuid=True), ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False)
+    investigation_id = Column(UUID(as_uuid=True), ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # Pre-exposure perception (1-5: 1 = "no me preocupaba", 5 = "muy preocupado")
     pre_awareness = Column(Integer, default=1, nullable=False)

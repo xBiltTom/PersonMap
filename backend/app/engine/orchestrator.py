@@ -9,9 +9,12 @@ from app.core.config import settings
 from app.core.database import async_session_maker
 from app.core.events import event_bus
 from app.engine.rule_engine import rule_engine
+from app.identity import enrichment as identity_enrichment
 from app.identity.resolver import identity_resolver
+from app.identity.scorer import SCORER_VERSION
 from app.identity.risk import calculate_risk_score
 from app.models.investigation import Investigation
+from app.models.relationship import Relationship
 
 
 class Orchestrator:
@@ -52,17 +55,34 @@ class Orchestrator:
                 else:
                     entities = await rule_engine.execute_investigation(str_id, target, db)
 
-                # 3. Resolve Identity Clusters (with Fellegi-Sunter & Avatar dHash)
-                clusters = await identity_resolver.resolve_clusters(investigation.id, entities, target)
+                # 3. Segunda pasada de puntuación: señales que necesitan red
+                #    (hashing de avatares y embeddings semánticos), calculadas en
+                #    lote y aplicadas solo a las entidades que afectan.
+                enrichment = await identity_enrichment.enrich_and_rescore(entities, target)
+                await db.flush()
+
+                # 4. Resolver clusters de identidad.
+                #    Se le pasan las relaciones para que pueda agrupar por
+                #    union-find sobre la evidencia directa (correo compartido,
+                #    enlace explícito, avatar idéntico) en lugar de limitarse a
+                #    clasificar cada entidad por su puntuación aislada.
+                rel_stmt = select(Relationship).where(
+                    Relationship.investigation_id == investigation.id
+                )
+                relationships = list((await db.execute(rel_stmt)).scalars().all())
+
+                clusters = await identity_resolver.resolve_clusters(
+                    investigation.id, entities, target, relationships
+                )
                 for cluster in clusters:
                     db.add(cluster)
                 await db.flush()
 
-                # 4. Calculate Risk & Exposure Score
+                # 5. Calculate Risk & Exposure Score
                 risk_score, risk_level, recommendations = calculate_risk_score(entities, target)
                 investigation.risk_score = risk_score
 
-                # 5. Generate Intelligence Narrative (AI or Template)
+                # 6. Generate Intelligence Narrative (AI or Template)
                 narrative = await osint_agent.generate_intelligence_narrative(
                     target=target,
                     entities=entities,
@@ -71,7 +91,7 @@ class Orchestrator:
                 )
                 investigation.summary = narrative
 
-                # 6. Record Metrics for Academic Research
+                # 7. Record Metrics for Academic Research
                 elapsed = round(time.time() - start_time, 2)
                 investigation.metrics = {
                     "execution_time_seconds": elapsed,
@@ -81,13 +101,19 @@ class Orchestrator:
                     "recommendations": recommendations,
                     "ai_enhanced": bool(settings.ai_enabled),
                     "strategy_used": investigation.strategy,
+                    # Trazabilidad del modelo de identidad: sin la versión del
+                    # scorer, las investigaciones anteriores y posteriores a un
+                    # recalibrado no son comparables en un análisis agregado.
+                    "scorer_version": SCORER_VERSION,
+                    "semantic_matching": bool(settings.semantic_matching_enabled),
+                    **{f"enrichment_{k}": v for k, v in enrichment.items()},
                 }
                 investigation.status = "completed"
                 investigation.completed_at = datetime.now(timezone.utc)
 
                 await db.commit()
 
-                # 7. Broadcast completion event via SSE
+                # 8. Broadcast completion event via SSE
                 await event_bus.publish(str_id, {
                     "type": "investigation_complete",
                     "status": "completed",

@@ -97,6 +97,8 @@ async def get_investigation_graph(
                     value=ent.value,
                     display_name=ent.display_name,
                     confidence=ent.confidence,
+                    existence_confidence=ent.existence_confidence,
+                    identity_score=ent.identity_score,
                     verified=ent.verified,
                     metadata_info=ent.metadata_info or {},
                     is_root=False,

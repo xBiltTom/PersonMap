@@ -1,16 +1,62 @@
-from typing import Any, Dict, List
+"""
+Agrupación de hallazgos en clusters de identidad.
+
+La versión anterior no agrupaba: partía las entidades en tres cajas fijas según
+su confianza (>=0.70, >=0.40, resto) e ignoraba por completo tanto las aristas
+de `Relationship` como los pares correlacionados por avatar. Dos perfiles unidos
+por evidencia directa podían acabar en cajas distintas si sus puntuaciones caían
+a distinto lado del umbral.
+
+Aquí se hace agrupación real con **union-find** sobre las aristas de evidencia:
+si A está unido a B y B a C, los tres forman una identidad, aunque A y C no
+compartan ninguna señal entre sí. Es el enfoque de `clawithme`, señalado en el
+análisis del estado del arte como el más cercano a la visión del proyecto.
+"""
+
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
 from app.identity.avatar_hasher import avatar_hasher
 from app.models.entity import Entity
 from app.models.identity_cluster import IdentityCluster
+from app.models.relationship import Relationship
 from app.models.target import Target
+
+# Tipos de relación que constituyen evidencia de "misma persona" y por tanto
+# unen componentes. `same_username` NO está: dos cuentas con el mismo alias
+# pueden ser homónimos, que es justamente el caso que el sistema debe separar.
+IDENTITY_EDGES = {"uses_email", "linked_to", "same_avatar"}
+
+
+class UnionFind:
+    """Estructura de conjuntos disjuntos con compresión de caminos."""
+
+    def __init__(self, items: Iterable[str]) -> None:
+        self._parent: Dict[str, str] = {i: i for i in items}
+
+    def find(self, item: str) -> str:
+        root = item
+        while self._parent[root] != root:
+            root = self._parent[root]
+        # Compresión: acorta el camino para las consultas siguientes.
+        while self._parent[item] != root:
+            self._parent[item], item = root, self._parent[item]
+        return root
+
+    def union(self, a: str, b: str) -> None:
+        if a in self._parent and b in self._parent:
+            root_a, root_b = self.find(a), self.find(b)
+            if root_a != root_b:
+                self._parent[root_b] = root_a
+
+    def groups(self) -> Dict[str, List[str]]:
+        out: Dict[str, List[str]] = {}
+        for item in self._parent:
+            out.setdefault(self.find(item), []).append(item)
+        return out
 
 
 class IdentityResolver:
-    """
-    Groups discovered entities into cohesive identity clusters using
-    Fellegi-Sunter posterior probabilities and perceptual avatar hashing (dHash),
-    separating high-certainty profiles from low-certainty homonyms.
-    """
+    """Resuelve qué hallazgos pertenecen a la misma identidad."""
 
     CONFIRMED_THRESHOLD = 0.70
     PROBABLE_THRESHOLD = 0.40
@@ -20,109 +66,200 @@ class IdentityResolver:
         investigation_id: Any,
         entities: List[Entity],
         target: Target,
+        relationships: Optional[List[Relationship]] = None,
     ) -> List[IdentityCluster]:
         if not entities:
             return []
 
-        # 1. Run perceptual avatar hashing cross-correlation
-        avatar_correlations: List[Dict[str, Any]] = []
-        try:
-            avatar_correlations = await avatar_hasher.correlate_entity_avatars(entities)
-        except Exception:
-            pass
+        avatar_correlations = await self._correlate_avatars(entities)
 
-        # Apply avatar boost to matched entities
-        matched_entity_ids = set()
+        # 1. Union-find sobre la evidencia de identidad disponible.
+        by_id = {str(e.id): e for e in entities}
+        uf = UnionFind(by_id.keys())
+        edges: List[Tuple[str, str, str]] = []
+
+        for rel in relationships or []:
+            if rel.relation_type in IDENTITY_EDGES:
+                a, b = str(rel.source_entity_id), str(rel.target_entity_id)
+                uf.union(a, b)
+                edges.append((a, b, rel.relation_type))
+
         for corr in avatar_correlations:
-            matched_entity_ids.add(corr["entity_a_id"])
-            matched_entity_ids.add(corr["entity_b_id"])
+            a, b = corr["entity_a_id"], corr["entity_b_id"]
+            uf.union(a, b)
+            edges.append((a, b, "same_avatar"))
 
-        for e in entities:
-            if str(e.id) in matched_entity_ids:
-                e.confidence = max(e.confidence, 0.99)
-                if not e.metadata_info:
-                    e.metadata_info = {}
-                e.metadata_info["avatar_correlated"] = True
+        # 2. Cada componente hereda la mejor evidencia de sus miembros: si una
+        #    sola cuenta del grupo está probada, arrastra a las que están unidas
+        #    a ella por evidencia directa. Eso es lo que aporta el clustering
+        #    frente a clasificar cada entidad por separado.
+        components = uf.groups()
+        component_score: Dict[str, float] = {}
+        for root, members in components.items():
+            component_score[root] = max(self._attribution(by_id[m]) for m in members)
 
-        primary_entities: List[Entity] = []
-        secondary_entities: List[Entity] = []
-        homonyms: List[Entity] = []
+        confirmed: List[Entity] = []
+        probable: List[Entity] = []
+        discarded: List[Entity] = []
 
-        for e in entities:
-            if e.confidence >= self.CONFIRMED_THRESHOLD or e.verified:
-                primary_entities.append(e)
-            elif e.confidence >= self.PROBABLE_THRESHOLD:
-                secondary_entities.append(e)
-            else:
-                homonyms.append(e)
+        for root, members in components.items():
+            score = component_score[root]
+            for member_id in members:
+                entity = by_id[member_id]
+                # La verificación manual del analista manda sobre el modelo.
+                if entity.verified or score >= self.CONFIRMED_THRESHOLD:
+                    confirmed.append(entity)
+                elif score >= self.PROBABLE_THRESHOLD:
+                    probable.append(entity)
+                else:
+                    discarded.append(entity)
 
         clusters: List[IdentityCluster] = []
+        linked_components = {r: m for r, m in components.items() if len(m) > 1}
 
-        # 2. Primary Identity Cluster (High confidence)
-        if primary_entities:
-            avg_conf = sum(e.confidence for e in primary_entities) / len(primary_entities)
-            reasoning = (
-                f"Se correlacionaron {len(primary_entities)} perfiles y servicios "
-                f"mediante el modelo Fellegi-Sunter con alta verosimilitud en credenciales, alias o correos."
-            )
-            if avatar_correlations:
-                reasoning += f" Se confirmaron {len(avatar_correlations)} correlaciones visuales directas de avatar (dHash)."
-
+        if confirmed:
             clusters.append(
-                IdentityCluster(
-                    investigation_id=investigation_id,
+                self._build_cluster(
+                    investigation_id,
                     label="Identidad Principal (Confirmada / Alta Certeza)",
-                    confidence=round(avg_conf, 2),
-                    entity_ids=[str(e.id) for e in primary_entities],
-                    reasoning=reasoning,
-                    scoring_breakdown={
-                        "entities_count": len(primary_entities),
-                        "status": "confirmed",
+                    entities=confirmed,
+                    status="confirmed",
+                    reasoning=self._confirmed_reasoning(
+                        confirmed, linked_components, avatar_correlations
+                    ),
+                    extra={
                         "avatar_correlations": avatar_correlations,
-                        "fellegi_sunter_active": True,
+                        "linked_components": len(linked_components),
+                        "evidence_edges": [
+                            {"source": a, "target": b, "relation": r} for a, b, r in edges
+                        ],
                     },
                 )
             )
 
-        # 3. Secondary Cluster (Probable match)
-        if secondary_entities:
-            avg_conf = sum(e.confidence for e in secondary_entities) / len(secondary_entities)
+        if probable:
             clusters.append(
-                IdentityCluster(
-                    investigation_id=investigation_id,
+                self._build_cluster(
+                    investigation_id,
                     label="Perfiles Probables (Requieren Verificación Manual)",
-                    confidence=round(avg_conf, 2),
-                    entity_ids=[str(e.id) for e in secondary_entities],
+                    entities=probable,
+                    status="probable",
                     reasoning=(
-                        f"Se detectaron {len(secondary_entities)} perfiles con alias compartido "
-                        f"pero sin biografía institucional o correlación visual suficiente."
+                        f"{len(probable)} perfiles con evidencia parcial: la probabilidad de "
+                        f"atribución queda entre {self.PROBABLE_THRESHOLD:.0%} y "
+                        f"{self.CONFIRMED_THRESHOLD:.0%}. Conviene confirmarlos o descartarlos a mano."
                     ),
-                    scoring_breakdown={
-                        "entities_count": len(secondary_entities),
-                        "status": "probable",
-                    },
                 )
             )
 
-        # 4. Homonyms Cluster (Low match)
-        if homonyms:
+        if discarded:
             clusters.append(
-                IdentityCluster(
-                    investigation_id=investigation_id,
+                self._build_cluster(
+                    investigation_id,
                     label="Posibles Homónimos Descartados",
-                    confidence=0.20,
-                    entity_ids=[str(e.id) for e in homonyms],
+                    entities=discarded,
+                    status="homonym_discarded",
                     reasoning=(
-                        f"{len(homonyms)} perfiles con discrepancia en nombre, ámbito geográfico o actividad."
+                        f"{len(discarded)} hallazgos sin evidencia suficiente de pertenecer al "
+                        f"objetivo. Coincidir en un alias no basta: puede tratarse de otra "
+                        f"persona que registró el mismo nombre de usuario."
                     ),
-                    scoring_breakdown={
-                        "entities_count": len(homonyms),
-                        "status": "homonym_discarded",
-                    },
                 )
             )
 
         return clusters
+
+    # -- Interno -----------------------------------------------------------
+
+    async def _correlate_avatars(self, entities: List[Entity]) -> List[Dict[str, Any]]:
+        try:
+            correlations = await avatar_hasher.correlate_entity_avatars(entities)
+        except Exception:
+            return []
+
+        # Se marca la entidad, pero SIN el antiguo `confidence = max(conf, 0.99)`.
+        # Aquel atajo saltaba por encima del modelo probabilístico: dos avatares
+        # por defecto idénticos (la silueta genérica de Gravatar, por ejemplo)
+        # bastaban para declarar "identidad confirmada" a dos personas distintas.
+        # Ahora la correlación entra como una señal más del Fellegi-Sunter y como
+        # arista que une componentes.
+        matched = {c["entity_a_id"] for c in correlations} | {
+            c["entity_b_id"] for c in correlations
+        }
+        for entity in entities:
+            if str(entity.id) in matched:
+                entity.metadata_info = {**(entity.metadata_info or {}), "avatar_correlated": True}
+
+        return correlations
+
+    def _attribution(self, entity: Entity) -> float:
+        """
+        Probabilidad de que el hallazgo sea del objetivo.
+
+        Usa `identity_score` (el modelo) y no `confidence` (que es el máximo con
+        la certeza de detección de la herramienta). Agrupar por `confidence`
+        hacía que la constante escrita a mano en cada tool decidiera los
+        clusters, dejando al modelo probabilístico sin efecto real.
+        """
+        if entity.identity_score is not None:
+            return float(entity.identity_score)
+        # Entidades anteriores a la separación de métricas.
+        return float(entity.confidence or 0.0)
+
+    def _confirmed_reasoning(
+        self,
+        confirmed: List[Entity],
+        linked_components: Dict[str, List[str]],
+        avatar_correlations: List[Dict[str, Any]],
+    ) -> str:
+        parts = [
+            f"{len(confirmed)} hallazgos atribuidos al objetivo por el modelo "
+            f"Fellegi-Sunter (probabilidad de atribución ≥ {self.CONFIRMED_THRESHOLD:.0%})."
+        ]
+        if linked_components:
+            parts.append(
+                f"{len(linked_components)} grupo(s) quedaron unidos por evidencia directa "
+                f"(correo compartido, enlace explícito o avatar idéntico), de modo que la "
+                f"certeza de un perfil se propaga a los que están conectados a él."
+            )
+        if avatar_correlations:
+            parts.append(
+                f"Se detectaron {len(avatar_correlations)} coincidencias visuales de avatar "
+                f"mediante hashing perceptual (dHash)."
+            )
+        return " ".join(parts)
+
+    def _build_cluster(
+        self,
+        investigation_id: Any,
+        *,
+        label: str,
+        entities: List[Entity],
+        status: str,
+        reasoning: str,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> IdentityCluster:
+        scores = [self._attribution(e) for e in entities]
+        breakdown: Dict[str, Any] = {
+            "entities_count": len(entities),
+            "status": status,
+            # Estadísticos del cluster, útiles para el análisis agregado del
+            # artículo y para dibujar la distribución en la interfaz.
+            "attribution_min": round(min(scores), 3),
+            "attribution_max": round(max(scores), 3),
+            "attribution_mean": round(sum(scores) / len(scores), 3),
+        }
+        if extra:
+            breakdown.update(extra)
+
+        return IdentityCluster(
+            investigation_id=investigation_id,
+            label=label,
+            confidence=round(sum(scores) / len(scores), 3),
+            entity_ids=[str(e.id) for e in entities],
+            reasoning=reasoning,
+            scoring_breakdown=breakdown,
+        )
 
 
 identity_resolver = IdentityResolver()

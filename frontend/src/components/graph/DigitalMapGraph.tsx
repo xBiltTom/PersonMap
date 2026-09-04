@@ -400,6 +400,7 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
               <IdentityEvidence
                 breakdown={selectedNode.data.metadata_info?.identity_breakdown}
                 identityScore={selectedNode.data.metadata_info?.identity_score}
+                existenceConfidence={selectedNode.data.existence_confidence}
                 finalConfidence={Number(selectedNode.data.confidence || 0)}
               />
             </div>

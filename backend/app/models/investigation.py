@@ -11,13 +11,13 @@ class Investigation(Base):
     __tablename__ = "investigations"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    target_id = Column(UUID(as_uuid=True), ForeignKey("targets.id", ondelete="CASCADE"), nullable=False)
+    target_id = Column(UUID(as_uuid=True), ForeignKey("targets.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # Strategy: "auto", "rule_based", "agentic"
     strategy = Column(String(50), default="auto", nullable=False)
 
     # Status: "pending", "running", "completed", "failed"
-    status = Column(String(50), default="pending", nullable=False)
+    status = Column(String(50), default="pending", nullable=False, index=True)
 
     # Risk Score: 0 - 100
     risk_score = Column(Integer, default=0, nullable=False)

@@ -26,7 +26,11 @@ export interface TargetData {
  */
 export interface IdentityBreakdown {
   log_likelihood_ratio?: number;
-  [signal: string]: number | undefined;
+  /** Cuántas señales pudieron evaluarse para este par (objetivo, hallazgo). */
+  signals_evaluated?: number;
+  scorer_version?: string;
+  /** `<señal>`: γ ∈ [0,1] · `<señal>_weight`: bits · `<señal>_applicable`: evaluable. */
+  [signal: string]: number | string | boolean | undefined;
 }
 
 export interface EntityData {
@@ -46,7 +50,13 @@ export interface EntityData {
     rationale?: string;
     engine?: string;
   };
+  /** Valor mostrado: el máximo de las dos métricas siguientes. */
   confidence: number;
+  /** Certeza de DETECCIÓN de la herramienta: "esta cuenta existe". */
+  existence_confidence?: number | null;
+  /** Probabilidad de ATRIBUCIÓN del modelo: "es del objetivo". */
+  identity_score?: number | null;
+  scorer_version?: string | null;
   verified: boolean;
   verification_notes?: string | null;
   source_tool: string;

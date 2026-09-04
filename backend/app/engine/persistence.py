@@ -44,17 +44,36 @@ def dedupe_findings(findings: List[ToolFinding]) -> List[ToolFinding]:
     La clave normaliza plataforma y valor (minúsculas, sin barra final) porque
     distintas tools descubren el mismo perfil con URLs cosméticamente distintas
     (`https://github.com/u` vs `https://github.com/u/`).
+
+    Conserva la procedencia COMPLETA en `source_tools`. Es imprescindible para
+    el modelo de identidad: un perfil hallado al enumerar el alias del objetivo
+    y luego reverificado por `social_verifier` conservaba solo el segundo, y el
+    scorer perdía de vista que la coincidencia del alias estaba garantizada por
+    el método de búsqueda. Resultado: cuentas cualesquiera de la cola larga
+    puntuaban 0.99 por una coincidencia tautológica.
     """
     deduped: Dict[Tuple[str, str, str], ToolFinding] = {}
+    provenance: Dict[Tuple[str, str, str], List[str]] = {}
+
     for f in findings:
         key = (
             f.entity_type,
             (f.platform or "").lower(),
             f.value.strip().rstrip("/").lower(),
         )
+
+        tool = str((f.metadata_info or {}).get("source_tool") or "").removeprefix("agent:")
+        tools = provenance.setdefault(key, [])
+        if tool and tool not in tools:
+            tools.append(tool)
+
         current = deduped.get(key)
         if current is None or f.confidence > current.confidence:
             deduped[key] = f
+
+    for key, winner in deduped.items():
+        winner.metadata_info = {**(winner.metadata_info or {}), "source_tools": provenance[key]}
+
     return list(deduped.values())
 
 
@@ -75,20 +94,27 @@ async def persist_findings(
     entities: List[Entity] = []
 
     for f in dedupe_findings(findings):
-        score, breakdown = compute_identity_score(
+        identity_score, breakdown = compute_identity_score(
             display_name=f.display_name,
             value=f.value,
             metadata=f.metadata_info,
             target=target,
         )
 
-        # El breakdown del scorer es el dato más rico del modelo Fellegi-Sunter y
-        # hasta ahora se descartaba en ambos motores. Se guarda dentro de
-        # metadata_info (que ya es JSONB) para que la UI pueda explicar por qué
-        # el sistema atribuye este perfil al objetivo, sin necesidad de migración.
+        # El breakdown es el dato más rico del modelo y ambos motores lo
+        # descartaban. Se guarda en metadata_info para que la interfaz pueda
+        # explicar señal a señal por qué se atribuye el hallazgo al objetivo.
         metadata = dict(f.metadata_info or {})
         metadata["identity_breakdown"] = breakdown
-        metadata["identity_score"] = score
+        metadata["identity_score"] = identity_score
+
+        # Dos preguntas distintas, dos columnas. `f.confidence` es la certeza de
+        # DETECCIÓN que reporta la herramienta ("esta cuenta existe");
+        # `identity_score` es la de ATRIBUCIÓN ("es del objetivo"). `confidence`
+        # se mantiene como el valor mostrado y ordenable, pero ya no oculta el
+        # modelo: antes el `max()` lo tapaba siempre, porque las herramientas
+        # emiten constantes de 0.85-1.0 y el modelo saturaba en 0.05 o 0.45.
+        existence_confidence = round(f.confidence, 3)
 
         entity = Entity(
             investigation_id=investigation_id,
@@ -97,7 +123,10 @@ async def persist_findings(
             value=f.value,
             display_name=(f.display_name or f.value)[:255],
             metadata_info=metadata,
-            confidence=round(max(f.confidence, score), 2),
+            existence_confidence=existence_confidence,
+            identity_score=identity_score,
+            scorer_version=breakdown.get("scorer_version"),
+            confidence=round(max(existence_confidence, identity_score), 3),
             verified=False,
             source_tool=metadata.get("source_tool", default_source_tool),
         )

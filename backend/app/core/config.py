@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     llm_model: Optional[str] = None
     llm_api_key: Optional[str] = None
 
+    # Modelo de embeddings para la señal semántica del resolutor de identidad
+    # (compara biografías que dicen lo mismo con palabras distintas: "UNMSM"
+    # frente a "Universidad Nacional Mayor de San Marcos"). Se resuelve por
+    # LiteLLM igual que el modelo de chat, así que admite cualquier proveedor:
+    #   openai/text-embedding-3-small · gemini/text-embedding-004 · ollama/nomic-embed-text
+    # Vacío = señal desactivada; el sistema sigue funcionando con cotejo léxico.
+    llm_embedding_model: Optional[str] = None
+
     # Server & Security
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
@@ -70,6 +78,11 @@ class Settings(BaseSettings):
     def reverse_image_enabled(self) -> bool:
         """Returns True if at least one reverse-image-search backend is configured."""
         return bool(self.bing_visual_search_key or self.serpapi_key)
+
+    @property
+    def semantic_matching_enabled(self) -> bool:
+        """True si hay modelo de embeddings y clave para invocarlo."""
+        return bool(self.llm_embedding_model and self.llm_api_key)
 
     @property
     def tavily_enabled(self) -> bool:

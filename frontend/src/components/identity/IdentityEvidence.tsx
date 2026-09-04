@@ -55,7 +55,8 @@ const SIGNAL_LABELS: Record<string, { label: string; help: string }> = {
 
 interface Props {
   breakdown?: IdentityBreakdown;
-  identityScore?: number;
+  identityScore?: number | null;
+  existenceConfidence?: number | null;
   finalConfidence: number;
   compact?: boolean;
 }
@@ -66,15 +67,25 @@ interface Signal {
   help: string;
   gamma: number;
   weight: number;
+  /** Si la señal no era evaluable, no aporta ni resta: no había dato que comparar. */
+  applicable: boolean;
 }
+
+const RESERVED_KEYS = new Set([
+  "log_likelihood_ratio",
+  "signals_evaluated",
+  "scorer_version",
+]);
 
 function parseSignals(breakdown: IdentityBreakdown): Signal[] {
   const signals: Signal[] = [];
   for (const [key, value] of Object.entries(breakdown)) {
-    if (key === "log_likelihood_ratio" || key.endsWith("_weight")) continue;
+    if (RESERVED_KEYS.has(key)) continue;
+    if (key.endsWith("_weight") || key.endsWith("_applicable")) continue;
     if (typeof value !== "number") continue;
 
     const weight = breakdown[`${key}_weight`];
+    const applicable = breakdown[`${key}_applicable`];
     const meta = SIGNAL_LABELS[key];
     signals.push({
       key,
@@ -82,15 +93,21 @@ function parseSignals(breakdown: IdentityBreakdown): Signal[] {
       help: meta?.help ?? "Señal del modelo de resolución de identidad.",
       gamma: value,
       weight: typeof weight === "number" ? weight : 0,
+      // Los desgloses antiguos no traen la marca; se asumen evaluables.
+      applicable: applicable === undefined ? true : Boolean(applicable),
     });
   }
-  // Primero lo que más empuja la decisión, en cualquiera de los dos sentidos.
-  return signals.sort((a, b) => Math.abs(b.weight) - Math.abs(a.weight));
+  // Las evaluables primero, y dentro de ellas las que más empujan la decisión.
+  return signals.sort((a, b) => {
+    if (a.applicable !== b.applicable) return a.applicable ? -1 : 1;
+    return Math.abs(b.weight) - Math.abs(a.weight);
+  });
 }
 
 export function IdentityEvidence({
   breakdown,
   identityScore,
+  existenceConfidence,
   finalConfidence,
   compact = false,
 }: Props) {
@@ -104,7 +121,8 @@ export function IdentityEvidence({
   }
 
   const signals = parseSignals(breakdown);
-  const supporting = signals.filter((s) => s.gamma > 0);
+  const evaluable = signals.filter((s) => s.applicable);
+  const supporting = evaluable.filter((s) => s.gamma > 0);
   const llr = breakdown.log_likelihood_ratio;
 
   return (
@@ -117,15 +135,21 @@ export function IdentityEvidence({
               <>
                 Se atribuye a la persona investigada porque{" "}
                 <span className="text-slate-100 font-semibold">
-                  {supporting.length} señal(es)
+                  {supporting.length} de {evaluable.length} señales evaluables
                 </span>{" "}
                 coinciden: {supporting.map((s) => s.label.toLowerCase()).join(", ")}.
               </>
+            ) : evaluable.length === 0 ? (
+              <>
+                No hubo <span className="text-slate-100 font-semibold">ninguna señal evaluable</span>:
+                no existe dato en común que comparar entre el objetivo y este hallazgo.
+                El modelo no afirma nada, se queda en su probabilidad a priori.
+              </>
             ) : (
               <>
-                Ninguna señal del modelo coincidió. La confianza mostrada procede
-                únicamente de la herramienta que lo descubrió, no de la atribución
-                de identidad.
+                Ninguna de las {evaluable.length} señales evaluables coincidió. La
+                confianza mostrada procede de la herramienta que lo descubrió, no
+                de la atribución de identidad.
               </>
             )}
           </p>
@@ -143,21 +167,35 @@ export function IdentityEvidence({
           <Row
             label="Log-verosimilitud total"
             value={`${llr > 0 ? "+" : ""}${llr.toFixed(2)} bits`}
-            help="Suma de los pesos. Positivo apoya que sea la misma persona; negativo, lo contrario."
+            help="Suma de los pesos de las señales evaluables. Positivo apoya que sea la misma persona; negativo, lo contrario. Las señales sin dato aportan 0."
           />
         )}
         {typeof identityScore === "number" && (
           <Row
-            label="Score de atribución"
+            label="Atribución (¿es del objetivo?)"
             value={`${Math.round(identityScore * 100)}%`}
-            help="Probabilidad posterior del modelo de que este perfil pertenezca al objetivo."
+            help="Probabilidad posterior del modelo Fellegi-Sunter de que este perfil pertenezca a la persona investigada."
+          />
+        )}
+        {typeof existenceConfidence === "number" && (
+          <Row
+            label="Detección (¿existe la cuenta?)"
+            value={`${Math.round(existenceConfidence * 100)}%`}
+            help="Certeza con la que la herramienta afirma que el perfil existe. Es independiente de a quién pertenece."
           />
         )}
         <Row
           label="Confianza mostrada"
           value={`${Math.round(finalConfidence * 100)}%`}
-          help="Máximo entre la confianza de detección de la herramienta y el score de atribución."
+          help="El máximo de las dos anteriores; es el valor que ordena las vistas."
         />
+        {typeof breakdown.scorer_version === "string" && (
+          <Row
+            label="Versión del modelo"
+            value={breakdown.scorer_version}
+            help="Identifica la calibración usada. Las puntuaciones solo son comparables entre investigaciones con la misma versión."
+          />
+        )}
       </div>
     </div>
   );
@@ -173,14 +211,29 @@ function Row({ label, value, help }: { label: string; value: string; help: strin
 }
 
 function SignalRow({ signal }: { signal: Signal }) {
-  const { label, help, gamma, weight } = signal;
+  const { label, help, gamma, weight, applicable } = signal;
+
+  // Una señal no evaluable es un dato que no existe, no un desacuerdo. Se
+  // muestra atenuada y sin barra: el modelo anterior la penalizaba como si el
+  // perfil contradijera al objetivo, que es el fallo que hundía la puntuación
+  // de cualquier hallazgo con pocos datos en común.
+  if (!applicable) {
+    return (
+      <li
+        className="flex items-center gap-2 text-[11px] opacity-45"
+        title={`${help}\n\nNo evaluable: no hay dato que comparar en este hallazgo.`}
+      >
+        <Minus className="w-3 h-3 shrink-0 text-slate-500" aria-hidden="true" />
+        <span className="w-32 shrink-0 truncate text-slate-400">{label}</span>
+        <span className="flex-1 text-slate-500 italic">sin dato que comparar</span>
+        <span className="w-16 text-right font-mono text-slate-500 shrink-0">0.0 b</span>
+      </li>
+    );
+  }
+
   const agrees = gamma > 0;
   const Icon = weight > 0 ? TrendingUp : weight < 0 ? TrendingDown : Minus;
-  const tone = agrees
-    ? "text-emerald-300"
-    : weight < 0
-    ? "text-slate-500"
-    : "text-slate-400";
+  const tone = agrees ? "text-emerald-300" : weight < 0 ? "text-rose-400/70" : "text-slate-400";
 
   // La barra representa el grado de acuerdo, no el peso: el peso puede ser
   // negativo y no tendría sentido dibujarlo como longitud.
@@ -201,7 +254,7 @@ function SignalRow({ signal }: { signal: Signal }) {
       <span className="w-11 text-right font-mono text-slate-400 shrink-0">{pct}%</span>
       <span
         className={`w-16 text-right font-mono shrink-0 ${
-          weight > 0 ? "text-emerald-400" : "text-slate-500"
+          weight > 0 ? "text-emerald-400" : "text-rose-400/70"
         }`}
       >
         {weight > 0 ? "+" : ""}

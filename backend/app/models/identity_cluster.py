@@ -10,7 +10,7 @@ class IdentityCluster(Base):
     __tablename__ = "identity_clusters"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    investigation_id = Column(UUID(as_uuid=True), ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False)
+    investigation_id = Column(UUID(as_uuid=True), ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # Label: "Identidad Principal (Confirmada)", "Posible Homónimo #1"
     label = Column(String(255), nullable=False)
