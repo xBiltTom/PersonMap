@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from app.agent.agent import osint_agent
 from app.core.config import settings
 from app.core.database import async_session_maker
+from app.core.fingerprint import run_fingerprint
 from app.core.events import event_bus
 from app.engine.hybrid_engine import hybrid_engine
 from app.engine.rule_engine import rule_engine
@@ -158,6 +159,11 @@ class Orchestrator:
                     # recalibrado no son comparables en un análisis agregado.
                     "scorer_version": SCORER_VERSION,
                     "semantic_matching": bool(settings.semantic_matching_enabled),
+                    # Huella de la configuración: sin ella, las investigaciones
+                    # medidas antes y después de ampliar el catálogo de sitios
+                    # quedan mezcladas en la misma tabla sin que nada permita
+                    # distinguirlas.
+                    **{f"config_{k}": v for k, v in run_fingerprint().items()},
                     **{f"enrichment_{k}": v for k, v in enrichment.items()},
                 }
                 investigation.status = "completed"

@@ -29,8 +29,13 @@ class UsernameFinderTool(BaseTool):
     # How many sites from the bundled WhatsMyName dataset to actually check.
     # Configurable via PERSON_MAP_USERNAME_SCAN_MAX_SITES / .env; the dataset
     # itself carries 700+ entries, so this used to be an artificial bottleneck.
-    CONCURRENCY_LIMIT = 30
-    PROGRESS_EVERY = 40
+    #
+    # La concurrencia ya no es una constante aquí: era de 30 sobre un
+    # presupuesto global de 40, es decir, esta sola herramienta se quedaba con
+    # el 75 % del proceso y dejaba 10 ranuras para las otras diecisiete de la
+    # ronda. Ahora sale de la configuración y queda acotada por la cuota de
+    # `settings.tool_concurrency_budget()`.
+    PROGRESS_EVERY = 25
 
     PRIORITY_PLATFORMS = {
         "github", "gitlab", "reddit", "twitter", "x", "instagram", "telegram",
@@ -99,6 +104,30 @@ class UsernameFinderTool(BaseTool):
         self._sites_cache = sites
         return sites
 
+    def catalog_size(self) -> Dict[str, int]:
+        """
+        Tamaño del catálogo efectivo, para la huella de configuración.
+
+        Sin este dato en las métricas, las investigaciones medidas antes y
+        después de ampliar el catálogo son incomparables **y nada permite
+        detectarlo**: `scorer_version` protege el modelo de identidad, pero el
+        número de sitios escaneados no lo protegía nadie.
+        """
+        available = 0
+        if self.WMN_FILE.exists():
+            try:
+                data = json.loads(self.WMN_FILE.read_text(encoding="utf-8"))
+                available = sum(
+                    1
+                    for site in data.get("sites", [])
+                    if site.get("valid", True) is not False
+                    and site.get("cat") not in {"xx NSFW xx", "archived"}
+                    and "uri_check" in site
+                )
+            except Exception:
+                available = 0
+        return {"available": available, "scanned": len(self._load_sites())}
+
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
         findings: List[ToolFinding] = []
         usernames = context.all_usernames()
@@ -110,7 +139,9 @@ class UsernameFinderTool(BaseTool):
             return findings
 
         investigation_id = context.extra.get("investigation_id")
-        semaphore = asyncio.Semaphore(self.CONCURRENCY_LIMIT)
+        semaphore = asyncio.Semaphore(
+            settings.tool_concurrency_budget(settings.username_scan_concurrency)
+        )
         progress_counter = {"checked": 0}
 
         async with http_client.build_client(timeout=6.0) as client:
@@ -169,12 +200,21 @@ class UsernameFinderTool(BaseTool):
                 investigation_id
                 and progress_counter["checked"] % self.PROGRESS_EVERY == 0
             ):
+                checked = progress_counter["checked"]
                 await event_bus.publish(investigation_id, {
                     "type": "log",
                     "phase": "progress",
                     "tool": self.name,
+                    # Cifras estructuradas, no solo una frase. El evento ya se
+                    # emitía y la interfaz lo desperdiciaba como una línea de log
+                    # más: sin `checked`/`total` no se puede dibujar una barra, y
+                    # una consola muda durante minutos arruina la sustentación.
+                    "checked": checked,
+                    "total": total_sites,
+                    "pct": round(checked / total_sites * 100, 1) if total_sites else 0.0,
+                    "subject": username,
                     "message": (
-                        f"[{self.name}] Progreso: {progress_counter['checked']}/{total_sites} "
+                        f"[{self.name}] Progreso: {checked}/{total_sites} "
                         f"plataformas verificadas para '@{username}'..."
                     ),
                     "timestamp": time.time(),

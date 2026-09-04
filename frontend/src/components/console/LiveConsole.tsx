@@ -132,6 +132,11 @@ export function LiveConsole({
   // etiqueta y sería ruido. Se activa en cuanto aparece una línea de refinamiento.
   const hasTwoLayers = logs.some((l) => l.layer === "refinement");
 
+  // Último evento de progreso con cifras. El backend lo emite cada 25 sitios
+  // comprobados; hasta ahora se pintaba como una línea de log más y el usuario
+  // veía una consola aparentemente detenida durante minutos.
+  const progress = findLatestProgress(logs);
+
   const handleManualReconnect = () => {
     retriesRef.current = 0;
     setStatus("connecting");
@@ -176,6 +181,8 @@ export function LiveConsole({
         </div>
       </div>
 
+      {!isFinished && progress && <ScanProgressBar progress={progress} />}
+
       {/* Cuerpo del terminal */}
       <div
         ref={scrollRef}
@@ -212,6 +219,87 @@ export function LiveConsole({
           ))
         )}
         <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
+interface ScanProgress {
+  tool: string;
+  checked: number;
+  total: number;
+  pct: number;
+  subject?: string;
+}
+
+/**
+ * Último evento de progreso que traiga cifras.
+ *
+ * Se recorre de atrás hacia delante porque solo interesa el más reciente, y los
+ * eventos antiguos siguen en el historial tras una reconexión.
+ */
+function findLatestProgress(logs: StreamLog[]): ScanProgress | null {
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const log = logs[i];
+    if (
+      log.phase === "progress" &&
+      typeof log.checked === "number" &&
+      typeof log.total === "number" &&
+      log.total > 0
+    ) {
+      return {
+        tool: log.tool || "escaneo",
+        checked: log.checked,
+        total: log.total,
+        pct: typeof log.pct === "number" ? log.pct : (log.checked / log.total) * 100,
+        subject: log.subject,
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Barra de progreso del escaneo de plataformas.
+ *
+ * Es la diferencia entre una demo que se sostiene y una que no: el barrido de
+ * cientos de sitios tarda minutos, y sin esto la pantalla parece congelada
+ * justo cuando hay un jurado mirando.
+ */
+function ScanProgressBar({ progress }: { progress: ScanProgress }) {
+  const pct = Math.min(100, Math.max(0, progress.pct));
+
+  return (
+    <div className="px-4 py-2.5 border-b border-[#1b2537] bg-[#0a0f18]">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-1.5 text-[11px] font-mono">
+        <span className="text-slate-300">
+          <span className="text-sky-400">[{progress.tool.toUpperCase()}]</span>{" "}
+          {progress.subject ? (
+            <>
+              comprobando <span className="text-slate-100">@{progress.subject}</span>
+            </>
+          ) : (
+            "escaneando plataformas"
+          )}
+        </span>
+        <span className="text-slate-400 tabular-nums">
+          {progress.checked} / {progress.total} plataformas ·{" "}
+          <span className="text-slate-100 font-semibold">{pct.toFixed(0)}%</span>
+        </span>
+      </div>
+
+      <div
+        role="progressbar"
+        aria-valuenow={Math.round(pct)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`Progreso del escaneo de plataformas: ${progress.checked} de ${progress.total}`}
+        className="h-1.5 rounded-full bg-[#161f2e] overflow-hidden"
+      >
+        <div
+          className="h-full rounded-full bg-sky-400 transition-[width] duration-500 ease-out"
+          style={{ width: `${pct}%` }}
+        />
       </div>
     </div>
   );

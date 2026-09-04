@@ -57,15 +57,38 @@ class Settings(BaseSettings):
     backend_port: int = 8000
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
-    # HTTP resilience layer (shared by every OSINT tool via app.tools.http_client)
-    # Global cap on concurrent outbound requests across the whole process, to avoid
-    # hammering the network stack / getting the server's own IP flagged by WAFs.
-    http_max_concurrency: int = 40
+    # --- Presupuesto de concurrencia HTTP ------------------------------------
+    # Compartido por todas las tools a través de app.tools.http_client.
+    #
+    # El diseño anterior tenía un único semáforo global de 40 peticiones y nada
+    # más. Eso confundía dos cosas que no son la misma: **cortesía** con cada
+    # host y **consumo de recursos** del proceso. Enviar 500 peticiones a 500
+    # hosts distintos no es descortés con nadie, pero el tope global lo trataba
+    # igual que 500 peticiones al mismo host. El resultado medido: una
+    # investigación tardaba 530 s, y `username_finder` acaparaba 30 de las 40
+    # ranuras, dejando 10 para las otras diecisiete herramientas de la ronda.
+    #
+    # Ahora son dos límites con propósitos distintos:
+    #   - `http_max_per_host` es la cortesía real. Es el que evita que un sitio
+    #     nos bloquee, y el que la Fase 4.2 necesitará para respetar el límite de
+    #     Hudson Rock (50 req/10 s por host).
+    #   - `http_max_concurrency` es el guardarraíl del proceso (sockets, CPU).
+    #     Con la cortesía garantizada por host, puede ser mucho más alto.
+    http_max_concurrency: int = 120
+    http_max_per_host: int = 4
 
     # Username enumeration: how many sites from the bundled WhatsMyName dataset
     # to actually check per username. The dataset itself has 700+ entries;
     # raise this as high as your infrastructure/rate-limits comfortably allow.
     username_scan_max_sites: int = 500
+    # Ranuras simultáneas de `username_finder`. Antes era una constante de 30 en
+    # la propia tool, invisible desde la configuración y descuadrada con el tope
+    # global. Se expone aquí porque es la palanca que decide cuánto dura una
+    # demo, y se acota abajo a una fracción del presupuesto global para que
+    # ninguna herramienta pueda dejar sin ranuras al resto de la ronda.
+    username_scan_concurrency: int = 60
+    # Fracción máxima del presupuesto global que puede tomar una sola tool.
+    tool_concurrency_share: float = 0.6
 
     # Reverse image / avatar search (optional, both are pluggable backends).
     # Leave unset to keep this feature disabled (graceful no-op), same pattern
@@ -97,6 +120,18 @@ class Settings(BaseSettings):
     # `exact_match` no sirve (devuelve cero resultados siempre), de ahí que la
     # comprobación se haga del lado del cliente.
     tavily_require_literal_match: bool = True
+
+    def tool_concurrency_budget(self, requested: int) -> int:
+        """
+        Ranuras que puede tomar una sola herramienta, acotadas a su cuota.
+
+        Sin este tope, una tool de enumeración pide 500 comprobaciones a la vez
+        y mata de inanición a las otras diecisiete de la misma ronda. La cuota
+        se aplica sobre el presupuesto global, así que subir o bajar
+        `http_max_concurrency` reparte automáticamente.
+        """
+        ceiling = max(1, int(self.http_max_concurrency * self.tool_concurrency_share))
+        return max(1, min(requested, ceiling))
 
     @property
     def ai_enabled(self) -> bool:

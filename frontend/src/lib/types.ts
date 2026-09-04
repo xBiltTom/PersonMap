@@ -113,6 +113,14 @@ export interface InvestigationMetrics {
    */
   engine_used?: EngineId;
   hybrid_degraded?: boolean;
+  /** Huella de la configuración con la que corrió (prefijo `config_`). */
+  config_username_catalog_available?: number;
+  config_username_catalog_scanned?: number;
+  config_http_max_concurrency?: number;
+  config_http_max_per_host?: number;
+  config_username_scan_concurrency?: number;
+  config_tools_registered?: number;
+  config_search_engine?: string;
   hybrid_heuristic_findings?: number;
   hybrid_refinement_findings?: number;
   hybrid_refinement_calls?: number;
@@ -223,6 +231,16 @@ export interface StreamLog {
   layer?: EngineLayer;
   findings_count?: number;
   error?: string;
+  /**
+   * Cifras del evento `phase: "progress"`. El backend ya lo emitía, pero solo
+   * con una frase; sin `checked`/`total` no se puede dibujar una barra y el
+   * evento se desperdiciaba como una línea de log más.
+   */
+  checked?: number;
+  total?: number;
+  pct?: number;
+  /** Alias o identificador que se está comprobando. */
+  subject?: string;
 }
 
 // ---------------------------------------------------------------------

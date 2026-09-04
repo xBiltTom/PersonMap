@@ -13,11 +13,12 @@
 | 1 · Hacer visible lo que ya existe | ✅ **Completada** | `3021b53` |
 | — · Tavily para dorking *(añadido a petición)* | ✅ **Completada** | `3021b53`, `6a85719` |
 | 2 · Corregir el modelo de identidad | ✅ **Completada** | `941b5a5`, `d3cc158` |
-| 3 · `hybrid` como tercera estrategia | ✅ **Completada** | `da1cb85` |
+| 3 · `hybrid` como tercera estrategia | ✅ **Completada** | `da1cb85`, `3070e26` |
+| 3.5 · Presupuesto de concurrencia y progreso | ✅ **Completada** | — |
 | 4 · Cobertura de fuentes | ⬜ Pendiente | — |
 | 5 · Cosecha activa de avatares | ⬜ Pendiente | — |
 
-**Línea base al retomar:** 95 tests en ~25 s sin red · `tsc` limpio · backend `:8000` y frontend `:3000`.
+**Línea base al retomar:** 110 tests en ~37 s sin red · `tsc` limpio · backend `:8000` y frontend `:3000`.
 
 ### Cómo retomar en otra sesión
 
@@ -110,12 +111,14 @@ la barra de progreso real (M2), conviene propagar la capa hasta la tool.
 
 ### Correcciones al plan de las fases pendientes
 
-- **Fase 4 — el presupuesto de concurrencia es bloqueante, no una nota.** Medido:
-  una investigación con pivoteo tarda **385 s** porque `username_finder` acapara
-  el semáforo global de 40 peticiones. Subir el catálogo a ~2700 sitios sin
-  repartir ese presupuesto por herramienta llevará la investigación a decenas de
-  minutos, inviable para una sustentación en vivo. Mitigación inmediata para
-  demos: bajar `USERNAME_SCAN_MAX_SITES` en `.env` (con 60 sitios, ~40 s).
+- ~~**Fase 4 — el presupuesto de concurrencia es bloqueante.**~~ **Resuelto en la
+  Fase 3.5.** El semáforo global pasó de 40 a 120 y apareció un límite **por
+  host** (4), que es donde vive la cortesía real. `username_finder` ya no toma
+  una constante de 30 escrita a mano, sino una cuota acotada al 60 % del
+  presupuesto global. Medido: una investigación `rule_based` sobre el mismo
+  objetivo bajó de **318 s a 202 s**, y la herramienta en aislado, de 39,3 s a
+  28,0 s. La Fase 4 puede subir el catálogo sin que el barrido de alias mate de
+  inanición al resto de la ronda.
 - **Fase 5 — la denylist de avatares por defecto sigue siendo obligatoria**, pero
   el riesgo bajó: ya no existe el atajo `confidence = max(conf, 0.99)` que
   convertía una coincidencia de avatar en "identidad confirmada" saltándose el
@@ -447,6 +450,92 @@ alias móvil rompe la reproducibilidad de las mediciones del artículo.
 
 ---
 
+## Fase 3.5 — Presupuesto de concurrencia y progreso visible ✅ COMPLETADA
+
+Fase corta, **habilitante**, abierta con la sustentación a una semana. No estaba
+en el plan original: salió de comprobar que una investigación tardaba 530 s, que
+la consola parecía congelada mientras tanto, y que la Fase 4 iba a empeorar
+ambas cosas.
+
+### 3.5.1 Dos límites donde antes había uno
+
+El diseño anterior tenía un único semáforo global de 40 peticiones, y eso
+confundía dos cosas que no son la misma:
+
+- **Cortesía** con cada sitio. Es una propiedad *del host*.
+- **Consumo de recursos** del proceso (sockets, CPU). Es global.
+
+Mandar 500 peticiones a 500 hosts distintos no molesta a nadie, pero el tope
+global lo trataba igual que 500 peticiones al mismo host — y obligaba a
+mantenerlo artificialmente bajo. `username_finder` se llevaba 30 de esas 40
+ranuras: **una sola herramienta con el 75 % del proceso** y diez ranuras para
+las otras diecisiete de la ronda.
+
+Ahora son dos puertas independientes: `http_max_per_host = 4` (la cortesía real)
+y `http_max_concurrency = 120` (el guardarraíl). Con la cortesía garantizada por
+host, el tope global puede subir sin volvernos abusivos con nadie. La constante
+`CONCURRENCY_LIMIT = 30` de la tool desapareció: ahora pide
+`settings.tool_concurrency_budget()`, acotado al 60 % del presupuesto global,
+de modo que ninguna herramienta pueda repetir el acaparamiento.
+
+**El límite por host es además el prerrequisito de la Fase 4.2**, que necesita
+respetar los 50 req/10 s de Hudson Rock.
+
+### 3.5.2 Medido, y comprobado que no cuesta hallazgos
+
+| Medición | Antes | Después |
+|---|---|---|
+| Investigación `rule_based` completa, mismo objetivo | 318 s | **202 s** (−37 %) |
+| `username_finder` en aislado sobre `@torvalds` | 39,3 s | **28,0 s** (−29 %) |
+
+La primera comparación mostraba 25 → 21 entidades, lo que parecía un precio.
+**No lo era**, y conviene saber cómo se descartó, porque el método vale para
+cualquier medición futura de este proyecto: se repitió el barrido en aislado
+—sin búsqueda web de por medio, que es la fuente de varianza— con la
+configuración antigua **dos veces** y la nueva una:
+
+```
+antigua: 87 hallazgos · nueva: 88 · antigua otra vez: 86
+diferencia antigua↔nueva : 4-5 sitios
+diferencia antigua↔antigua: 4 sitios   <-- el mismo tamaño
+```
+
+Los sitios que entran y salen son los mismos flaky (Quora, Spotify, Wowhead) en
+las dos comparaciones. **El ruido de plataformas es de ~5 % y no depende de la
+concurrencia.** La caída de 25 a 21 en la investigación completa venía de
+Tavily: devolvió otros resultados, el pivoteo extrajo otros alias y el barrido
+buscó otra cosa.
+
+> **Para el artículo:** ese ~5 % es el suelo de ruido de la medición. Cualquier
+> diferencia menor entre dos configuraciones no es una diferencia.
+
+### 3.5.3 Barra de progreso real (M2)
+
+El evento `phase: "progress"` ya se emitía y se desperdiciaba como una línea de
+log más. Ahora viaja con `checked`, `total`, `pct` y `subject`, y la consola
+pinta una barra con sus atributos ARIA. Cadencia cada 25 sitios (antes 40).
+
+Sin esto, el barrido de 500 plataformas son minutos de pantalla aparentemente
+congelada. Con un jurado delante, eso no se puede defender.
+
+### 3.5.4 Huella de configuración (`app/core/fingerprint.py`)
+
+`scorer_version` protegía el modelo de identidad; el resto de la configuración
+no lo protegía nadie. Cada investigación registra ahora, con prefijo `config_`:
+herramientas registradas, catálogo disponible y escaneado, topes de
+concurrencia y motor de búsqueda.
+
+**Por qué antes de la Fase 4 y no después:** ampliar el catálogo cambia
+"entidades descubiertas" y "latencia media", y sin este campo las filas medidas
+antes y después quedarían mezcladas en la misma tabla **sin nada que permitiera
+distinguirlas**.
+
+De paso corrigió un dato que los documentos daban por bueno: el catálogo
+utilizable de WhatsMyName son **667** sitios, no 716. La cifra antigua contaba
+entradas NSFW, archivadas y sin `uri_check`.
+
+---
+
 ## Fase 4 — Cobertura de fuentes ⬜ PENDIENTE
 
 Cada tool nueva sigue el patrón `BaseTool` + `http_client.build_client()` + registro en `registry.py`. **No hace falta tocar el agente IA:** `_build_agent_tools()` ya genera el schema desde el registry, así que toda tool nueva es automáticamente visible para el LLM.
@@ -457,7 +546,7 @@ Nuevo `backend/app/tools/data/dataset_adapter.py` que normaliza **en memoria** d
 
 | Fuente | Utilizables | Licencia | Aporta |
 |---|---|---|---|
-| WhatsMyName (ya bundleado) | 716 (hoy se usan 500) | CC BY-SA 4.0 | `uri_check`, `e_code`, `e_string`, `m_string`, `cat` |
+| WhatsMyName (ya bundleado) | 667 (hoy se usan 500) | CC BY-SA 4.0 | `uri_check`, `e_code`, `e_string`, `m_string`, `cat` |
 | **Maigret `data.json`** (nuevo) | **2960** de 3653 | MIT | `url`/`urlProbe`, `checkType`, `presenseStrs`/`absenceStrs`, **`regexCheck`**, **`alexaRank`**, `tags`, `disabled`, `protection` |
 
 > **El objetivo NO es el volumen, es la precisión.** El valor real de Maigret no son los 3000 sitios sino la calidad de la comprobación: `regexCheck` descarta usernames inválidos **sin gastar una petición**, `absenceStrs` reduce falsos positivos, `alexaRank`/`tags` dan priorización basada en datos en vez del set hardcodeado `PRIORITY_PLATFORMS` (`username_finder.py:34-40`), y `protection: "tls_fingerprint"` identifica los 278 sitios inalcanzables sin `curl_cffi` para saltarlos en vez de quemar reintentos. **Aplicar eso a los sitios que ya se escanean mejora la precisión sin tocar el volumen** — y así es como se defiende en el artículo.

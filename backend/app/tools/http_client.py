@@ -8,9 +8,11 @@ Adapts battle-tested resilience patterns used by mature OSINT scanners
   robotic request patterns that WAFs detect easily).
 - Exponential backoff with retries on transient errors (timeouts, connection
   resets, 429/5xx) instead of failing a whole tool on one flaky response.
-- A single global concurrency gate shared by every tool in the registry, so
-  a single investigation never opens more sockets than the operator allows,
-  regardless of how many tools run in parallel during a round.
+- Dos puertas de concurrencia con propósitos distintos: una **por host**, que
+  es la cortesía real con cada sitio, y una **global**, que es el guardarraíl
+  de recursos del proceso. Antes solo existía la global, lo que trataba igual
+  500 peticiones a 500 hosts que 500 al mismo host y obligaba a mantenerla
+  artificialmente baja.
 
 Usage: every OSINT tool should build its client with `build_client(...)`
 instead of `httpx.AsyncClient(...)`. All resilience (retry, backoff, jitter,
@@ -48,6 +50,7 @@ USER_AGENTS = [
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 _global_semaphore: Optional[asyncio.Semaphore] = None
+_host_semaphores: "dict[str, asyncio.Semaphore]" = {}
 
 
 def _get_global_semaphore() -> asyncio.Semaphore:
@@ -56,6 +59,34 @@ def _get_global_semaphore() -> asyncio.Semaphore:
     if _global_semaphore is None:
         _global_semaphore = asyncio.Semaphore(settings.http_max_concurrency)
     return _global_semaphore
+
+
+def _get_host_semaphore(host: str) -> asyncio.Semaphore:
+    """
+    Puerta de concurrencia **por host**, que es donde vive la cortesía real.
+
+    El diseño anterior solo tenía el tope global, y eso confundía dos cosas
+    distintas: 500 peticiones a 500 hosts distintos no molestan a nadie, pero
+    500 al mismo host sí. Al separar los dos límites, el global puede subir
+    (es un guardarraíl de recursos del proceso) sin volvernos descorteses, y
+    un sitio concreto nunca recibe más de `http_max_per_host` a la vez por
+    muchas herramientas que lo consulten en paralelo.
+
+    Los semáforos se cachean por host durante la vida del proceso: son objetos
+    diminutos y el conjunto de hosts está acotado por los catálogos.
+    """
+    sem = _host_semaphores.get(host)
+    if sem is None:
+        sem = asyncio.Semaphore(max(1, settings.http_max_per_host))
+        _host_semaphores[host] = sem
+    return sem
+
+
+def reset_concurrency_gates() -> None:
+    """Descarta los semáforos cacheados. Solo para los tests."""
+    global _global_semaphore
+    _global_semaphore = None
+    _host_semaphores.clear()
 
 
 def random_user_agent() -> str:
@@ -104,6 +135,7 @@ class ResilientTransport(httpx.AsyncHTTPTransport):
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         sem = _get_global_semaphore()
+        host_sem = _get_host_semaphore(request.url.host or "")
         last_exc: Optional[Exception] = None
 
         for attempt in range(self.max_retries + 1):
@@ -112,7 +144,10 @@ class ResilientTransport(httpx.AsyncHTTPTransport):
 
             await asyncio.sleep(random.uniform(0, self.jitter))
             try:
-                async with sem:
+                # El global se toma primero y el de host después, siempre en el
+                # mismo orden: invertirlo en algún camino abriría un interbloqueo
+                # entre dos peticiones al mismo host.
+                async with sem, host_sem:
                     response = await super().handle_async_request(request)
                 if response.status_code in RETRYABLE_STATUS and attempt < self.max_retries:
                     await response.aclose()
