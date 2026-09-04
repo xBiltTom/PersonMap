@@ -27,6 +27,13 @@ class InvestigationCreate(BaseModel):
     # muestra del artículo con una condición experimental equivocada.
     strategy: Strategy = "auto"
 
+    # Consentimiento explícito para las fuentes que envían a un tercero la
+    # identidad de a quién se investiga (hoy, los registros de infostealer de
+    # Hudson Rock). Por defecto NO: la herramienta que lo necesita falla cerrada
+    # y el motor ni siquiera la despacha. Refuerza además el marco pedagógico
+    # del proyecto, que es auditar la propia huella, no la de otra persona.
+    self_consent: bool = False
+
 
 class InvestigationRead(BaseModel):
     id: UUID

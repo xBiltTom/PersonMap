@@ -59,8 +59,14 @@ MAX_ABS_LOG_LIKELIHOOD = 20.0
 # así que la señal correspondiente no aporta información y debe declararse no
 # evaluable, igual que se hace con las aristas tautológicas del grafo.
 ENUMERATION_TOOLS = {
-    "username": {"username_finder"},
-    "email": {"email_enumerator", "email_checker", "gravatar_deep", "breach_checker"},
+    "username": {"username_finder", "infostealer_checker"},
+    "email": {
+        "email_enumerator",
+        "email_checker",
+        "gravatar_deep",
+        "breach_checker",
+        "infostealer_checker",
+    },
 }
 
 

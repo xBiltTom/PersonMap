@@ -26,6 +26,18 @@ from app.models.target import Target
 # pueden ser homónimos, que es justamente el caso que el sistema debe separar.
 IDENTITY_EDGES = {"uses_email", "linked_to", "same_avatar"}
 
+# Tipos que NO son perfiles que atribuir, sino hechos sobre un identificador que
+# la propia persona aportó (su correo, su alias) y consintió comprobar.
+#
+# Pasarlos por el clustering de homónimos es un error de categoría: la pregunta
+# "¿esta cuenta es suya o de otra persona con el mismo alias?" no aplica a "esta
+# dirección de correo aparece en una filtración". Y como la coincidencia está
+# garantizada por cómo se consultó, el scorer los deja sin ninguna señal
+# evaluable, así que acababan en "Posibles Homónimos Descartados" mientras el
+# scorecard los contaba como riesgo crítico: dos afirmaciones contradictorias
+# sobre el mismo hallazgo.
+IDENTIFIER_BOUND_TYPES = {"breach", "infostealer"}
+
 
 class UnionFind:
     """Estructura de conjuntos disjuntos con compresión de caminos."""
@@ -81,6 +93,17 @@ class IdentityResolver:
     ) -> List[IdentityCluster]:
         if not entities:
             return []
+
+        # Los hechos ligados a un identificador aportado se apartan ANTES del
+        # union-find: no compiten por una atribución, así que no son candidatos
+        # a homónimo ni deben arrastrar ni heredar certeza de nadie.
+        identifier_bound = [
+            e for e in entities if e.entity_type in IDENTIFIER_BOUND_TYPES
+        ]
+        entities = [e for e in entities if e.entity_type not in IDENTIFIER_BOUND_TYPES]
+
+        if not entities:
+            return self._identifier_bound_clusters(investigation_id, identifier_bound)
 
         avatar_correlations = await self._correlate_avatars(entities)
 
@@ -180,9 +203,61 @@ class IdentityResolver:
                 )
             )
 
+        clusters.extend(
+            self._identifier_bound_clusters(investigation_id, identifier_bound)
+        )
+
         return clusters
 
     # -- Interno -----------------------------------------------------------
+
+    def _identifier_bound_clusters(
+        self,
+        investigation_id: Any,
+        entities: List[Entity],
+    ) -> List[IdentityCluster]:
+        """
+        Agrupa los hechos ligados a un identificador que la persona aportó.
+
+        No se les asigna certeza de atribución porque no hay nada que atribuir:
+        el hallazgo dice que ESE correo o ESE alias aparece en un registro, y el
+        correo lo dio la propia persona. Mezclarlos con los perfiles a resolver
+        producía la contradicción de marcarlos "homónimo descartado" y a la vez
+        contarlos como riesgo crítico en el scorecard.
+        """
+        if not entities:
+            return []
+
+        kinds = sorted({e.entity_type for e in entities})
+        return [
+            IdentityCluster(
+                investigation_id=investigation_id,
+                label="Exposición de los Identificadores Aportados",
+                # La confianza es la de DETECCIÓN del registro, no la de
+                # atribución: el registro existe, y está atado al identificador
+                # que se consultó.
+                confidence=round(
+                    sum(float(e.existence_confidence or e.confidence or 0.0) for e in entities)
+                    / len(entities),
+                    3,
+                ),
+                entity_ids=[str(e.id) for e in entities],
+                reasoning=(
+                    f"{_plural(len(entities), 'hallazgo ligado', 'hallazgos ligados')} "
+                    f"directamente al correo o alias que se aportó al iniciar la "
+                    f"investigación. No pasan por la resolución de homónimos: no son "
+                    f"perfiles que haya que atribuir a alguien, sino registros en los "
+                    f"que ese identificador concreto aparece. La coincidencia está "
+                    f"garantizada por cómo se consultó, así que el modelo de identidad "
+                    f"no les asigna probabilidad de atribución."
+                ),
+                scoring_breakdown={
+                    "entities_count": len(entities),
+                    "status": "identifier_bound",
+                    "entity_types": kinds,
+                },
+            )
+        ]
 
     async def _correlate_avatars(self, entities: List[Entity]) -> List[Dict[str, Any]]:
         try:

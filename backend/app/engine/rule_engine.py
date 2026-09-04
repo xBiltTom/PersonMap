@@ -88,6 +88,10 @@ class RuleEngine:
                 "candidate_urls": [],
                 "avatar_urls": [],
                 "investigation_id": investigation_id,
+                # Consentimiento para las fuentes que revelan a un tercero a
+                # quién se investiga. Viaja en el contexto porque es la
+                # herramienta la que decide si puede ejecutarse.
+                "self_consent": bool((target.extra_data or {}).get("self_consent")),
             },
         )
 

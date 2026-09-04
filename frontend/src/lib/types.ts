@@ -378,4 +378,10 @@ export type Strategy = "auto" | "rule_based" | "agentic" | "hybrid";
 export interface CreateInvestigationPayload {
   target: TargetInput;
   strategy: Strategy;
+  /**
+   * Consentimiento para las fuentes que revelan a un tercero a quién se
+   * investiga (hoy, los registros de infostealer de Hudson Rock). Por defecto
+   * `false`: esas herramientas fallan cerradas.
+   */
+  self_consent?: boolean;
 }

@@ -107,7 +107,17 @@ def build_call_context(
         discovered_emails=list(base.discovered_emails),
         discovered_usernames=list(base.discovered_usernames),
         discovered_names=list(base.discovered_names),
-        extra={**dict(base.extra), "candidate_urls": candidate_urls},
+        extra={
+            **dict(base.extra),
+            "candidate_urls": candidate_urls,
+            # Sin esto, el agente autónomo nunca podría ejecutar las fuentes que
+            # exigen consentimiento, ni siquiera habiéndolo dado: construye su
+            # contexto desde cero en cada llamada.
+            "self_consent": bool(
+                base.extra.get("self_consent")
+                or (target.extra_data or {}).get("self_consent")
+            ),
+        },
     )
 
 

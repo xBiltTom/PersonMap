@@ -13,6 +13,7 @@ from app.tools.search_dorker import SearchDorkerTool
 from app.tools.academic_finder import AcademicFinderTool
 from app.tools.dni_lookup import DniLookupTool
 from app.tools.breach_checker import BreachCheckerTool
+from app.tools.infostealer_checker import InfostealerCheckerTool
 from app.tools.phone_lookup import PhoneLookupTool
 from app.tools.github_deep_scanner import GitHubDeepScannerTool
 from app.tools.reverse_image_search import ReverseImageSearchTool
@@ -54,6 +55,10 @@ class ToolRegistry:
 
         # Compromised Credentials & Breaches
         self.register(BreachCheckerTool())
+        # Registros de infostealer: complementa al anterior, no lo sustituye.
+        # Una brecha es un fallo de un tercero; un infostealer, del equipo de la
+        # propia persona. Solo se ejecuta con consentimiento explícito.
+        self.register(InfostealerCheckerTool())
 
         # Reverse Image / Avatar Correlation (optional, requires API key)
         self.register(ReverseImageSearchTool())

@@ -154,7 +154,14 @@ async def persist_findings(
 # Tools que enumeran un mismo identificador semilla a través de muchas
 # plataformas. Dos hallazgos suyos comparten alias/correo por construcción, no
 # por evidencia descubierta.
-ENUMERATION_TOOLS = {"username_finder", "email_enumerator", "phone_enumerator"}
+ENUMERATION_TOOLS = {
+    "username_finder",
+    "email_enumerator",
+    "phone_enumerator",
+    # Consulta por el correo y el alias del objetivo, así que dos registros
+    # suyos comparten identificador por construcción, no por evidencia.
+    "infostealer_checker",
+}
 
 
 def detect_relationship(a: Entity, b: Entity) -> Tuple[Optional[str], float]:

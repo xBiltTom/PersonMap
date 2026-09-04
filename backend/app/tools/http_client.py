@@ -26,7 +26,9 @@ raised exception.
 
 import asyncio
 import random
-from typing import Any, Optional
+import time
+from collections import deque
+from typing import Any, Deque, Optional
 
 import httpx
 
@@ -82,6 +84,52 @@ def _get_host_semaphore(host: str) -> asyncio.Semaphore:
     return sem
 
 
+class HostRateLimiter:
+    """
+    Ventana deslizante de peticiones por host.
+
+    El semáforo por host acota cuántas peticiones hay **a la vez**; esto acota
+    cuántas hay **por unidad de tiempo**, que es lo que miden los límites que
+    publican las APIs. Hudson Rock documenta 50 peticiones cada 10 s por host:
+    con solo el semáforo de concurrencia, una investigación con varios correos y
+    alias descubiertos se lo salta y la primera demo se lleva un 429.
+    """
+
+    def __init__(self, max_requests: int, per_seconds: float) -> None:
+        self.max_requests = max_requests
+        self.per_seconds = per_seconds
+        self._hits: Deque[float] = deque()
+        self._lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        while True:
+            async with self._lock:
+                now = time.monotonic()
+                while self._hits and now - self._hits[0] >= self.per_seconds:
+                    self._hits.popleft()
+                if len(self._hits) < self.max_requests:
+                    self._hits.append(now)
+                    return
+                wait = self.per_seconds - (now - self._hits[0])
+            # Se espera FUERA del lock, y también fuera de los semáforos: quien
+            # aguarda su turno no debe retener una ranura del presupuesto.
+            await asyncio.sleep(max(wait, 0.01))
+
+
+_host_rate_limits: "dict[str, HostRateLimiter]" = {}
+
+
+def register_host_rate_limit(host: str, max_requests: int, per_seconds: float) -> None:
+    """
+    Declara el límite publicado por un host.
+
+    Lo llama la propia herramienta que consume esa API, junto al endpoint, para
+    que el límite viva al lado del motivo por el que existe y no en un fichero
+    de configuración lejano que nadie actualiza cuando la API cambia.
+    """
+    _host_rate_limits[host] = HostRateLimiter(max_requests, per_seconds)
+
+
 def reset_concurrency_gates() -> None:
     """Descarta los semáforos cacheados. Solo para los tests."""
     global _global_semaphore
@@ -134,8 +182,10 @@ class ResilientTransport(httpx.AsyncHTTPTransport):
         self.rotate_ua = rotate_ua
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        host = request.url.host or ""
         sem = _get_global_semaphore()
-        host_sem = _get_host_semaphore(request.url.host or "")
+        host_sem = _get_host_semaphore(host)
+        rate_limiter = _host_rate_limits.get(host)
         last_exc: Optional[Exception] = None
 
         for attempt in range(self.max_retries + 1):
@@ -143,6 +193,13 @@ class ResilientTransport(httpx.AsyncHTTPTransport):
                 request.headers["User-Agent"] = random_user_agent()
 
             await asyncio.sleep(random.uniform(0, self.jitter))
+
+            # El límite de tasa se espera ANTES de tomar los semáforos: quien
+            # aguarda su turno no debe retener una ranura del presupuesto
+            # mientras duerme.
+            if rate_limiter is not None:
+                await rate_limiter.acquire()
+
             try:
                 # El global se toma primero y el de host después, siempre en el
                 # mismo orden: invertirlo en algún camino abriría un interbloqueo

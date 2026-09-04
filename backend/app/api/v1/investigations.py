@@ -40,7 +40,13 @@ async def create_investigation(
         dni=payload.target.dni,
         university=payload.target.university,
         description=payload.target.description,
-        extra_data=payload.target.extra_data or {},
+        extra_data={
+            **(payload.target.extra_data or {}),
+            # Se guarda con el objetivo, no en una columna nueva: `extra_data`
+            # es JSONB y ya existe, así que no hace falta migración para una
+            # bandera que además pertenece al encargo concreto.
+            "self_consent": bool(payload.self_consent),
+        },
     )
     db.add(target)
     await db.flush()

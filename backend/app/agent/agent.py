@@ -21,8 +21,23 @@ class OSINTAgent:
         if not llm_client.enabled:
             return self._fallback_template(target, entities, risk_score, risk_level)
 
+        # Se entregan las DOS métricas, no una.
+        #
+        # Antes se mandaba solo `confidence` (el máximo de ambas) etiquetado como
+        # "Certeza", y el modelo escribía "se confirmó la presencia del objetivo"
+        # con un 97% que en realidad era la certeza de DETECCIÓN: que el registro
+        # existe, no que sea de esta persona. En un informe que se le enseña a la
+        # persona investigada, esa confusión es la diferencia entre una
+        # afirmación defendible y uno falso.
         prompt_entities = [
-            f"- [{e.entity_type.upper()}] {e.platform or 'web'}: {e.display_name or e.value} (Certeza: {int(e.confidence*100)}%)"
+            f"- [{e.entity_type.upper()}] {e.platform or 'web'}: "
+            f"{e.display_name or e.value} "
+            f"(detección {int((e.existence_confidence if e.existence_confidence is not None else e.confidence) * 100)}%"
+            + (
+                f", atribución al objetivo {int(e.identity_score * 100)}%)"
+                if e.identity_score is not None
+                else ")"
+            )
             for e in entities[:20]
         ]
 
@@ -40,6 +55,12 @@ class OSINTAgent:
                     "credibilidad de todo lo demás.\n"
                     "- No escribas fechas de tu cosecha. La fecha del análisis se te da y es la "
                     "única válida.\n"
+                    "- Cada hallazgo trae DOS cifras y no significan lo mismo. La "
+                    "**detección** es la certeza de que el registro o la cuenta existe. La "
+                    "**atribución** es la probabilidad de que sea de esta persona. Una "
+                    "detección del 97% con una atribución del 10% NO es un hallazgo "
+                    "confirmado: es un registro que existe y que probablemente sea de otra "
+                    "persona. Nunca escribas 'confirmado' apoyándote en la detección.\n"
                     "- Formato Markdown simple: `##` para las secciones, `**negrita**` para lo "
                     "destacado y `-` para las listas. Nada de HTML ni de tablas."
                 ),

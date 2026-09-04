@@ -71,6 +71,7 @@ export function InvestigationForm() {
   const [description, setDescription] = useState("");
   const [strategy, setStrategy] = useState<Strategy>("auto");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [selfConsent, setSelfConsent] = useState(false);
 
   // Si el backend no tiene LLM, las estrategias que dependen de él degradan al
   // motor de reglas. Avisarlo ANTES de lanzar evita la situación de creer que se
@@ -126,6 +127,7 @@ export function InvestigationForm() {
           description: description.trim() || null,
         },
         strategy,
+        self_consent: selfConsent,
       });
 
       router.push(`/investigation/${inv.id}`);
@@ -246,7 +248,11 @@ export function InvestigationForm() {
             className="text-xs font-mono text-slate-400 hover:text-sky-400 flex items-center gap-1.5 py-1 transition-colors"
           >
             <SlidersHorizontal className="w-3 h-3" />
-            <span>{showAdvanced ? "Ocultar parámetros avanzados" : "Añadir teléfono, contexto y elegir motor"}</span>
+            <span>
+              {showAdvanced
+                ? "Ocultar parámetros avanzados"
+                : "Añadir teléfono, contexto, elegir motor y consentimiento"}
+            </span>
           </button>
         </div>
 
@@ -303,6 +309,39 @@ export function InvestigationForm() {
                   </p>
                 )}
               </div>
+            </div>
+
+            {/* Consentimiento para las fuentes que revelan a un tercero a quién
+                se investiga. Va aquí, junto al motor, y no escondido: es la
+                única casilla del formulario que cambia qué herramientas se
+                ejecutan, y el marco pedagógico del proyecto es auditar la propia
+                huella, no la de otra persona. */}
+            <div className="p-3 rounded-md bg-[#160d0d] border border-red-500/25">
+              <label
+                htmlFor="self-consent"
+                className="flex items-start gap-2.5 cursor-pointer"
+              >
+                <input
+                  id="self-consent"
+                  type="checkbox"
+                  checked={selfConsent}
+                  onChange={(e) => setSelfConsent(e.target.checked)}
+                  className="mt-0.5 w-3.5 h-3.5 shrink-0 accent-red-500 cursor-pointer"
+                />
+                <span className="min-w-0">
+                  <span className="text-xs font-mono text-red-200 flex items-center gap-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    Estoy investigando mi propia identidad
+                  </span>
+                  <span className="block text-[11px] text-slate-400 mt-1 leading-relaxed">
+                    Habilita la consulta de registros de <strong className="text-slate-300">infostealer</strong>{" "}
+                    (equipos infectados cuyas contraseñas guardadas fueron robadas en
+                    texto claro). Esa consulta envía el correo o el alias a un
+                    servicio externo, así que solo debe hacerse sobre uno mismo o con
+                    permiso explícito. Sin marcarla, esa fuente no se ejecuta.
+                  </span>
+                </span>
+              </label>
             </div>
 
             <div>
