@@ -80,6 +80,23 @@ turno — que es justo donde los mocks no llegan. **No sustituye a una prueba
 contra un proveedor real** (la lección de Tavily fue que el fallo estaba en el
 comportamiento del proveedor, no en el formato), pero cubre todo lo demás.
 
+**El listado de modelos de un proveedor no es la verdad.** Con la clave de
+Gemini, `v1beta/models` devuelve 50 modelos, y `gemini-2.5-flash` **está en la
+lista pero responde 404** *"no longer available to new users"*. `gemini-2.0-flash`
+—que este mismo plan proponía como ejemplo— ya no existe. Y de dos modelos que
+responden 200, uno emite `functionCall` y el otro no. **Comprobar con curl el
+modelo concreto y la capacidad concreta**, no que el proveedor esté vivo. Fijar
+siempre una versión explícita: un alias como `gemini-flash-latest` rompe la
+reproducibilidad de las mediciones del artículo, igual que lo haría sincronizar
+el dataset de Maigret cada 24 h.
+
+**Un 503 del proveedor es lo normal, no la excepción.** La primera corrida real
+del híbrido recibió *"high demand"* en el segundo turno. El diseño lo aguanta —
+la capa 2 se cierra y el expediente conserva íntegro el barrido heurístico —
+pero conviene contarlo así en la sustentación: la capa determinista es la que
+garantiza el resultado, y la IA es la que lo amplía cuando el proveedor está
+disponible.
+
 **crt.sh está degradado y hay que planificarlo.** Medido el 2026-09-04: 1 de 4
 peticiones devolvió HTTP 200 y las otras tres, 502. Afecta directamente a la
 Fase 4.4: sin reintentos con espera no se puede depender de él, y en una
@@ -395,7 +412,7 @@ Los veredictos aplican 0.72 / 0.38, justo al otro lado del umbral: el arbitraje 
 
 ```bash
 # backend/.env — la capa 2 solo se activa si hay LLM configurado
-LLM_MODEL=gemini/gemini-2.0-flash
+LLM_MODEL=gemini/gemini-3.6-flash   # verificado con function calling; ver 3.6
 LLM_API_KEY=...
 
 HYBRID_MAX_REFINEMENT_TURNS=2      # turnos de la capa de refinamiento
@@ -403,14 +420,30 @@ HYBRID_LLM_ARBITRATION=false       # arbitraje de la franja ambigua (no determin
 HYBRID_ARBITRATION_MAX_ENTITIES=12 # tope de hallazgos a arbitrar por investigación
 ```
 
-### 3.6 Qué queda sin verificar
+### 3.6 Verificación contra un proveedor real ✅
 
-La capa 2 se probó **en vivo contra un servidor OpenAI-compatible local**
-(HTTP real a través de LiteLLM: esquema de funciones, `tool_calls`, secuencia
-`assistant`/`tool`), no contra un proveedor de verdad, porque `.env` no tiene
-`LLM_MODEL`. Falta una corrida con clave real —Gemini o Groq, ambos con nivel
-gratuito— para confirmar que el proveedor respeta el `tools` que se le envía.
-Es exactamente el hueco que dejó al descubierto el caso de Tavily.
+Cerrada el 2026-09-04 con **`gemini/gemini-3.6-flash`** (nivel gratuito). La
+corrida `hybrid` completa, sobre 61 hallazgos heurísticos, ejercitó los tres
+caminos de la capa 2 —incluido el de fallo, sin que hubiera que provocarlo:
+
+| Comportamiento | Evidencia |
+|---|---|
+| El modelo propone lo que falta | Pidió `username_finder` sobre **`charlitamendoza`**, una variante de alias que el barrido nunca probó → 5 hallazgos, **1 entidad que solo existe gracias a la IA** (TikTok) |
+| El filtro anti-repetición funciona contra un modelo real | Pidió también `username_finder` sobre `carloseduardo.mendozasilva`; **descartada**, porque el barrido ya había pivotado a ese alias |
+| La corroboración cruzada se registra | 4 entidades quedaron con `engine_layers: ["heuristic", "refinement"]` — las vieron las dos capas y son **una sola entidad**, que es lo que la persistencia única garantiza |
+| Un fallo del proveedor no arrastra la investigación | El turno 2 devolvió **503 "high demand"**; la capa 2 se cerró y el expediente conservó íntegros los 61 hallazgos heurísticos y los 5 ya refinados |
+
+Cifras: `engine_used: hybrid`, 27 entidades, 3 llamadas pedidas / 1 descartada,
+530 s con el catálogo de sitios completo.
+
+**Trampa de versiones de Gemini, verificada con curl.** El `gemini-2.0-flash`
+que sugería este plan **no existe** para una clave nueva, y `gemini-2.5-flash`
+**aparece en el listado de `v1beta/models` pero devuelve 404** *"no longer
+available to new users"*. `gemini-3.5-flash` responde 200 pero **no emite
+`functionCall`** con el prompt de refinamiento; `gemini-3.6-flash` sí. Es la
+misma lección que Tavily: el listado del proveedor no es la verdad, la petición
+real sí. Y hay que fijar una versión explícita, nunca `gemini-flash-latest`: un
+alias móvil rompe la reproducibilidad de las mediciones del artículo.
 
 ---
 

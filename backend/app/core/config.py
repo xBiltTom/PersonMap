@@ -8,10 +8,18 @@ class Settings(BaseSettings):
 
     # LLM (Optional - model agnostic via LiteLLM)
     # Examples:
-    # - "gemini/gemini-2.0-flash"
+    # - "gemini/gemini-3.6-flash"   <- verificado con function calling (2026-09-04)
     # - "groq/llama-3.3-70b-versatile"
     # - "openai/gpt-4o-mini"
     # - "ollama/llama3"
+    #
+    # OJO con las versiones de Gemini: el listado de `v1beta/models` incluye
+    # modelos que una clave nueva NO puede usar. `gemini-2.5-flash` aparece en la
+    # lista y devuelve 404 "no longer available to new users", y `gemini-2.0-flash`
+    # ya no aparece. Comprobar el modelo concreto con curl antes de fijarlo, y
+    # fijar una versión explícita en vez de un alias móvil como
+    # `gemini-flash-latest`: el artículo necesita saber qué modelo produjo cada
+    # medición.
     llm_model: Optional[str] = None
     llm_api_key: Optional[str] = None
 

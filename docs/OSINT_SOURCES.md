@@ -38,6 +38,7 @@ Estados: 🟢 operativa · 🟡 degradada · 🔴 muerta · ⚪ evaluada, no ado
 | **Tavily** | `POST api.tavily.com/search` | Sí (gratuita) | 🟢 | 2026-09-04 | `search_dorker` — motor principal. 1.000 créditos/mes; 1 crédito por búsqueda `basic`, 2 por `advanced` |
 | **DuckDuckGo** | Scraping HTML de resultados | No | 🟡 | 2026-09-04 | `search_dorker` — motor de respaldo automático. Responde HTTP 202, no 200 |
 | **Google (Scholar/YouTube)** | Endpoints públicos sin key | No | 🟡 | 2026-09-03 | `google_account_osint` — el `lookup` de Gmail es históricamente inestable |
+| **Gemini** | `generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent` | Sí (gratuita) | 🟢 | 2026-09-04 | Capa 2 del motor `hybrid`, agente `agentic` y narrativa. Verificado que emite `functionCall` con nuestro esquema de herramientas |
 
 ### Trampas verificadas en producción
 
@@ -55,6 +56,19 @@ obtener nada, porque acaba en el expediente de una persona concreta. De ahí que
 `search_dorker` imponga la exactitud del lado del cliente
 (`tavily_require_literal_match`), exigiendo que **todos** los términos
 entrecomillados del dork aparezcan en el título, el extracto o la URL.
+
+**El listado de modelos de Gemini incluye modelos que la clave no puede usar.**
+`v1beta/models` devuelve 50 entradas, pero `gemini-2.5-flash` responde **404
+"no longer available to new users"** pese a figurar en ella, y
+`gemini-2.0-flash` ya no aparece. Peor aún: de dos modelos que sí responden
+200, `gemini-3.5-flash` **no emite `functionCall`** con el prompt de
+refinamiento y `gemini-3.6-flash` sí. Comprobar con `curl` el modelo concreto y
+**la capacidad concreta** que se va a usar, no solo que el proveedor responda.
+
+**Fijar versión explícita del modelo, nunca un alias.** `gemini-flash-latest`
+funciona, pero apunta a un modelo distinto cada pocas semanas. Las mediciones
+del artículo dejarían de ser reproducibles, por el mismo motivo por el que el
+dataset de Maigret se vendoriza en vez de sincronizarse.
 
 ### Licencias que obligan a atribución
 
@@ -124,4 +138,5 @@ trae el dato o la técnica, reimplementados sobre `app/tools/http_client.py`.
 | 2026-09-03 | Revisión inicial del ecosistema para el plan de ejecución | Se verificaron en vivo Hudson Rock, crt.sh y los patrones directos de avatar (todos 🟢, sin key). Se midió el dataset de Maigret (3653 sitios). Se descartaron `ignorant` por motivos éticos y HIBP/Brave/SerpApi por coste |
 | 2026-09-04 | Integración de Tavily como motor de dorking | 🟢 operativa. Dos trampas detectadas solo al probar contra la API real, no en los tests con mock: `exact_match` devuelve cero resultados siempre, y la búsqueda es semántica (un correo inexistente devuelve la portada de su dominio). Ambas mitigadas en `search_dorker`; ver "Trampas verificadas en producción" |
 | 2026-09-04 | Barrido completo al abrir la **Fase 3** (`hybrid`) | 🟢 XposedOrNot, OpenAlex, Gravatar (404 limpio), Keybase, MediaWiki, GitHub API y avatar, Hudson Rock, Tavily y el `data.json` de Maigret (1,66 MB). 🟡 DuckDuckGo responde **202**, no 200. 🔴→🟡 **crt.sh se ha degradado**: 1 de 4 peticiones dio 200 y tres dieron 502, lo que obliga a reintentos en la Fase 4.4 |
+| 2026-09-04 | Alta de Gemini como proveedor LLM (cierre de la Fase 3) | 🟢 `gemini-3.6-flash` operativo y verificado con function calling. Dos trampas detectadas solo con `curl`: el listado de modelos incluye `gemini-2.5-flash`, que devuelve 404 para claves nuevas, y `gemini-3.5-flash` responde 200 pero no emite `functionCall`. La primera corrida real recibió además un **503 "high demand"** en el segundo turno; el motor degradó como estaba previsto y conservó el barrido heurístico completo |
 | 2026-09-04 | Revisión de reutilización para la Fase 3 | **No se adoptó ningún proyecto externo, y es la conclusión correcta.** El híbrido es orquestación interna: encadena dos motores que ya existían en el repositorio. Lo único importable habría sido un patrón de orquestación de agentes, y traerse un framework (LangGraph, CrewAI y similares) habría sustituido la arquitectura `BaseTool` + `ToolRegistry` en lugar de aprovecharla — justamente lo que el principio de no reinventar la rueda pretende evitar. La referencia seguida es §5.3 de `ANALISIS_OSINT_MUNDIAL.md`, corregida a "tercera estrategia" en vez de reemplazo |
