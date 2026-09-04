@@ -3,16 +3,12 @@ from typing import Dict, List
 from bs4 import BeautifulSoup
 import httpx
 from thefuzz import fuzz
+from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
 
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-    ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
 }
 
 
@@ -33,7 +29,7 @@ class SocialVerifierTool(BaseTool):
 
         verified_findings: List[ToolFinding] = []
 
-        async with httpx.AsyncClient(headers=HEADERS, timeout=10.0, follow_redirects=True) as client:
+        async with http_client.build_client(timeout=10.0, headers=HEADERS) as client:
             for url in candidate_urls:
                 finding = await self.verify_url(client, url, context)
                 if finding:

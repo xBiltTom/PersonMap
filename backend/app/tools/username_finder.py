@@ -1,8 +1,12 @@
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 import httpx
+from app.core.config import settings
+from app.core.events import event_bus
+from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
 
@@ -14,7 +18,7 @@ class UsernameFinderTool(BaseTool):
     """
 
     name = "username_finder"
-    description = "Rastreo avanzado de alias en 160+ plataformas con firmas WhatsMyName y triple validación"
+    description = "Rastreo avanzado de alias en 500+ plataformas con firmas WhatsMyName y triple validación"
     category = ToolCategory.USERNAME
     required_inputs = ["username"]
 
@@ -22,8 +26,11 @@ class UsernameFinderTool(BaseTool):
     WMN_FILE = DATA_DIR / "wmn-data.json"
     GENERIC_USERS_FILE = DATA_DIR / "generic_usernames.txt"
 
-    MAX_SITES = 160
-    CONCURRENCY_LIMIT = 20
+    # How many sites from the bundled WhatsMyName dataset to actually check.
+    # Configurable via PERSON_MAP_USERNAME_SCAN_MAX_SITES / .env; the dataset
+    # itself carries 700+ entries, so this used to be an artificial bottleneck.
+    CONCURRENCY_LIMIT = 30
+    PROGRESS_EVERY = 40
 
     PRIORITY_PLATFORMS = {
         "github", "gitlab", "reddit", "twitter", "x", "instagram", "telegram",
@@ -84,7 +91,8 @@ class UsernameFinderTool(BaseTool):
                     return 2
 
                 sorted_sites = sorted(valid_sites, key=site_priority)
-                sites = sorted_sites[: self.MAX_SITES]
+                max_sites = max(1, settings.username_scan_max_sites)
+                sites = sorted_sites[:max_sites]
             except Exception:
                 pass
 
@@ -101,21 +109,19 @@ class UsernameFinderTool(BaseTool):
         if not sites:
             return findings
 
+        investigation_id = context.extra.get("investigation_id")
         semaphore = asyncio.Semaphore(self.CONCURRENCY_LIMIT)
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-        }
+        progress_counter = {"checked": 0}
 
-        async with httpx.AsyncClient(timeout=6.0, follow_redirects=True, headers=headers, verify=False) as client:
+        async with http_client.build_client(timeout=6.0) as client:
             for username in usernames:
                 clean_user = username.strip()
                 if clean_user.lower() in self._generic_users or len(clean_user) < 3:
                     continue
 
+                progress_counter["checked"] = 0
                 tasks = [
-                    self._check_site(client, clean_user, site, semaphore)
+                    self._check_site(client, clean_user, site, semaphore, investigation_id, progress_counter, len(sites))
                     for site in sites
                 ]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -132,6 +138,9 @@ class UsernameFinderTool(BaseTool):
         username: str,
         site: Dict[str, Any],
         semaphore: asyncio.Semaphore,
+        investigation_id: Optional[str],
+        progress_counter: Dict[str, int],
+        total_sites: int,
     ) -> Optional[ToolFinding]:
         site_name = site.get("name", "Unknown")
         uri_check = site.get("uri_check", "")
@@ -147,45 +156,69 @@ class UsernameFinderTool(BaseTool):
         m_string = site.get("m_string")
         cat = site.get("cat", "social")
 
-        async with semaphore:
-            try:
-                resp = await client.get(url)
-                body = resp.text
-
-                # 1. HTTP Status Code validation
-                if resp.status_code != e_code:
-                    return None
-
-                # 2. Absence string validation (must NOT be present)
-                if m_string and m_string in body:
-                    return None
-
-                # 3. Existence string validation (MUST be present if specified)
-                if e_string and e_string not in body:
-                    return None
-
-                # 4. Spiderfoot musthavename heuristic (avoids generic 200 soft landing pages)
-                is_json_resp = resp.headers.get("content-type", "").startswith("application/json")
-                if not is_json_resp:
-                    if username.lower() not in body.lower() and username.lower() not in resp.url.path.lower():
-                        return None
-
-                confidence = 0.90 if e_string else 0.85
-
-                return ToolFinding(
-                    entity_type="social_account",
-                    platform=site_name,
-                    value=pretty_url,
-                    display_name=f"{site_name}: @{username}",
-                    confidence=confidence,
-                    metadata_info={
-                        "username": username,
-                        "platform": site_name,
-                        "category": cat,
-                        "url": pretty_url,
-                        "source_tool": "username_finder",
-                        "checked_status": resp.status_code,
-                    },
+        try:
+            async with semaphore:
+                resp = await http_client.get(
+                    client,
+                    url,
+                    headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"},
                 )
-            except Exception:
+
+            progress_counter["checked"] += 1
+            if (
+                investigation_id
+                and progress_counter["checked"] % self.PROGRESS_EVERY == 0
+            ):
+                await event_bus.publish(investigation_id, {
+                    "type": "log",
+                    "phase": "progress",
+                    "tool": self.name,
+                    "message": (
+                        f"[{self.name}] Progreso: {progress_counter['checked']}/{total_sites} "
+                        f"plataformas verificadas para '@{username}'..."
+                    ),
+                    "timestamp": time.time(),
+                })
+
+            if resp is None:
                 return None
+
+            body = resp.text
+
+            # 1. HTTP Status Code validation
+            if resp.status_code != e_code:
+                return None
+
+            # 2. Absence string validation (must NOT be present)
+            if m_string and m_string in body:
+                return None
+
+            # 3. Existence string validation (MUST be present if specified)
+            if e_string and e_string not in body:
+                return None
+
+            # 4. Spiderfoot musthavename heuristic (avoids generic 200 soft landing pages)
+            is_json_resp = resp.headers.get("content-type", "").startswith("application/json")
+            if not is_json_resp:
+                if username.lower() not in body.lower() and username.lower() not in resp.url.path.lower():
+                    return None
+
+            confidence = 0.90 if e_string else 0.85
+
+            return ToolFinding(
+                entity_type="social_account",
+                platform=site_name,
+                value=pretty_url,
+                display_name=f"{site_name}: @{username}",
+                confidence=confidence,
+                metadata_info={
+                    "username": username,
+                    "platform": site_name,
+                    "category": cat,
+                    "url": pretty_url,
+                    "source_tool": "username_finder",
+                    "checked_status": resp.status_code,
+                },
+            )
+        except Exception:
+            return None

@@ -3,14 +3,11 @@ from typing import List
 from urllib.parse import quote_plus, unquote
 from bs4 import BeautifulSoup
 import httpx
+from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
 
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-    ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
@@ -31,7 +28,7 @@ class SearchDorkerTool(BaseTool):
 
         findings: List[ToolFinding] = []
 
-        async with httpx.AsyncClient(headers=HEADERS, timeout=12.0, follow_redirects=True) as client:
+        async with http_client.build_client(timeout=12.0, headers=HEADERS) as client:
             for q in queries[:4]:  # Top 4 targeted queries to avoid aggressive rate limiting
                 results = await self._search_duckduckgo(client, q)
                 findings.extend(results)

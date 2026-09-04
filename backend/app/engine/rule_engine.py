@@ -56,7 +56,11 @@ class RuleEngine:
             dni=target.dni,
             university=target.university,
             description=target.description,
-            extra={"candidate_urls": []},
+            extra={
+                "candidate_urls": [],
+                "avatar_urls": [],
+                "investigation_id": investigation_id,
+            },
         )
 
         all_findings: List[ToolFinding] = []

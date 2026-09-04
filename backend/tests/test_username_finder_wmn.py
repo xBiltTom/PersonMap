@@ -1,4 +1,5 @@
 import pytest
+from app.core.config import settings
 from app.tools.username_finder import UsernameFinderTool
 from app.tools.base import TargetContext
 
@@ -7,7 +8,8 @@ def test_username_finder_loads_wmn_sites():
     tool = UsernameFinderTool()
     sites = tool._load_sites()
     assert len(sites) >= 50
-    assert len(sites) <= tool.MAX_SITES
+    # MAX_SITES was moved to settings.username_scan_max_sites (default 500)
+    assert len(sites) <= settings.username_scan_max_sites
 
     # Verify priority platforms are prioritized in the top list
     site_names = [s["name"].lower() for s in sites]

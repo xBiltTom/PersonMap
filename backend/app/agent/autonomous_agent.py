@@ -1,6 +1,6 @@
 import json
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import litellm
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
@@ -13,93 +13,47 @@ from app.tools.base import TargetContext, ToolFinding
 from app.tools.registry import tool_registry
 
 
-# Function Calling schemas for LiteLLM
-AGENT_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "check_username",
-            "description": "Busca cuentas en más de 20 plataformas para un nombre de usuario.",
-            "parameters": {
-                "type": "object",
-                "properties": {"username": {"type": "string", "description": "Nombre de usuario a buscar"}},
-                "required": ["username"],
+def _build_agent_tools() -> List[Dict[str, Any]]:
+    """
+    Builds the LiteLLM function-calling schema dynamically from the live ToolRegistry.
+
+    Previously this was a hardcoded list of 7 entries that covered only half of the
+    registered tools, making the agentic mode objectively weaker than the heuristic
+    mode. By generating the schema from tool_registry.get_all() every tool that is
+    registered — including future tools — is automatically visible to the LLM without
+    any manual synchronization step. This fixes P0#4 from ANALISIS_OSINT_MUNDIAL.md.
+    """
+    schemas: List[Dict[str, Any]] = []
+    for tool in tool_registry.get_all():
+        # Map required_inputs (TargetContext field names) to LLM-friendly parameter
+        # descriptions. We keep it simple: each required field becomes a string param.
+        properties: Dict[str, Any] = {}
+        for field in tool.required_inputs:
+            properties[field] = {
+                "type": "string",
+                "description": field.replace("_", " ").capitalize(),
+            }
+
+        schemas.append({
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": [tool.required_inputs[0]] if tool.required_inputs else [],
+                },
             },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "check_email",
-            "description": "Verifica perfiles públicos, Gravatar y autoría de GitHub asociados a un correo.",
-            "parameters": {
-                "type": "object",
-                "properties": {"email": {"type": "string", "description": "Dirección de correo electrónico"}},
-                "required": ["email"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "check_breaches",
-            "description": "Consulta si un correo aparece en filtraciones públicas de contraseñas y datos.",
-            "parameters": {
-                "type": "object",
-                "properties": {"email": {"type": "string", "description": "Dirección de correo electrónico"}},
-                "required": ["email"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "lookup_phone",
-            "description": "Analiza operador móvil, región y enlaces a WhatsApp de un número telefónico.",
-            "parameters": {
-                "type": "object",
-                "properties": {"phone": {"type": "string", "description": "Número de teléfono"}},
-                "required": ["phone"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_academic",
-            "description": "Busca papers científicos, tesis y citas de un estudiante o autor en OpenAlex.",
-            "parameters": {
-                "type": "object",
-                "properties": {"name": {"type": "string", "description": "Nombre del autor o estudiante"}},
-                "required": ["name"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "deep_scan_github",
-            "description": "Inspecciona a fondo un usuario de GitHub: analiza commits públicos para extraer correos reales.",
-            "parameters": {
-                "type": "object",
-                "properties": {"username": {"type": "string", "description": "Usuario de GitHub"}},
-                "required": ["username"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "verify_profile",
-            "description": "Comprueba un enlace web o red social extrayendo OpenGraph y midiendo certeza.",
-            "parameters": {
-                "type": "object",
-                "properties": {"url": {"type": "string", "description": "URL pública a verificar"}},
-                "required": ["url"],
-            },
-        },
-    },
-]
+        })
+    return schemas
+
+
+# Built once at import time; reflects ALL registered tools including reverse_image_search,
+# email_enumerator, gravatar_deep, keybase_resolver, wikipedia_edits, dni_lookup,
+# social_url_extractor, google_account_osint — all of which were previously invisible to
+# the LLM when AGENT_TOOLS was a static list of 7 entries.
+AGENT_TOOLS = _build_agent_tools()
 
 
 class AutonomousOSINTAgent:
@@ -287,18 +241,11 @@ class AutonomousOSINTAgent:
         args: Dict[str, Any],
         target: Target,
     ) -> List[ToolFinding]:
-        ctx = TargetContext(
-            full_name=target.full_name,
-            email=args.get("email") or target.email,
-            username=args.get("username") or target.username,
-            phone=args.get("phone") or target.phone,
-            dni=target.dni,
-            university=target.university,
-            description=target.description,
-            extra={"candidate_urls": [args["url"]] if "url" in args else []},
-        )
-
-        mapping = {
+        # Since AGENT_TOOLS now uses real tool names from the registry (not aliases
+        # like "check_username" → "username_finder"), we resolve directly.
+        # We keep a small backwards-compat alias map only for the old hardcoded names
+        # in case a model trained on previous prompts still emits them.
+        _legacy_alias: Dict[str, str] = {
             "check_username": "username_finder",
             "check_email": "email_checker",
             "check_breaches": "breach_checker",
@@ -307,14 +254,27 @@ class AutonomousOSINTAgent:
             "deep_scan_github": "github_deep_scanner",
             "verify_profile": "social_verifier",
         }
-
-        tool_id = mapping.get(name)
-        if not tool_id:
-            return []
-
+        tool_id = _legacy_alias.get(name, name)
         tool = tool_registry.get_tool(tool_id)
         if not tool:
             return []
+
+        # Build TargetContext from whatever the LLM passed in args, with the
+        # investigation target's known fields as fallback.
+        candidate_urls: List[str] = []
+        if "url" in args:
+            candidate_urls.append(args["url"])
+
+        ctx = TargetContext(
+            full_name=args.get("full_name") or target.full_name,
+            email=args.get("email") or target.email,
+            username=args.get("username") or target.username,
+            phone=args.get("phone") or target.phone,
+            dni=args.get("dni") or target.dni,
+            university=args.get("university") or target.university,
+            description=target.description,
+            extra={"candidate_urls": candidate_urls},
+        )
 
         findings = await tool.execute(ctx)
         for f in findings:

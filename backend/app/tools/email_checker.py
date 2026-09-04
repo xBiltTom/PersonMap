@@ -1,6 +1,7 @@
 import re
 from typing import Any, Dict, List, Optional
 import httpx
+from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
 
@@ -43,12 +44,7 @@ class EmailCheckerTool(BaseTool):
 
         findings: List[ToolFinding] = []
 
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json",
-        }
-
-        async with httpx.AsyncClient(headers=headers, timeout=8.0, follow_redirects=True, verify=False) as client:
+        async with http_client.build_client(timeout=8.0) as client:
             for email in emails:
                 clean_email = email.strip().lower()
                 if "@" not in clean_email:
@@ -97,8 +93,8 @@ class EmailCheckerTool(BaseTool):
                 # 4. GitHub Email Search API Attribution (unauthenticated public query)
                 try:
                     gh_url = f"https://api.github.com/search/users?q={clean_email}+in:email"
-                    resp = await client.get(gh_url)
-                    if resp.status_code == 200:
+                    resp = await http_client.get(client, gh_url, headers={"Accept": "application/json"})
+                    if resp is not None and resp.status_code == 200:
                         gh_data = resp.json()
                         if gh_data.get("total_count", 0) > 0:
                             item = gh_data["items"][0]

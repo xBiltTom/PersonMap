@@ -52,6 +52,8 @@ def extract_and_apply_pivots(findings: List[ToolFinding], context: TargetContext
     pivoted = False
     candidate_urls: List[str] = list(context.extra.get("candidate_urls", []))
     existing_url_set: Set[str] = {_clean_url(u) for u in candidate_urls if u}
+    avatar_urls: List[str] = list(context.extra.get("avatar_urls", []))
+    avatar_url_set: Set[str] = set(avatar_urls)
 
     for f in findings:
         metadata = f.metadata_info or {}
@@ -96,5 +98,22 @@ def extract_and_apply_pivots(findings: List[ToolFinding], context: TargetContext
                 existing_url_set.add(clean_link)
                 pivoted = True
 
+        # 4. Avatar/photo URLs discovered on this profile, fed into
+        # reverse_image_search on a later round (same pivoting pattern
+        # already used for candidate_urls above).
+        avatar_candidates = [
+            metadata.get("avatar_url"),
+            metadata.get("photo_url"),
+            metadata.get("thumbnail_url"),
+        ]
+        for raw_avatar in avatar_candidates:
+            if raw_avatar and isinstance(raw_avatar, str) and raw_avatar.startswith("http"):
+                clean_avatar = raw_avatar.strip()
+                if clean_avatar not in avatar_url_set:
+                    avatar_urls.append(clean_avatar)
+                    avatar_url_set.add(clean_avatar)
+                    pivoted = True
+
     context.extra["candidate_urls"] = candidate_urls
+    context.extra["avatar_urls"] = avatar_urls
     return pivoted

@@ -1,9 +1,13 @@
 from typing import List
 from urllib.parse import quote_plus
 import httpx
+from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
 
+# OpenAlex's "polite pool" rate-limit policy explicitly rewards a stable,
+# descriptive User-Agent identifying the application -- not a rotating
+# browser UA -- so this client opts out of UA rotation.
 HEADERS = {
     "User-Agent": "person-map-academic-osint/1.0 (https://github.com/person-map; academic research tool)",
     "Accept": "application/json",
@@ -25,7 +29,7 @@ class AcademicFinderTool(BaseTool):
         if not context.full_name:
             return []
 
-        async with httpx.AsyncClient(headers=HEADERS, timeout=10.0) as client:
+        async with http_client.build_client(timeout=10.0, rotate_ua=False, headers=HEADERS) as client:
             # 1. Search OpenAlex Authors API
             author_findings = await self._search_openalex_authors(client, context.full_name, context.university)
             findings.extend(author_findings)

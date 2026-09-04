@@ -4,6 +4,7 @@ from app.tools.username_finder import UsernameFinderTool
 from app.tools.email_checker import EmailCheckerTool
 from app.tools.email_enumerator import EmailEnumeratorTool
 from app.tools.gravatar_deep import GravatarDeepTool
+from app.tools.google_account_osint import GoogleAccountOSINTTool
 from app.tools.keybase_resolver import KeybaseResolverTool
 from app.tools.social_url_extractor import SocialUrlExtractorTool
 from app.tools.wikipedia_edits import WikipediaEditsTool
@@ -14,6 +15,7 @@ from app.tools.dni_lookup import DniLookupTool
 from app.tools.breach_checker import BreachCheckerTool
 from app.tools.phone_lookup import PhoneLookupTool
 from app.tools.github_deep_scanner import GitHubDeepScannerTool
+from app.tools.reverse_image_search import ReverseImageSearchTool
 
 
 class ToolRegistry:
@@ -29,10 +31,11 @@ class ToolRegistry:
         self.register(KeybaseResolverTool())
         self.register(WikipediaEditsTool())
 
-        # Email Intelligence & Silent Enumeration (Holehe / Gravatar / Domain)
+        # Email Intelligence & Silent Enumeration (Holehe / Gravatar / Domain / Google)
         self.register(EmailCheckerTool())
         self.register(EmailEnumeratorTool())
         self.register(GravatarDeepTool())
+        self.register(GoogleAccountOSINTTool())
 
         # Code & Developer Forensics
         self.register(GitHubDeepScannerTool())
@@ -51,6 +54,9 @@ class ToolRegistry:
 
         # Compromised Credentials & Breaches
         self.register(BreachCheckerTool())
+
+        # Reverse Image / Avatar Correlation (optional, requires API key)
+        self.register(ReverseImageSearchTool())
 
     def register(self, tool: BaseTool) -> None:
         self._tools[tool.name] = tool

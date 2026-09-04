@@ -1,5 +1,6 @@
 from typing import List, Set
 import httpx
+from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
 
@@ -25,7 +26,7 @@ class GitHubDeepScannerTool(BaseTool):
 
         findings: List[ToolFinding] = []
 
-        async with httpx.AsyncClient(headers=HEADERS, timeout=10.0) as client:
+        async with http_client.build_client(timeout=10.0, rotate_ua=False, headers=HEADERS) as client:
             for username in usernames:
                 result = await self._scan_github_profile(client, username)
                 if result:

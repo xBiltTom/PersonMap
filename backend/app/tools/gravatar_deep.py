@@ -1,6 +1,7 @@
 import hashlib
 from typing import Any, Dict, List, Optional
 import httpx
+from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
 
@@ -22,12 +23,7 @@ class GravatarDeepTool(BaseTool):
         if not emails:
             return findings
 
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)",
-            "Accept": "application/json",
-        }
-
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, headers=headers, verify=False) as client:
+        async with http_client.build_client(timeout=8.0, headers={"Accept": "application/json"}) as client:
             for email in emails:
                 clean_email = email.strip().lower()
                 md5_hash = hashlib.md5(clean_email.encode("utf-8")).hexdigest()

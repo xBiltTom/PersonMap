@@ -1,5 +1,6 @@
 from typing import List
 import httpx
+from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
 
@@ -25,7 +26,7 @@ class DniLookupTool(BaseTool):
         findings: List[ToolFinding] = []
 
         # Query public API for Peru DNI (SUNAT/RENIEC mirror)
-        async with httpx.AsyncClient(timeout=6.0) as client:
+        async with http_client.build_client(timeout=6.0) as client:
             try:
                 # Direct check on public RUC portal (RUC persona natural = 10 + DNI + digit)
                 ruc_prefix = f"10{dni_clean}"

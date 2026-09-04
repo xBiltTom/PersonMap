@@ -13,6 +13,7 @@ class ToolCategory(str, Enum):
     BREACH = "breach"
     SEARCH = "search"
     DOCUMENT = "document"
+    IMAGE = "image"
 
 
 class TargetContext(BaseModel):

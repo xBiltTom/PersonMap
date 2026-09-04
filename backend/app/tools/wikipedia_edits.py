@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional
 import httpx
+from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
 
@@ -24,12 +25,16 @@ class WikipediaEditsTool(BaseTool):
         if not usernames:
             return findings
 
-        headers = {
-            "User-Agent": "PersonMap-OSINT-AcademicResearch/1.0 (https://github.com/xBiltTom/PersonMap; contact@example.com)",
-            "Accept": "application/json",
-        }
-
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, headers=headers, verify=False) as client:
+        # MediaWiki's API etiquette explicitly asks for a stable, descriptive
+        # User-Agent identifying the application (not a rotating browser UA).
+        async with http_client.build_client(
+            timeout=8.0,
+            rotate_ua=False,
+            headers={
+                "User-Agent": "PersonMap-OSINT-AcademicResearch/1.0 (https://github.com/xBiltTom/PersonMap; contact@example.com)",
+                "Accept": "application/json",
+            },
+        ) as client:
             for username in usernames:
                 clean_user = username.strip()
                 if len(clean_user) < 3:

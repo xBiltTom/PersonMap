@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 from typing import Any, Dict, List, Optional
 import httpx
+from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
 
@@ -17,21 +18,13 @@ class EmailEnumeratorTool(BaseTool):
     category = ToolCategory.EMAIL
     required_inputs = ["email"]
 
-    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
         findings: List[ToolFinding] = []
         emails = context.all_emails()
         if not emails:
             return findings
 
-        headers = {
-            "User-Agent": self.USER_AGENT,
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-
-        async with httpx.AsyncClient(timeout=7.0, follow_redirects=True, headers=headers, verify=False) as client:
+        async with http_client.build_client(timeout=7.0) as client:
             for email in emails:
                 clean_email = email.strip().lower()
                 if not clean_email or "@" not in clean_email:
