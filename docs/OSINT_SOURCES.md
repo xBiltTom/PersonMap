@@ -39,6 +39,7 @@ Estados: 🟢 operativa · 🟡 degradada · 🔴 muerta · ⚪ evaluada, no ado
 | **DuckDuckGo** | Scraping HTML de resultados | No | 🟡 | 2026-09-04 | `search_dorker` — motor de respaldo automático. Responde HTTP 202, no 200 |
 | **Google (Scholar/YouTube)** | Endpoints públicos sin key | No | 🟡 | 2026-09-03 | `google_account_osint` — el `lookup` de Gmail es históricamente inestable |
 | **Gemini** | `generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent` | Sí (gratuita) | 🟢 | 2026-09-04 | Capa 2 del motor `hybrid`, agente `agentic` y narrativa. Verificado que emite `functionCall` con nuestro esquema de herramientas |
+| **Hudson Rock Cavalier** | `cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email\|username` | No | 🟢 | 2026-09-04 | `infostealer_checker`. **Solo con consentimiento explícito.** Límite de 50 req/10 s por host, respetado con `register_host_rate_limit` |
 
 ### Trampas verificadas en producción
 
@@ -70,6 +71,25 @@ funciona, pero apunta a un modelo distinto cada pocas semanas. Las mediciones
 del artículo dejarían de ser reproducibles, por el mismo motivo por el que el
 dataset de Maigret se vendoriza en vez de sincronizarse.
 
+**Hudson Rock — `top_logins` no son los servicios afectados.** El nombre lo
+sugiere y la primera implementación los mapeó a `affected_services`, pero
+probado contra la API real son **correos enmascarados**
+(`e**********@gmail.com`). Presentarlos como "servicios afectados" habría metido
+una afirmación falsa en el expediente de una persona concreta. No se persisten:
+lo accionable ya lo dice `total_user_services`.
+
+**Hudson Rock rellena lo que no sabe con la cadena `"Not Found"`.** `ip` y
+`malware_path` no vienen ausentes, vienen con ese texto. Guardarlo tal cual
+ponía "Ruta del malware: Not Found" en el informe, que parece un fallo del
+sistema en vez de un dato que no existe. Se descartan por lista de rellenos.
+
+**El endpoint `search-by-domain` da estadística institucional, sin individuos.**
+Verificado con `unmsm.edu.pe` el 2026-09-04: 3.232 cuentas de personal y 8.048
+de estudiantes comprometidas, con la última infección cuatro días antes. **No
+está integrado** —sería un dato sobre la institución, no sobre la persona, y
+mezclarlo en su expediente rompería el modelo de atribución—, pero es material
+de concientización de primer orden para un panel de contexto del informe.
+
 ### Licencias que obligan a atribución
 
 - **WhatsMyName** — *CC BY-SA 4.0*, © 2015-2026 Micah Hoffman y colaboradores.
@@ -86,7 +106,6 @@ conforme a la restricción del proyecto.
 
 | Fuente | Endpoint | Estado | Aporta | Fase |
 |---|---|---|---|---|
-| **Hudson Rock Cavalier** | `cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email\|username\|domain` | 🟢 HTTP 200 (re-verificado 2026-09-04) | Logs de infostealer: `date_compromised`, `computer_name`, `operating_system`, `malware_path`, `total_user_services`. Límite **50 req/10 s por host** | 4 |
 | **crt.sh** | `crt.sh/?q={dominio}&output=json` | 🟡 **degradado** (2026-09-04: 1 de 4 peticiones HTTP 200, tres 502) | Certificate transparency → dominios y subdominios personales. **Exige reintentos con espera; no es fiable para una demo en vivo** | 4 |
 | **Avatar GitHub** | `github.com/{user}.png` | 🟢 HTTP 200, `image/jpeg` | Cosecha activa de avatares | 5 |
 | **Avatar Gravatar** | `gravatar.com/avatar/{md5}?d=404` | 🟢 HTTP 200 (404 si no existe) | Cosecha activa de avatares; el `d=404` da señal binaria limpia | 5 |
@@ -138,6 +157,7 @@ trae el dato o la técnica, reimplementados sobre `app/tools/http_client.py`.
 | 2026-09-03 | Revisión inicial del ecosistema para el plan de ejecución | Se verificaron en vivo Hudson Rock, crt.sh y los patrones directos de avatar (todos 🟢, sin key). Se midió el dataset de Maigret (3653 sitios). Se descartaron `ignorant` por motivos éticos y HIBP/Brave/SerpApi por coste |
 | 2026-09-04 | Integración de Tavily como motor de dorking | 🟢 operativa. Dos trampas detectadas solo al probar contra la API real, no en los tests con mock: `exact_match` devuelve cero resultados siempre, y la búsqueda es semántica (un correo inexistente devuelve la portada de su dominio). Ambas mitigadas en `search_dorker`; ver "Trampas verificadas en producción" |
 | 2026-09-04 | Barrido completo al abrir la **Fase 3** (`hybrid`) | 🟢 XposedOrNot, OpenAlex, Gravatar (404 limpio), Keybase, MediaWiki, GitHub API y avatar, Hudson Rock, Tavily y el `data.json` de Maigret (1,66 MB). 🟡 DuckDuckGo responde **202**, no 200. 🔴→🟡 **crt.sh se ha degradado**: 1 de 4 peticiones dio 200 y tres dieron 502, lo que obliga a reintentos en la Fase 4.4 |
+| 2026-09-04 | Integración de Hudson Rock (Fase 4.2) | 🟢 operativa, con consentimiento explícito. Tres trampas que **solo** aparecieron contra la API real: `top_logins` son correos enmascarados y no servicios afectados; `ip` y `malware_path` traen la cadena `"Not Found"` en vez de venir ausentes; y los totales aparecen tanto por registro como en la raíz. Ninguna se habría visto con los tests de mock, que es exactamente la lección de Tavily repitiéndose |
 | 2026-09-04 | Recuento real del catálogo de WhatsMyName | Los documentos decían **716 sitios**; los utilizables son **667**. La cifra antigua incluía entradas NSFW, archivadas y sin `uri_check`, que el cargador ya descartaba. Corregido aquí y expuesto en las métricas de cada investigación (`config_username_catalog_available`) para que el dato no vuelva a divergir del código |
 | 2026-09-04 | Alta de Gemini como proveedor LLM (cierre de la Fase 3) | 🟢 `gemini-3.6-flash` operativo y verificado con function calling. Dos trampas detectadas solo con `curl`: el listado de modelos incluye `gemini-2.5-flash`, que devuelve 404 para claves nuevas, y `gemini-3.5-flash` responde 200 pero no emite `functionCall`. La primera corrida real recibió además un **503 "high demand"** en el segundo turno; el motor degradó como estaba previsto y conservó el barrido heurístico completo |
 | 2026-09-04 | Revisión de reutilización para la Fase 3 | **No se adoptó ningún proyecto externo, y es la conclusión correcta.** El híbrido es orquestación interna: encadena dos motores que ya existían en el repositorio. Lo único importable habría sido un patrón de orquestación de agentes, y traerse un framework (LangGraph, CrewAI y similares) habría sustituido la arquitectura `BaseTool` + `ToolRegistry` en lugar de aprovecharla — justamente lo que el principio de no reinventar la rueda pretende evitar. La referencia seguida es §5.3 de `ANALISIS_OSINT_MUNDIAL.md`, corregida a "tercera estrategia" en vez de reemplazo |

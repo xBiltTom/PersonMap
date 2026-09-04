@@ -15,10 +15,11 @@
 | 2 · Corregir el modelo de identidad | ✅ **Completada** | `941b5a5`, `d3cc158` |
 | 3 · `hybrid` como tercera estrategia | ✅ **Completada** | `da1cb85`, `3070e26` |
 | 3.5 · Presupuesto de concurrencia y progreso | ✅ **Completada** | `45eebe7` |
-| 4 · Cobertura de fuentes | ⬜ Pendiente | — |
+| 4.2 · Hudson Rock (infostealer) | ✅ **Completada** | `e7610f5` |
+| 4 · Resto de cobertura de fuentes | ⬜ Pendiente | — |
 | 5 · Cosecha activa de avatares | ⬜ Pendiente | — |
 
-**Línea base al retomar:** 112 tests en ~33 s sin red · `tsc` limpio · backend `:8000` y frontend `:3000`.
+**Línea base al retomar:** 129 tests en ~35 s sin red · `tsc` limpio · backend `:8000` y frontend `:3000`.
 
 ### Cómo retomar en otra sesión
 
@@ -623,7 +624,57 @@ Nuevo `backend/app/tools/data/dataset_adapter.py` que normaliza **en memoria** d
 
 **Antes de subir el cap** hay que resolver el presupuesto de concurrencia: `username_finder` usa `CONCURRENCY_LIMIT = 30` pero el semáforo global de `http_client` es de **40 peticiones para todo el proceso**. Al escalar, el escaneo de usernames **acapara el presupuesto y mata de inanición al resto de tools de la ronda**. Hace falta un presupuesto por tool o por categoría.
 
-### 4.2 Hudson Rock Cavalier — infostealer logs
+### 4.2 Hudson Rock Cavalier — infostealer logs ✅ COMPLETADA (`e7610f5`)
+
+> **Medido:** sin consentimiento, 0 entidades y riesgo 33 (MEDIO). Con
+> consentimiento, 5 equipos comprometidos y riesgo **83 (CRÍTICO)**.
+
+El scorecard, el icono, los filtros y la recomendación pedagógica **ya existían
+desde la Fase 1**: solo faltaba la herramienta. La regla de "toda mejora de
+backend lleva su contraparte en el frontend" se cumplió sola porque `M1`
+(`entityTypes.ts` como fuente única) ya había centralizado la presentación.
+
+**Tres trampas que solo aparecieron contra la API real**, ninguna visible desde
+los tests con mock — la lección de Tavily repitiéndose:
+
+| Lo que uno supondría | Lo que devuelve la API |
+|---|---|
+| `top_logins` = servicios afectados | **Correos enmascarados** (`e****@gmail.com`). Etiquetarlos como servicios habría metido una afirmación falsa en el expediente de una persona |
+| `ip`/`malware_path` ausentes si no se conocen | Traen la cadena literal `"Not Found"`. El informe decía "Ruta del malware: Not Found" |
+| Los totales están en la raíz | También por registro, y ese es el del equipo concreto |
+
+**La tautología, otra vez.** Un registro hallado buscando el alias `admin`
+puntuaba **0.893 de atribución con una sola señal evaluable**:
+`username_match = 1.0`. La coincidencia estaba garantizada por cómo se buscó.
+Añadida la tool a los enumeradores del scorer y de la persistencia, baja a 0.10.
+Es el tercer sitio donde aparece el mismo fallo; la pregunta del plan —*¿esta
+coincidencia está garantizada por cómo busqué?*— hay que hacérsela **a cada
+fuente nueva, sin excepción**.
+
+**Y eso destapó un error de categoría anterior.** `breach` e `infostealer` no
+son perfiles que atribuir: son hechos sobre un identificador que la propia
+persona aportó. Pasarlos por la resolución de homónimos los dejaba en "Posibles
+Homónimos Descartados" **mientras el scorecard los contaba como riesgo crítico**
+— dos afirmaciones contradictorias sobre el mismo hallazgo. Ahora tienen cluster
+propio: "Exposición de los Identificadores Aportados".
+
+**La narrativa recibe las dos métricas.** Antes se le mandaba solo `confidence`
+etiquetado como "Certeza" y escribía *"se confirmó la presencia del objetivo"*
+con un 97 % que era certeza de DETECCIÓN. Ahora distingue, y en la verificación
+escribió por su cuenta: *"97 % de detección… la probabilidad de que pertenezcan
+a este objetivo es solo del 10 %… 'admin' es un nombre por defecto utilizado
+masivamente"*.
+
+**Pendiente y anotado:** el endpoint `search-by-domain` devuelve estadística
+institucional sin individuos. Para `unmsm.edu.pe`: **3.232 cuentas de personal y
+8.048 de estudiantes comprometidas**, última infección cuatro días antes. No se
+integró porque es un dato sobre la institución y no sobre la persona, y
+mezclarlo en su expediente rompería el modelo de atribución — pero como panel de
+contexto del informe es material de concientización de primer orden.
+
+<details>
+<summary>Plan original de este apartado</summary>
+
 
 Nuevo `backend/app/tools/infostealer_checker.py`. Fuente #1 en calidad de OSINT de brechas en 2025-2026, gratuita, sin key, **verificada funcionando**. Complementa `breach_checker.py` (XposedOrNot) sin sustituirlo. Nuevo `entity_type`: `infostealer`.
 
@@ -634,6 +685,8 @@ Devuelve datos cualitativamente distintos y muy potentes para la concientizació
 - **Checkbox de "solo sobre mi propia identidad"** en el frontend. Consultar esta API envía a un tercero la identidad de a quién investigas; el checkbox refuerza además el marco pedagógico.
 
 **Frontend emparejado:** tarjeta de alerta dedicada, visualmente más grave que un `breach` normal (es una máquina comprometida, no una filtración de terceros).
+
+</details>
 
 ### 4.3 Ampliar `email_enumerator`
 
