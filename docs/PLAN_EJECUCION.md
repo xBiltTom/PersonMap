@@ -14,7 +14,7 @@
 | — · Tavily para dorking *(añadido a petición)* | ✅ **Completada** | `3021b53`, `6a85719` |
 | 2 · Corregir el modelo de identidad | ✅ **Completada** | `941b5a5`, `d3cc158` |
 | 3 · `hybrid` como tercera estrategia | ✅ **Completada** | `da1cb85`, `3070e26` |
-| 3.5 · Presupuesto de concurrencia y progreso | ✅ **Completada** | — |
+| 3.5 · Presupuesto de concurrencia y progreso | ✅ **Completada** | `45eebe7` |
 | 4 · Cobertura de fuentes | ⬜ Pendiente | — |
 | 5 · Cosecha activa de avatares | ⬜ Pendiente | — |
 
@@ -450,7 +450,7 @@ alias móvil rompe la reproducibilidad de las mediciones del artículo.
 
 ---
 
-## Fase 3.5 — Presupuesto de concurrencia y progreso visible ✅ COMPLETADA
+## Fase 3.5 — Presupuesto de concurrencia y progreso visible ✅ COMPLETADA (`45eebe7`)
 
 Fase corta, **habilitante**, abierta con la sustentación a una semana. No estaba
 en el plan original: salió de comprobar que una investigación tardaba 530 s, que
