@@ -68,6 +68,49 @@ PROFILE_DOMAINS = [
 ]
 
 
+QUOTED_TERM_RE = re.compile(r'"([^"]+)"')
+
+
+def _normalize(text: str) -> str:
+    """Minúsculas y espacios colapsados, para comparar sin depender del formato."""
+    return re.sub(r"\s+", " ", text or "").lower().strip()
+
+
+def _matches_literally(dork: "Dork", title: str, snippet: str, url: str) -> bool:
+    """
+    ¿Aparecen realmente en el resultado los términos entrecomillados del dork?
+
+    Sustituye al parámetro `exact_match` de Tavily, que está documentado pero
+    devuelve cero resultados en la práctica. Sin esta comprobación el dorking
+    degenera en búsqueda semántica y contamina el expediente con homónimos y
+    páginas apenas relacionadas.
+
+    La condición es **conjuntiva**: un dork `"Juan Perez" "Universidad X"` pide
+    ambas cosas a la vez. Aceptarlo porque solo coincide la universidad
+    devolvería la web del centro para cualquier alumno.
+
+    Un dork sin comillas no impone restricción: se acepta el resultado.
+    """
+    terms = QUOTED_TERM_RE.findall(dork.query)
+    if not terms:
+        return True
+
+    haystack = _normalize(f"{title} {snippet} {url}")
+    # Las URLs suelen unir el nombre con guiones o puntos ("juan-perez"), así
+    # que se compara también una versión sin separadores.
+    collapsed = re.sub(r"[^a-z0-9]", "", haystack)
+
+    for term in terms:
+        needle = _normalize(term)
+        compact = re.sub(r"[^a-z0-9]", "", needle)
+        if needle and needle in haystack:
+            continue
+        if compact and compact in collapsed:
+            continue
+        return False
+    return True
+
+
 @dataclass
 class Dork:
     """
@@ -178,10 +221,13 @@ class SearchDorkerTool(BaseTool):
             "query": dork.query,
             "search_depth": settings.tavily_search_depth,
             "max_results": settings.tavily_max_results,
-            # Respeta las comillas del dork: sin esto, Tavily interpretaría la
-            # consulta semánticamente y devolvería homónimos y parafraseos.
-            "exact_match": True,
         }
+        # NO se envía `exact_match`. Está documentado, pero verificado contra la
+        # API real devuelve CERO resultados en todos los casos (con y sin
+        # comillas), dejando el dorking mudo sin ningún error visible. Las
+        # comillas dentro de la propia consulta sí se respetan, así que la
+        # exactitud se impone después, del lado del cliente, en
+        # `_matches_literally`.
         if dork.include_domains:
             payload["include_domains"] = dork.include_domains
         if settings.tavily_country:
@@ -209,15 +255,27 @@ class SearchDorkerTool(BaseTool):
             url = item.get("url")
             if not url or url in seen_urls:
                 continue
-            seen_urls.add(url)
 
+            title = item.get("title") or url
+            snippet = item.get("content") or ""
+            literal = _matches_literally(dork, title, snippet, url)
+
+            # Tavily busca por relevancia semántica, no por coincidencia literal:
+            # un dork del correo "jperez@untumbes.edu.pe" (inexistente) devuelve
+            # la portada de untumbes.edu.pe. En OSINT ese falso positivo es peor
+            # que no obtener nada, porque acaba en el expediente de una persona.
+            if not literal and settings.tavily_require_literal_match:
+                continue
+
+            seen_urls.add(url)
             finding = self._build_finding(
                 url=url,
-                title=item.get("title") or url,
-                snippet=item.get("content") or "",
+                title=title,
+                snippet=snippet,
                 dork=dork,
                 engine="tavily",
                 relevance=item.get("score"),
+                literal=literal,
             )
             if finding:
                 findings.append(finding)
@@ -289,6 +347,7 @@ class SearchDorkerTool(BaseTool):
         dork: Dork,
         engine: str,
         relevance: Optional[float],
+        literal: bool = True,
     ) -> Optional[ToolFinding]:
         if not url.startswith("http"):
             return None
@@ -307,6 +366,10 @@ class SearchDorkerTool(BaseTool):
         # página suelta de la web.
         if platform != "web_search":
             confidence = round(min(0.80, confidence + 0.05), 2)
+        # Un resultado que no contiene literalmente el término buscado es, como
+        # mucho, una pista contextual.
+        if not literal:
+            confidence = min(confidence, 0.35)
 
         return ToolFinding(
             entity_type="search_mention",
@@ -319,6 +382,7 @@ class SearchDorkerTool(BaseTool):
                 "rationale": dork.rationale,
                 "engine": engine,
                 "relevance_score": relevance,
+                "literal_match": literal,
                 "url": url,
                 "source_tool": "search_dorker",
             },

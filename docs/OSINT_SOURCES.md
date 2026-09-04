@@ -35,8 +35,26 @@ Estados: 🟢 operativa · 🟡 degradada · 🔴 muerta · ⚪ evaluada, no ado
 | **Keybase** | API pública de resolución de identidad | No | 🟢 | 2026-09-03 | `keybase_resolver` |
 | **MediaWiki** | API de contribuciones | No | 🟢 | 2026-09-03 | `wikipedia_edits` |
 | **GitHub** | API pública sin autenticar | No | 🟢 | 2026-09-03 | `github_deep_scanner`, `email_checker` |
-| **DuckDuckGo** | Scraping HTML de resultados | No | 🟡 | 2026-09-03 | `search_dorker` — frágil, sin API oficial |
+| **Tavily** | `POST api.tavily.com/search` | Sí (gratuita) | 🟢 | 2026-09-04 | `search_dorker` — motor principal. 1.000 créditos/mes; 1 crédito por búsqueda `basic`, 2 por `advanced` |
+| **DuckDuckGo** | Scraping HTML de resultados | No | 🟡 | 2026-09-03 | `search_dorker` — motor de respaldo automático |
 | **Google (Scholar/YouTube)** | Endpoints públicos sin key | No | 🟡 | 2026-09-03 | `google_account_osint` — el `lookup` de Gmail es históricamente inestable |
+
+### Trampas verificadas en producción
+
+**Tavily — el parámetro `exact_match` no sirve.** Está documentado en la
+referencia oficial, pero probado contra la API real devuelve **cero resultados
+en todos los casos**, con y sin comillas en la consulta, y sin ningún error:
+HTTP 200 y `results: []`. Enviarlo deja el dorking mudo en silencio. Las
+comillas dentro de la propia consulta sí funcionan, así que no se envía el
+parámetro.
+
+**Tavily busca por relevancia semántica, no por coincidencia literal.** Un dork
+de un correo inexistente (`"jperez@untumbes.edu.pe"`) devuelve la portada de
+`untumbes.edu.pe` con score 0.55. En OSINT ese falso positivo es peor que no
+obtener nada, porque acaba en el expediente de una persona concreta. De ahí que
+`search_dorker` imponga la exactitud del lado del cliente
+(`tavily_require_literal_match`), exigiendo que **todos** los términos
+entrecomillados del dork aparezcan en el título, el extracto o la URL.
 
 ### Licencias que obligan a atribución
 
@@ -92,7 +110,7 @@ trae el dato o la técnica, reimplementados sobre `app/tools/http_client.py`.
 | Fuente | Motivo |
 |---|---|
 | **HaveIBeenPwned API v3** | De pago (desde $4.39/mes). El proyecto se restringe a fuentes gratuitas sin key; XposedOrNot y Hudson Rock cubren el caso |
-| **Brave Search API** | Requiere registro y key ($5/mes de crédito gratuito) |
+| **Brave Search API** | Requiere registro y key ($5/mes de crédito gratuito). Se optó por Tavily, que da 1.000 créditos/mes y devuelve JSON pensado para agentes |
 | **SerpApi / Bing Visual Search** | De pago. `reverse_image_search.py` queda implementado pero desactivado; la cosecha activa de avatares lo sustituye sin coste |
 | **SearXNG público** | La salida JSON está desactivada en la mayoría de instancias públicas; auto-hospedado recibe CAPTCHA de Google/Brave/Startpage desde una sola IP |
 | **PimEyes / FaceCheck.ID** | De pago y legalmente delicados (datos biométricos). Fuera del alcance de una herramienta de concientización |
@@ -104,3 +122,4 @@ trae el dato o la técnica, reimplementados sobre `app/tools/http_client.py`.
 | Fecha | Alcance | Resultado |
 |---|---|---|
 | 2026-09-03 | Revisión inicial del ecosistema para el plan de ejecución | Se verificaron en vivo Hudson Rock, crt.sh y los patrones directos de avatar (todos 🟢, sin key). Se midió el dataset de Maigret (3653 sitios). Se descartaron `ignorant` por motivos éticos y HIBP/Brave/SerpApi por coste |
+| 2026-09-04 | Integración de Tavily como motor de dorking | 🟢 operativa. Dos trampas detectadas solo al probar contra la API real, no en los tests con mock: `exact_match` devuelve cero resultados siempre, y la búsqueda es semántica (un correo inexistente devuelve la portada de su dominio). Ambas mitigadas en `search_dorker`; ver "Trampas verificadas en producción" |

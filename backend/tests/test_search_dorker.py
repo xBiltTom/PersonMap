@@ -33,13 +33,28 @@ TAVILY_RESPONSE = {
             "score": 0.71,
         },
         {
-            "title": "Nota suelta",
+            "title": "Blog de Juan Perez",
             "url": "https://ejemplo.pe/nota",
-            "content": "Mención en un blog.",
+            "content": "Mención de Juan Perez en un blog.",
             "score": 0.20,
         },
     ],
     "response_time": 1.2,
+}
+
+# Caso real observado contra la API: al buscar un correo inexistente, Tavily
+# devuelve por relevancia semántica la portada del dominio, sin que el término
+# buscado aparezca en ninguna parte del resultado.
+TAVILY_SEMANTIC_NOISE = {
+    "query": '"jperez@untumbes.edu.pe"',
+    "results": [
+        {
+            "title": "Universidad Nacional de Tumbes",
+            "url": "https://untumbes.edu.pe/index.php",
+            "content": "Portal institucional de la universidad.",
+            "score": 0.55,
+        }
+    ],
 }
 
 DDG_HTML = """
@@ -138,11 +153,11 @@ async def test_tavily_request_shape(context, with_tavily_key):
     import json
 
     body = json.loads(request.content)
-    # `exact_match` es lo que hace que Tavily respete las comillas del dork en
-    # vez de interpretarlo semánticamente y devolver homónimos.
-    assert body["exact_match"] is True
     assert body["search_depth"] == settings.tavily_search_depth
     assert body["max_results"] == settings.tavily_max_results
+    # `exact_match` NO debe enviarse: verificado contra la API real, devuelve
+    # cero resultados siempre (con y sin comillas), dejando el dorking mudo.
+    assert "exact_match" not in body
 
 
 @pytest.mark.asyncio
@@ -203,6 +218,79 @@ async def test_falls_back_when_tavily_quota_is_exhausted(context, with_tavily_ke
 
     assert ddg.called
     assert findings[0].metadata_info["engine"] == "duckduckgo"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_semantic_noise_is_discarded(context, with_tavily_key):
+    """
+    Tavily busca por relevancia semántica: un dork de un correo inexistente
+    devuelve la portada del dominio. Ese falso positivo acabaría en el
+    expediente de una persona, así que se descarta al no contener literalmente
+    el término entrecomillado.
+    """
+    respx.post(TAVILY_URL).mock(
+        return_value=httpx.Response(200, json=TAVILY_SEMANTIC_NOISE)
+    )
+    ddg = respx.post(DDG_URL).mock(return_value=httpx.Response(500))
+
+    findings = await SearchDorkerTool().execute(context)
+
+    assert findings == []
+    # Al quedarse sin resultados literales, intenta el motor de respaldo.
+    assert ddg.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_literal_results_are_kept(context, with_tavily_key):
+    """El control de exactitud no debe descartar coincidencias reales."""
+    respx.post(TAVILY_URL).mock(return_value=httpx.Response(200, json=TAVILY_RESPONSE))
+
+    findings = await SearchDorkerTool().execute(context)
+
+    assert len(findings) == 3
+    assert all(f.metadata_info["literal_match"] is True for f in findings)
+
+
+def test_literal_match_tolerates_url_separators():
+    """
+    En las URLs el nombre viaja con guiones o puntos ("juan-perez"), así que la
+    comprobación compara también una versión sin separadores.
+    """
+    from app.tools.search_dorker import Dork, _matches_literally
+
+    dork = Dork('"Juan Perez"', "prueba")
+    assert _matches_literally(dork, "Perfil", "", "https://x.com/juan-perez")
+    assert _matches_literally(dork, "JUAN PEREZ", "", "https://x.com/otro")
+    assert not _matches_literally(dork, "Universidad", "Portal", "https://untumbes.edu.pe")
+
+
+def test_multi_term_dork_requires_all_terms():
+    """
+    Un dork `"Juan Perez" "Universidad X"` pide ambas cosas. Si bastara con que
+    coincidiera una, la portada de la universidad entraría en el expediente de
+    cualquier alumno.
+    """
+    from app.tools.search_dorker import Dork, _matches_literally
+
+    dork = Dork('"Juan Perez" "Universidad Nacional de Tumbes"', "prueba")
+
+    assert not _matches_literally(
+        dork, "Universidad Nacional de Tumbes", "Portal", "https://untumbes.edu.pe"
+    )
+    assert _matches_literally(
+        dork,
+        "Juan Perez - Universidad Nacional de Tumbes",
+        "Tesis de grado",
+        "https://repositorio.untumbes.edu.pe/123",
+    )
+
+
+def test_dork_without_quotes_imposes_no_restriction():
+    from app.tools.search_dorker import Dork, _matches_literally
+
+    assert _matches_literally(Dork("consulta libre", "prueba"), "algo", "", "https://x.pe")
 
 
 @pytest.mark.asyncio

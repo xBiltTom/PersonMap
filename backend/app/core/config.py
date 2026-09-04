@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     tavily_max_results: int = 8
     # Sesga los resultados hacia el país del público objetivo. ISO en inglés.
     tavily_country: Optional[str] = "peru"
+    # Descarta los resultados que no contienen literalmente el término
+    # entrecomillado del dork. Tavily busca por relevancia semántica, así que un
+    # dork de un correo inexistente devuelve la web del dominio: un falso
+    # positivo que en OSINT es peor que no obtener nada. Su parámetro nativo
+    # `exact_match` no sirve (devuelve cero resultados siempre), de ahí que la
+    # comprobación se haga del lado del cliente.
+    tavily_require_literal_match: bool = True
 
     @property
     def ai_enabled(self) -> bool:
