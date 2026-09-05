@@ -10,6 +10,7 @@ import {
 } from "@/lib/entityTypes";
 import { IdentityEvidence } from "@/components/identity/IdentityEvidence";
 import { AvatarThumb } from "@/components/identity/AvatarThumb";
+import { PlainExplanation } from "@/components/identity/PlainExplanation";
 import { LAYER_META } from "@/lib/engines";
 
 /** Filas por página. Suficiente para desplazarse sin ahogar al navegador. */
@@ -273,8 +274,24 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                     <td colSpan={5} className="px-4 py-4">
                       <div className="max-w-2xl">
                         <div className="text-[10px] font-mono text-slate-400 uppercase mb-2">
-                          ¿Por qué creemos que es esta persona?
+                          ¿Por qué este porcentaje?
                         </div>
+
+                        <PlainExplanation
+                          breakdown={item.metadata_info?.identity_breakdown}
+                          score={
+                            typeof item.identity_score === "number"
+                              ? item.identity_score
+                              : item.confidence
+                          }
+                          verified={item.verified}
+                        />
+
+                        <details className="mt-3">
+                          <summary className="text-[10px] font-mono text-slate-500 hover:text-slate-300 cursor-pointer select-none">
+                            Ver el desglose técnico del modelo
+                          </summary>
+                          <div className="mt-2">
                         <IdentityEvidence
                           breakdown={item.metadata_info?.identity_breakdown}
                           identityScore={item.identity_score}
@@ -293,6 +310,8 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                               : undefined
                           }
                         />
+                          </div>
+                        </details>
                       </div>
                     </td>
                   </tr>

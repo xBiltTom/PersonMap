@@ -20,6 +20,7 @@ import {
   getFindingIcon,
 } from "@/lib/entityTypes";
 import { IdentityEvidence } from "@/components/identity/IdentityEvidence";
+import { PlainExplanation } from "@/components/identity/PlainExplanation";
 import { User, ExternalLink, AlertTriangle, Filter } from "lucide-react";
 
 /**
@@ -525,14 +526,31 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
 
             <div className="pt-3 border-t border-[#1e293b]">
               <span className="text-[10px] font-mono text-slate-400 uppercase block mb-2">
-                ¿Por qué creemos que es esta persona?
+                ¿Por qué este porcentaje?
               </span>
+
+              {/* Primero la explicación en castellano llano, que es lo que
+                  necesita la persona a la que se le enseña su expediente; el
+                  desglose técnico queda debajo, plegado, para quien lo audite. */}
+              <PlainExplanation
+                breakdown={selectedNode.data.metadata_info?.identity_breakdown}
+                score={attributionOf(selectedNode.data)}
+                verified={Boolean(selectedNode.data.verified)}
+              />
+
+              <details className="mt-3 group">
+                <summary className="text-[10px] font-mono text-slate-500 hover:text-slate-300 cursor-pointer select-none">
+                  Ver el desglose técnico del modelo
+                </summary>
+                <div className="mt-2">
               <IdentityEvidence
                 breakdown={selectedNode.data.metadata_info?.identity_breakdown}
                 identityScore={selectedNode.data.metadata_info?.identity_score}
                 existenceConfidence={selectedNode.data.existence_confidence}
                 finalConfidence={Number(selectedNode.data.confidence || 0)}
               />
+                </div>
+              </details>
             </div>
 
             {selectedNode.data.metadata_info?.bio && (
