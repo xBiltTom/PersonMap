@@ -2,6 +2,7 @@
 
 import { HelpCircle, Minus, Scale, TrendingDown, TrendingUp } from "lucide-react";
 import type { IdentityBreakdown, LlmArbitration } from "@/lib/types";
+import { AvatarThumb } from "@/components/identity/AvatarThumb";
 
 /**
  * Explica por qué el sistema atribuye un hallazgo al objetivo.
@@ -61,6 +62,14 @@ interface Props {
   compact?: boolean;
   /** Veredicto del arbitraje opcional por LLM, si esa condición estaba activa. */
   arbitration?: LlmArbitration;
+  /** Avatar del hallazgo y su correlación, si la hubo. */
+  avatar?: {
+    url?: string;
+    source?: string;
+    harvested?: boolean;
+    distance?: number;
+    similarity?: number;
+  };
 }
 
 interface Signal {
@@ -113,6 +122,7 @@ export function IdentityEvidence({
   finalConfidence,
   compact = false,
   arbitration,
+  avatar,
 }: Props) {
   if (!breakdown || Object.keys(breakdown).length === 0) {
     return (
@@ -201,7 +211,63 @@ export function IdentityEvidence({
         )}
       </div>
 
+      {avatar?.url && <AvatarEvidence avatar={avatar} />}
+
       {arbitration && <ArbitrationNote arbitration={arbitration} />}
+    </div>
+  );
+}
+
+/**
+ * La imagen que sostiene la señal de avatar.
+ *
+ * La correlación visual ya ocurría y movía la puntuación, pero el usuario nunca
+ * veía las fotos ni sabía que había pasado. Es la evidencia más persuasiva que
+ * produce el sistema —"estas dos cuentas usan la misma foto"— y estaba oculta
+ * detrás de un número.
+ */
+function AvatarEvidence({
+  avatar,
+}: {
+  avatar: NonNullable<Props["avatar"]>;
+}) {
+  const correlado = typeof avatar.distance === "number";
+
+  return (
+    <div className="mt-2 p-2.5 rounded border border-[#1e293b] bg-[#0c111a] flex items-start gap-3">
+      <AvatarThumb
+        url={avatar.url as string}
+        distance={avatar.distance}
+        source={avatar.source}
+        size="lg"
+      />
+      <div className="min-w-0 text-[11px]">
+        <p className="text-slate-200 font-semibold">
+          {correlado
+            ? "Misma foto de perfil que otra cuenta"
+            : "Foto de perfil localizada"}
+        </p>
+        {correlado ? (
+          <p className="text-slate-400 mt-0.5 leading-snug">
+            <span className="font-mono text-amber-300">
+              {avatar.distance} bit{avatar.distance === 1 ? "" : "s"}
+            </span>{" "}
+            de diferencia entre los dos hashes perceptuales
+            {avatar.distance === 0 ? " (imagen idéntica)" : ""}. Reutilizar la misma
+            foto permite enlazar cuentas que no comparten ni alias ni correo.
+          </p>
+        ) : (
+          <p className="text-slate-400 mt-0.5 leading-snug">
+            Sin coincidencia con otras cuentas del expediente. Los avatares por
+            defecto se descartan antes de comparar: son idénticos entre personas
+            distintas y no probarían nada.
+          </p>
+        )}
+        <p className="text-slate-500 mt-1 font-mono text-[10px]">
+          origen: {avatar.source || "hallazgo"}
+          {avatar.harvested ? " · cosecha activa" : " · expuesto por la plataforma"}
+        </p>
+      </div>
     </div>
   );
 }

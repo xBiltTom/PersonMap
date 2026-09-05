@@ -81,6 +81,16 @@ export interface EntityData {
     catalog_enriched_by?: string | null;
     /** Ranking de popularidad del sitio, si el catálogo lo conoce. */
     site_rank?: number | null;
+    /** Miniatura del avatar, pasiva o cosechada activamente. */
+    avatar_url?: string;
+    /** Proveedor del que se construyó la URL (github, telegram, gravatar...). */
+    avatar_source?: string;
+    /** `true` si la URL la construyó la cosecha activa, no un hallazgo pasivo. */
+    avatar_harvested?: boolean;
+    /** Grado de acuerdo visual [0,1] que entra en el modelo de identidad. */
+    avatar_similarity?: number;
+    /** Bits de diferencia entre los dos hashes perceptuales. 0 = idénticos. */
+    avatar_hamming_distance?: number;
     /** Veredicto del arbitraje opcional por LLM (apagado por defecto). */
     llm_arbitration?: LlmArbitration;
   };
@@ -132,6 +142,8 @@ export interface InvestigationMetrics {
   config_catalog_enriched?: number;
   config_catalog_with_regex_check?: number;
   config_maigret_commit?: string | null;
+  enrichment_avatars_harvested?: number;
+  enrichment_avatar_correlations?: number;
   hybrid_heuristic_findings?: number;
   hybrid_refinement_findings?: number;
   hybrid_refinement_calls?: number;

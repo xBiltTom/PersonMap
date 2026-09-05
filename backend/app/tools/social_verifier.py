@@ -76,7 +76,18 @@ class SocialVerifierTool(BaseTool):
             metadata = {
                 "og_title": og_title,
                 "bio": og_desc,
-                "avatar_url": og_image,
+                # `og:image` NO es un avatar, aunque lo parezca: es la imagen
+                # de vista previa social de la PÁGINA, y en la mayoría de sitios
+                # es su logo, idéntico en todas sus URLs. Guardarla como
+                # `avatar_url` hacía que el correlador visual comparase logos:
+                # medido sobre una investigación real, el de Imgur, el de
+                # Pastebin y el de PayPal entraban como "fotos de perfil" y uno
+                # llegó a correlacionar a distancia 0, es decir, afirmando que
+                # dos cuentas usaban la misma foto.
+                #
+                # Se conserva porque es útil para mostrar una miniatura del
+                # enlace, pero con un nombre que dice lo que es.
+                "og_image": og_image,
                 "canonical_url": og_url,
                 "extracted_usernames": extracted_usernames,
                 "extracted_emails": extracted_emails,

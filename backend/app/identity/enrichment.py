@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from app.core.config import settings
 from app.identity.avatar_hasher import avatar_hasher
+from app.identity.avatar_harvest import harvest_avatar_urls
 from app.identity.scorer import compute_identity_score
 from app.models.entity import Entity
 from app.models.target import Target
@@ -49,6 +50,7 @@ async def enrich_and_rescore(
     """
     summary: Dict[str, Any] = {
         "avatar_correlations": 0,
+        "avatars_harvested": 0,
         "semantic_comparisons": 0,
         "rescored_entities": 0,
     }
@@ -56,6 +58,12 @@ async def enrich_and_rescore(
         return summary
 
     touched: Dict[str, Entity] = {}
+
+    # Cosecha ACTIVA: antes de comparar, se construyen las URLs de avatar de las
+    # cuentas ya confirmadas en los proveedores con patrón conocido. Hasta ahora
+    # solo se comparaban los avatares que alguna herramienta hubiera expuesto por
+    # casualidad en sus metadatos, que eran muy pocos.
+    summary["avatars_harvested"] = await harvest_avatar_urls(entities)
 
     avatar_pairs = await _apply_avatar_similarity(entities, touched)
     summary["avatar_correlations"] = avatar_pairs

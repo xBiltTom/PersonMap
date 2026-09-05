@@ -41,6 +41,8 @@ Estados: 🟢 operativa · 🟡 degradada · 🔴 muerta · ⚪ evaluada, no ado
 | **DuckDuckGo** | Scraping HTML de resultados | No | 🟡 | 2026-09-04 | `search_dorker` — motor de respaldo automático. Responde HTTP 202, no 200 |
 | **Google (Scholar/YouTube)** | Endpoints públicos sin key | No | 🟡 | 2026-09-03 | `google_account_osint` — el `lookup` de Gmail es históricamente inestable |
 | **Gemini** | `generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent` | Sí (gratuita) | 🟢 | 2026-09-04 | Capa 2 del motor `hybrid`, agente `agentic` y narrativa. Verificado que emite `functionCall` con nuestro esquema de herramientas |
+| **Avatares directos** | `github.com/{u}.png` · `t.me/i/userpic/320/{u}.jpg` · `keybase.io/{u}/picture` · `gravatar.com/avatar/{md5}?d=404` | No | 🟢 | 2026-09-05 | `avatar_harvest` — cosecha activa. Los cuatro devuelven imagen con 200 para una cuenta que existe y 404 para una que no |
+| **Avatares vía API** | `dev.to/api/users/by_username` · `mastodon.social/api/v1/accounts/lookup` | No | 🟢 | 2026-09-05 | `avatar_harvest` — dos pasos: JSON y de ahí la URL del avatar |
 | **Hudson Rock Cavalier** | `cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email\|username` | No | 🟢 | 2026-09-04 | `infostealer_checker`. **Solo con consentimiento explícito.** Límite de 50 req/10 s por host, respetado con `register_host_rate_limit` |
 
 ### Trampas verificadas en producción
@@ -129,6 +131,26 @@ sintético). Es coherente con que Holehe lleve años roto. De las 20 sondas que 
 proyecto ya tenía, **7 apuntaban a endpoints muertos y 1 producía un falso
 positivo garantizado**; ver el historial de revisiones.
 
+**Los avatares por defecto son idénticos entre personas distintas.** Es el
+riesgo que define la Fase 5, y está medido: la silueta genérica de Gravatar
+(`d=mp`) da el **mismo dHash para tres semillas y tres tamaños**, es decir,
+distancia de Hamming 0 entre identidades sin ninguna relación. Sin filtrarlas, la
+cosecha activa fusionaría a dos personas bajo una misma identidad — el error más
+grave que puede cometer esta herramienta.
+
+**Y la entropía no sirve para detectarlas**, que es lo primero que uno intenta:
+la silueta genérica y un `identicon` tienen la MISMA entropía (1.49) y son cosas
+opuestas. El identicon se deriva del hash del correo, así que dos iguales sí son
+evidencia de que hay un mismo correo detrás; la silueta es la misma imagen para
+todo el mundo. Eso no se deduce de la imagen: hay que saber cuáles son
+placeholders. De ahí una lista de hashes conocidos, medidos y fechados, más el
+descarte genérico de las imágenes planas (dHash con todos los bits a cero).
+
+**Proveedores de avatar descartados tras probarlos** (2026-09-05), para que
+nadie los reintente sin motivo: GitLab y Codeberg responden 403 al patrón
+directo, Bitbucket 404 siempre, Reddit devuelve HTML en lugar de JSON y el
+registro de NPM exige autenticación.
+
 ### Licencias que obligan a atribución
 
 - **WhatsMyName** — *CC BY-SA 4.0*, © 2015-2026 Micah Hoffman y colaboradores.
@@ -200,6 +222,7 @@ trae el dato o la técnica, reimplementados sobre `app/tools/http_client.py`.
 | 2026-09-03 | Revisión inicial del ecosistema para el plan de ejecución | Se verificaron en vivo Hudson Rock, crt.sh y los patrones directos de avatar (todos 🟢, sin key). Se midió el dataset de Maigret (3653 sitios). Se descartaron `ignorant` por motivos éticos y HIBP/Brave/SerpApi por coste |
 | 2026-09-04 | Integración de Tavily como motor de dorking | 🟢 operativa. Dos trampas detectadas solo al probar contra la API real, no en los tests con mock: `exact_match` devuelve cero resultados siempre, y la búsqueda es semántica (un correo inexistente devuelve la portada de su dominio). Ambas mitigadas en `search_dorker`; ver "Trampas verificadas en producción" |
 | 2026-09-04 | Barrido completo al abrir la **Fase 3** (`hybrid`) | 🟢 XposedOrNot, OpenAlex, Gravatar (404 limpio), Keybase, MediaWiki, GitHub API y avatar, Hudson Rock, Tavily y el `data.json` de Maigret (1,66 MB). 🟡 DuckDuckGo responde **202**, no 200. 🔴→🟡 **crt.sh se ha degradado**: 1 de 4 peticiones dio 200 y tres dieron 502, lo que obliga a reintentos en la Fase 4.4 |
+| 2026-09-05 | Cosecha activa de avatares (Fase 5) | 🟢 Seis proveedores verificados en vivo (GitHub, Telegram, Keybase, Gravatar directos; dev.to y Mastodon vía API). Cuatro descartados por 403/404/autenticación. **Medido el peligro que define la fase**: la silueta genérica de Gravatar da distancia de Hamming 0 entre cuatro identidades distintas, y la entropía no la distingue de un `identicon`, que sí identifica. Salvaguarda por lista de hashes medidos + descarte de imágenes planas |
 | 2026-09-05 | Corrección de criterio: las plataformas de contenido adulto se escanean | Se habían excluido por error. Detectar que un alias reutilizado vincula el perfil profesional de alguien con una cuenta de este tipo es un objetivo del proyecto, no un efecto colateral. Reincorporadas 47 (39 de WhatsMyName + 8 de Maigret tras el filtro de calidad) con tipo de entidad propio. Auditadas en vivo contra un alias imposible: **1 falso positivo de 48**, `Fanslist (OnlyFans)`, cuya entrada quedó obsoleta al cambiar el sitio. Excluida y con test `network` permanente |
 | 2026-09-04 | Auditoría en vivo de las 20 sondas de correo (Fase 4.3) | 🔴 **0 útiles, 19 mudas, 1 falso positivo garantizado.** La sonda de Quora marcaba TODOS los correos como registrados: su endpoint dejó de ser una API y devuelve la portada HTML de 81 KB, mientras la comprobación buscaba la palabra `"false"`, que aparece en cualquier JavaScript. Llegó a un expediente real. Auditados los 20 endpoints: 7 muertos (404/405/401) y 5 devuelven HTML donde el código espera JSON. Retiradas 8 sondas. **La de Vimeo hacía POST a `/log_in` con contraseña**, es decir, un intento de acceso real contra la cuenta de una persona: eliminada por el mismo criterio que descarta `ignorant` |
 | 2026-09-04 | Integración de Maigret y crt.sh (Fases 4.1 y 4.4) | 🟢 Catálogo unificado de 2.441 sitios. Frente a solo WhatsMyName: **+48 % de cobertura (86 → 127 hallazgos sobre `@torvalds`) a cambio de 5 falsos positivos por alias**, todos con atribución 0.10. `regexCheck` ahorra el 20 % de las peticiones en alias con punto o guion. crt.sh operativa pero intermitente |

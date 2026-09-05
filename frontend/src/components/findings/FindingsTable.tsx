@@ -9,6 +9,7 @@ import {
   getFindingIcon,
 } from "@/lib/entityTypes";
 import { IdentityEvidence } from "@/components/identity/IdentityEvidence";
+import { AvatarThumb } from "@/components/identity/AvatarThumb";
 import { LAYER_META } from "@/lib/engines";
 
 /** Filas por página. Suficiente para desplazarse sin ahogar al navegador. */
@@ -137,7 +138,19 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                 <tr className="hover:bg-[#151e2c] transition-colors">
                   <td className="py-3 px-4 whitespace-nowrap">
                     <div className="flex items-center gap-2">
-                      <Icon className={`w-4 h-4 shrink-0 ${meta.accent}`} aria-hidden="true" />
+                      {/* La miniatura del avatar. Hasta ahora la correlación
+                          visual ocurría y movía la puntuación, pero el usuario
+                          nunca veía las imágenes: es la evidencia más
+                          persuasiva del sistema y estaba oculta. */}
+                      {item.metadata_info?.avatar_url ? (
+                        <AvatarThumb
+                          url={item.metadata_info.avatar_url}
+                          distance={item.metadata_info.avatar_hamming_distance}
+                          source={item.metadata_info.avatar_source}
+                        />
+                      ) : (
+                        <Icon className={`w-4 h-4 shrink-0 ${meta.accent}`} aria-hidden="true" />
+                      )}
                       <div>
                         <div className="font-semibold text-slate-200">
                           {item.platform || meta.label}
@@ -268,6 +281,17 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                           existenceConfidence={item.existence_confidence}
                           finalConfidence={item.confidence}
                           arbitration={item.metadata_info?.llm_arbitration}
+                          avatar={
+                            item.metadata_info?.avatar_url
+                              ? {
+                                  url: item.metadata_info.avatar_url,
+                                  source: item.metadata_info.avatar_source,
+                                  harvested: item.metadata_info.avatar_harvested,
+                                  distance: item.metadata_info.avatar_hamming_distance,
+                                  similarity: item.metadata_info.avatar_similarity,
+                                }
+                              : undefined
+                          }
                         />
                       </div>
                     </td>

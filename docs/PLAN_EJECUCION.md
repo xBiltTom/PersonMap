@@ -16,9 +16,9 @@
 | 3 · `hybrid` como tercera estrategia | ✅ **Completada** | `da1cb85`, `3070e26` |
 | 3.5 · Presupuesto de concurrencia y progreso | ✅ **Completada** | `45eebe7` |
 | 4 · Cobertura de fuentes | ✅ **Completada** | `e7610f5`, `80472a0`, `bc3e1e6`, `899e68e` |
-| 5 · Cosecha activa de avatares | ⬜ Pendiente | — |
+| 5 · Cosecha activa de avatares | ✅ **Completada** | — |
 
-**Línea base al retomar:** 170 tests en ~75 s sin red · `tsc` limpio · backend `:8000` y frontend `:3000`.
+**Línea base al retomar:** 192 tests en ~68 s sin red · `tsc` limpio · backend `:8000` y frontend `:3000`.
 
 ### Cómo retomar en otra sesión
 
@@ -820,7 +820,71 @@ Sin Brave API, la ruta gratuita es SearXNG auto-hospedado con `format=json`, con
 
 ---
 
-## Fase 5 — Cosecha activa de avatares ⬜ PENDIENTE
+## Fase 5 — Cosecha activa de avatares ✅ COMPLETADA
+
+> **Medido.** 6 proveedores verificados en vivo. En una investigación real, las
+> entidades con avatar pasaron de 93 a **14** y las correlaciones visuales de 21
+> a **8** al quitar lo que no era un avatar. Las que quedan son fotos de persona.
+
+Se invierte el planteamiento de `reverse_image_search` —que sigue apagado porque
+exige una clave de pago—: en vez de *"busca esta imagen en la web"*, se hace
+*"descarga el avatar de esta cuenta en las plataformas donde ya la confirmamos y
+compara los hashes"*.
+
+### Proveedores, verificados uno a uno
+
+Directos: **GitHub**, **Telegram**, **Keybase** y **Gravatar** (con `d=404`, que
+da señal binaria limpia). Vía API: **dev.to** y **Mastodon**. Descartados tras
+probarlos: GitLab y Codeberg dan 403, Bitbucket 404 siempre, Reddit devuelve HTML
+y NPM exige autenticación.
+
+### Las tres salvaguardas, y por qué ninguna era la obvia
+
+**1. Los avatares por defecto colisionan.** Medido: la silueta genérica de
+Gravatar da el mismo dHash para tres semillas y tres tamaños — distancia de
+Hamming **0 entre identidades sin relación**.
+
+**Y la entropía no sirve para detectarlos**, que es lo primero que uno intenta:
+la silueta genérica y un `identicon` tienen la **misma** entropía (1.49) y son
+opuestos — el identicon se deriva del hash del correo, así que dos iguales sí son
+evidencia; la silueta es la misma imagen para todo el mundo. Eso no se deduce de
+la imagen: hay que saber cuáles son placeholders. De ahí una lista de hashes
+medidos y fechados, más el descarte genérico de imágenes planas.
+
+**2. `og:image` no es un avatar.** `social_verifier` lo guardaba como si lo
+fuera, y es la imagen de vista previa de la PÁGINA — en la mayoría de sitios, su
+logo. En una corrida real entraron como "foto de perfil" el logo de Imgur, la
+imagen social de Pastebin y la de PayPal, y **una correlacionó a distancia 0**:
+el sistema afirmaba que dos cuentas usaban la misma foto cuando lo que
+compartían era el logo del sitio. Es la misma clase de fallo que los avatares
+por defecto, por otra vía.
+
+**3. Una cuenta no puede correlacionarse consigo misma.** El avatar cosechado de
+`github.com/{u}.png` coincidía a distancia 0 con el que la API de GitHub había
+expuesto para esa misma cuenta. Coincidencia garantizada por cómo se buscó —la
+cuarta tautología del proyecto— que inflaba la puntuación con información
+inexistente.
+
+Las dos últimas **solo aparecieron al ejecutar una investigación real**; ningún
+test las habría encontrado, porque el fallo no estaba en la lógica sino en qué
+datos llegaban a ella.
+
+### Frontend emparejado
+
+Miniatura del avatar en la tabla de hallazgos y en el panel de evidencia, con la
+**distancia de Hamming visible** y un borde ámbar cuando hubo correlación. Antes
+la correlación visual ocurría y movía la puntuación, pero el usuario nunca veía
+las imágenes: era la evidencia más persuasiva del sistema y estaba oculta.
+
+`AvatarThumb` concentra la decisión de usar `<img>` en vez de `next/image`:
+optimizar haría que **nuestro servidor descargue URLs de hosts arbitrarios**
+descubiertos en ejecución, convirtiendo el frontend en un proxy de peticiones
+salientes. Los docs de Next piden acotar `remotePatterns` al máximo, y aquí el
+conjunto de hosts es abierto por diseño.
+
+---
+
+## Fase 5 — plan original
 
 `reverse_image_search.py` existe pero está **apagado**: exige `serpapi_key` o `bing_visual_search_key`, y la restricción es "sin key". Se invierte el planteamiento:
 
