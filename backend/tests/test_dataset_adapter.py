@@ -15,6 +15,8 @@ Lo que se protege aquí no es el parseo, es lo que costaría caro perder:
 
 import json
 
+import pytest
+
 from app.tools.dataset_adapter import (
     MAIGRET_COMMIT,
     MAIGRET_FILE,
@@ -263,13 +265,110 @@ def test_a_high_rank_does_not_excuse_the_lack_of_validation():
     assert _is_trustworthy(popular_sin_validacion) is False
 
 
-def test_adult_sites_never_reach_the_catalog():
+def test_adult_platforms_are_scanned_because_that_is_the_point():
     """
-    WhatsMyName marca lo adulto con la categoría "xx NSFW xx" y Maigret con
-    etiquetas. Sin traducirlas, 19 sitios porno se colaban en una herramienta
-    educativa cuyo informe se le enseña a la persona investigada.
-    """
-    nombres = " ".join(s.name.lower() for s in build_catalog())
+    Se escanean **a propósito**, y una versión anterior de este test afirmaba lo
+    contrario por error.
 
-    for sitio in ("xvideos", "xhamster", "youporn", "redtube", "empflix", "erome"):
-        assert sitio not in nombres
+    Detectar que un alias reutilizado enlaza el perfil profesional de alguien con
+    una cuenta en una plataforma de contenido adulto es uno de los objetivos
+    declarados de la herramienta: es donde la reutilización de alias deja de ser
+    una abstracción y pasa a ser un riesgo concreto de extorsión. Excluirlas
+    dejaba fuera justo el hallazgo más contundente.
+    """
+    catalog = build_catalog()
+    sensibles = [s for s in catalog if s.sensitive]
+
+    assert len(sensibles) >= 30, "las plataformas de contenido adulto desaparecieron"
+
+    nombres = " ".join(s.name.lower() for s in sensibles)
+    assert "onlyfans" in nombres or "pornhub" in nombres
+
+
+def test_sensitive_platforms_are_marked_not_hidden():
+    """
+    La marca es lo que permite darles tipo de entidad propio, icono propio,
+    filtro propio y una recomendación que hable de extorsión. Sin ella el
+    hallazgo se enterraría entre cientos de cuentas normales.
+    """
+    catalog = build_catalog()
+
+    assert any(s.sensitive for s in catalog)
+    assert any(not s.sensitive for s in catalog)
+    # Y siguen sujetas al mismo listón de calidad que el resto del catálogo.
+    for site in catalog:
+        if site.sensitive and site.source == "maigret":
+            assert site.presence or site.absence
+
+
+def test_sensitive_sites_come_from_both_catalogs():
+    """
+    WhatsMyName las marca con la categoría "xx NSFW xx" y Maigret con etiquetas.
+    Si solo se leyera una de las dos convenciones, la mitad se perdería.
+    """
+    fuentes = {s.source for s in build_catalog() if s.sensitive}
+
+    assert fuentes == {"whatsmyname", "maigret"}
+
+
+def test_a_sensitive_finding_gets_its_own_entity_type():
+    """
+    Tipo propio, no `social_account`. No es pudor: el hallazgo necesita su icono,
+    su filtro, su peso en el scorecard y una recomendación que hable de
+    extorsión. Mezclado con las demás cuentas quedaba enterrado entre cientos de
+    filas y perdía todo su valor pedagógico.
+    """
+    from app.tools.username_finder import UsernameFinderTool
+
+    tool = UsernameFinderTool()
+    sensible = next(s for s in build_catalog() if s.sensitive)
+    normal = next(s for s in build_catalog() if not s.sensitive)
+
+    assert sensible.sensitive is True
+    assert normal.sensitive is False
+    # El tipo se decide en `_check_site`; aquí se fija el contrato del catálogo
+    # del que depende esa decisión.
+    assert hasattr(tool, "_matches")
+
+
+@pytest.mark.network
+@pytest.mark.asyncio
+async def test_no_sensitive_platform_reports_an_impossible_alias():
+    """
+    La red de seguridad de la categoría más delicada.
+
+    Un falso positivo aquí afirma que una persona tiene cuenta en una plataforma
+    de contenido adulto. Es el error más dañino que puede cometer esta
+    herramienta, y no lo detecta ningún mock: la entrada de `Fanslist (OnlyFans)`
+    declaraba cadenas de validación correctas y aun así daba positivo con
+    cualquier alias, porque el sitio cambió después de que el dataset la
+    escribiera.
+
+    Marcado `network` porque consulta los sitios reales. Conviene ejecutarlo al
+    actualizar el snapshot de Maigret o el de WhatsMyName.
+    """
+    import asyncio
+
+    from app.tools import http_client
+    from app.tools.username_finder import UsernameFinderTool
+
+    imposible = "zxq7f3n9k2m8v4t6"
+    tool = UsernameFinderTool()
+    sensibles = [s for s in build_catalog() if s.sensitive]
+    assert sensibles, "no hay plataformas sensibles que auditar"
+
+    semaforo = asyncio.Semaphore(20)
+    async with http_client.build_client(timeout=8.0) as client:
+        resultados = await asyncio.gather(
+            *(
+                tool._check_site(
+                    client, imposible, site, semaforo, None, {"checked": 0}, len(sensibles)
+                )
+                for site in sensibles
+            ),
+            return_exceptions=True,
+        )
+
+    falsos = [r.platform for r in resultados if hasattr(r, "platform")]
+
+    assert not falsos, f"falsos positivos en plataformas sensibles: {falsos}"

@@ -100,9 +100,27 @@ exige que un sitio de Maigret traiga alguna forma de comprobar el contenido.
 Un ranking alto **no** es sustituto: WordPressOrg tiene ranking 12, ninguna
 cadena, y responde 200 a un alias inexistente.
 
-**Maigret marca lo adulto con etiquetas, no con la categoría de WhatsMyName.**
-Sin traducirlas, 19 sitios porno se colaban en el catálogo de una herramienta
-educativa cuyo informe se le enseña a la persona investigada.
+**Las plataformas de contenido adulto SÍ se escanean, y es deliberado.** Una
+versión anterior de este documento decía lo contrario, por un error de criterio
+mío: detectar que un alias reutilizado enlaza el perfil profesional de alguien
+con una cuenta en un sitio de este tipo es **uno de los objetivos declarados**
+de la herramienta. Es donde la reutilización de alias deja de ser una
+abstracción y pasa a ser un riesgo concreto de extorsión.
+
+WhatsMyName las marca con la categoría `xx NSFW xx` (39 sitios, todos con cadena
+de validación) y Maigret con etiquetas (26, de los que 14 pasan el listón de
+calidad). Se leen **las dos convenciones**, y el hallazgo recibe tipo de entidad
+propio (`sensitive_account`) con su icono, su filtro, su peso en el scorecard y
+una recomendación que habla de extorsión, no de privacidad genérica.
+
+**Auditadas en vivo contra un alias imposible (2026-09-05): 1 falso positivo de
+48.** `Fanslist (OnlyFans)` declara cadenas correctas —presencia
+`data-username=`, ausencia `No results found for query`— pero su buscador
+devuelve la marca de presencia para cualquier alias: la entrada del dataset se
+quedó obsoleta cuando el sitio cambió. Excluida en `KNOWN_STALE_CHECKS` en lugar
+de parchear el snapshot, que lo haría divergir de su origen. Hay un test
+marcado `network` que repite esa auditoría; **conviene ejecutarlo al actualizar
+cualquiera de los dos datasets**.
 
 **El ecosistema de enumeración por correo se ha cerrado.** Sondeados en vivo
 Instagram, Imgur, Archive.org, Zoho, Mercado Libre, Xbox y Bitmoji: ninguno
@@ -182,6 +200,7 @@ trae el dato o la técnica, reimplementados sobre `app/tools/http_client.py`.
 | 2026-09-03 | Revisión inicial del ecosistema para el plan de ejecución | Se verificaron en vivo Hudson Rock, crt.sh y los patrones directos de avatar (todos 🟢, sin key). Se midió el dataset de Maigret (3653 sitios). Se descartaron `ignorant` por motivos éticos y HIBP/Brave/SerpApi por coste |
 | 2026-09-04 | Integración de Tavily como motor de dorking | 🟢 operativa. Dos trampas detectadas solo al probar contra la API real, no en los tests con mock: `exact_match` devuelve cero resultados siempre, y la búsqueda es semántica (un correo inexistente devuelve la portada de su dominio). Ambas mitigadas en `search_dorker`; ver "Trampas verificadas en producción" |
 | 2026-09-04 | Barrido completo al abrir la **Fase 3** (`hybrid`) | 🟢 XposedOrNot, OpenAlex, Gravatar (404 limpio), Keybase, MediaWiki, GitHub API y avatar, Hudson Rock, Tavily y el `data.json` de Maigret (1,66 MB). 🟡 DuckDuckGo responde **202**, no 200. 🔴→🟡 **crt.sh se ha degradado**: 1 de 4 peticiones dio 200 y tres dieron 502, lo que obliga a reintentos en la Fase 4.4 |
+| 2026-09-05 | Corrección de criterio: las plataformas de contenido adulto se escanean | Se habían excluido por error. Detectar que un alias reutilizado vincula el perfil profesional de alguien con una cuenta de este tipo es un objetivo del proyecto, no un efecto colateral. Reincorporadas 47 (39 de WhatsMyName + 8 de Maigret tras el filtro de calidad) con tipo de entidad propio. Auditadas en vivo contra un alias imposible: **1 falso positivo de 48**, `Fanslist (OnlyFans)`, cuya entrada quedó obsoleta al cambiar el sitio. Excluida y con test `network` permanente |
 | 2026-09-04 | Auditoría en vivo de las 20 sondas de correo (Fase 4.3) | 🔴 **0 útiles, 19 mudas, 1 falso positivo garantizado.** La sonda de Quora marcaba TODOS los correos como registrados: su endpoint dejó de ser una API y devuelve la portada HTML de 81 KB, mientras la comprobación buscaba la palabra `"false"`, que aparece en cualquier JavaScript. Llegó a un expediente real. Auditados los 20 endpoints: 7 muertos (404/405/401) y 5 devuelven HTML donde el código espera JSON. Retiradas 8 sondas. **La de Vimeo hacía POST a `/log_in` con contraseña**, es decir, un intento de acceso real contra la cuenta de una persona: eliminada por el mismo criterio que descarta `ignorant` |
 | 2026-09-04 | Integración de Maigret y crt.sh (Fases 4.1 y 4.4) | 🟢 Catálogo unificado de 2.441 sitios. Frente a solo WhatsMyName: **+48 % de cobertura (86 → 127 hallazgos sobre `@torvalds`) a cambio de 5 falsos positivos por alias**, todos con atribución 0.10. `regexCheck` ahorra el 20 % de las peticiones en alias con punto o guion. crt.sh operativa pero intermitente |
 | 2026-09-04 | Integración de Hudson Rock (Fase 4.2) | 🟢 operativa, con consentimiento explícito. Tres trampas que **solo** aparecieron contra la API real: `top_logins` son correos enmascarados y no servicios afectados; `ip` y `malware_path` traen la cadena `"Not Found"` en vez de venir ausentes; y los totales aparecen tanto por registro como en la raíz. Ninguna se habría visto con los tests de mock, que es exactamente la lección de Tavily repitiéndose |

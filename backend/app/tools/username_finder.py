@@ -261,7 +261,13 @@ class UsernameFinderTool(BaseTool):
             confidence = 0.90 if site.presence else 0.85
 
             return ToolFinding(
-                entity_type="social_account",
+                # Las plataformas de contenido adulto tienen tipo propio, no por
+                # pudor sino porque el hallazgo es cualitativamente distinto:
+                # necesita su propio icono, su propio filtro, su propio peso en
+                # el scorecard y una recomendación que hable de extorsión, no de
+                # privacidad genérica. Mezclarlo con las demás cuentas lo
+                # enterraba entre cientos de filas.
+                entity_type="sensitive_account" if site.sensitive else "social_account",
                 platform=site.name,
                 value=pretty_url,
                 display_name=f"{site.name}: @{username}",
@@ -270,6 +276,7 @@ class UsernameFinderTool(BaseTool):
                     "username": username,
                     "platform": site.name,
                     "category": site.category or "social",
+                    "sensitive_platform": site.sensitive,
                     "url": pretty_url,
                     "source_tool": "username_finder",
                     "checked_status": resp.status_code,

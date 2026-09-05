@@ -31,6 +31,7 @@ import {
   Share2,
   ShoppingBag,
   Skull,
+  EyeOff,
   User,
   Video,
   type LucideIcon,
@@ -87,6 +88,15 @@ export const ENTITY_TYPES: Record<string, EntityTypeMeta> = {
     accent: "text-rose-400",
     node: "border-rose-500/70 bg-[#210d14] ring-1 ring-rose-500/20",
     badge: "bg-rose-500/10 text-rose-300 border-rose-500/30",
+  },
+  sensitive_account: {
+    label: "Contenido Sensible",
+    description:
+      "Cuenta en una plataforma de contenido adulto registrada con un alias que también se usa en perfiles públicos. El riesgo no es la cuenta: es que sea vinculable a la identidad profesional, que es el material con el que se hace extorsión.",
+    Icon: EyeOff,
+    accent: "text-fuchsia-400",
+    node: "border-fuchsia-500/70 bg-[#1e0d1e] ring-1 ring-fuchsia-500/25",
+    badge: "bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/35",
   },
   infostealer: {
     label: "Infostealer",
@@ -235,6 +245,8 @@ const PLATFORM_ICONS: Array<[string, LucideIcon]> = [
 const TYPE_WINS_OVER_PLATFORM = new Set([
   "breach",
   "infostealer",
+  // El icono del sitio da igual aquí: lo que hay que comunicar es la categoría.
+  "sensitive_account",
   "image_match",
   "document",
   "phone",

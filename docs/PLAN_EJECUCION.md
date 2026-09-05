@@ -648,8 +648,18 @@ Tres cosas que solo se supieron midiendo:
    de validación, cuyo único criterio es el código de estado. Sobre un alias
    sintético inexistente producían **255 "cuentas", todas falsas**. Se exige
    validación de contenido; un ranking alto no la sustituye (WordPressOrg tiene
-   ranking 12, ninguna cadena, y responde 200 a cualquier cosa). Y **19 sitios
-   porno** se colaban porque Maigret los etiqueta distinto que WhatsMyName.
+   ranking 12, ninguna cadena, y responde 200 a cualquier cosa).
+
+**Corrección posterior (2026-09-05): las plataformas de contenido adulto no se
+excluyen.** Se habían filtrado por un error de criterio. Detectar que un alias
+reutilizado enlaza el perfil profesional de alguien con una cuenta de este tipo
+es **un objetivo declarado del proyecto**, y omitirlo dejaba fuera el hallazgo
+que más rápido convence a un estudiante de que reutilizar el alias tiene
+consecuencias. Se leen las dos convenciones (categoría `xx NSFW xx` de
+WhatsMyName y etiquetas de Maigret) y el hallazgo recibe tipo propio,
+`sensitive_account`, con su icono, filtro, peso en el scorecard y una
+recomendación que habla de extorsión. Auditadas en vivo contra un alias
+imposible: 1 falso positivo de 48, excluido; test `network` permanente.
 
 `regexCheck` es la mejora de precisión que no depende del volumen:
 

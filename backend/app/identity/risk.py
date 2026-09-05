@@ -66,7 +66,17 @@ def calculate_risk_score(entities: List[Entity], target: Target) -> Tuple[int, s
     if infostealer_entities:
         score += 50
 
-    # 11. Infraestructura personal (dominios y subdominios propios).
+    # 11. Cuentas en plataformas de contenido adulto.
+    #
+    #     Se puntúan alto y aparte, no por juicio moral sino porque el riesgo es
+    #     de otra naturaleza: una cuenta así, vinculable por alias reutilizado a
+    #     la identidad profesional o académica de alguien, es el material con el
+    #     que se hace extorsión. Es además el hallazgo que más rápido convence a
+    #     un estudiante de que reutilizar el alias tiene consecuencias.
+    sensitive_entities = [e for e in entities if e.entity_type == "sensitive_account"]
+    score += min(len(sensitive_entities) * 12, 30)
+
+    # 12. Infraestructura personal (dominios y subdominios propios).
     domain_count = sum(1 for e in entities if e.entity_type == "domain")
     score += min(domain_count * 4, 12)
 
@@ -116,6 +126,37 @@ def calculate_risk_score(entities: List[Entity], target: Target) -> Tuple[int, s
                 "cámbialas desde un dispositivo limpio, cierra todas las sesiones activas de cada "
                 "servicio (no basta con cambiar la clave, la cookie robada sigue siendo válida) y "
                 "analiza el equipo con un antimalware antes de volver a usarlo."
+            ),
+        })
+
+    if sensitive_entities:
+        plataformas = ", ".join(
+            sorted({str(e.platform) for e in sensitive_entities if e.platform})[:4]
+        )
+        alias = sorted({
+            str((e.metadata_info or {}).get("username"))
+            for e in sensitive_entities
+            if (e.metadata_info or {}).get("username")
+        })
+        recommendations.append({
+            "title": "Cuentas en Plataformas de Contenido Adulto Vinculables a tu Identidad",
+            "category": "Riesgo de Extorsión (Sextorsión)",
+            "impact": "Crítico",
+            "description": (
+                f"Se localizaron {len(sensitive_entities)} perfil(es) en plataformas de "
+                f"contenido adulto ({plataformas}) registrados con "
+                + (f"el alias '{alias[0]}'" if alias else "un alias")
+                + " que también usas en tus perfiles públicos. **El problema no es la "
+                "cuenta: es que sea vinculable.** Cualquiera que conozca tu alias "
+                "profesional puede llegar hasta aquí en un solo paso, y eso es "
+                "exactamente el material con el que se construye una extorsión."
+            ),
+            "advice": (
+                "Usa un alias único e irrepetible para cualquier cuenta que no quieras "
+                "ver asociada a tu nombre: no una variante del habitual, uno sin "
+                "relación. Comprueba también el correo con el que se registró, porque "
+                "vincula igual que el alias. Si alguno de estos perfiles ya no lo usas, "
+                "elimínalo en vez de abandonarlo: seguirá siendo localizable."
             ),
         })
 

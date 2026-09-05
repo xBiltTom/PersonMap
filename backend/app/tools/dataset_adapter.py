@@ -53,14 +53,35 @@ MAIGRET_COMMIT = "8f42a42d0ebb117f265eeaf6c75ebda5249a79b4"
 MAIGRET_LICENSE = "MIT"
 WMN_LICENSE = "CC BY-SA 4.0"
 
-# Categorías que no se escanean nunca.
-EXCLUDED_CATEGORIES = {"xx NSFW xx", "archived"}
+# Categorías que no se escanean nunca. Solo las archivadas: son sitios muertos.
+EXCLUDED_CATEGORIES = {"archived"}
 
-# Etiquetas equivalentes en Maigret. WhatsMyName marca lo adulto con la
-# categoría "xx NSFW xx" y Maigret con estas etiquetas: sin traducirlas, 19
-# sitios porno se colaban en el catálogo de una herramienta educativa que se
-# usa con estudiantes y cuyo informe se le enseña a la persona investigada.
-EXCLUDED_TAGS = {"adult", "porn", "nsfw", "xxx"}
+# Plataformas de contenido adulto. WhatsMyName las marca con la categoría
+# "xx NSFW xx" y Maigret con estas etiquetas.
+#
+# **Se escanean, y es deliberado.** Descubrir que un alias reutilizado enlaza el
+# perfil profesional de alguien con una cuenta en un sitio de este tipo es uno de
+# los hallazgos con más valor de concientización que produce la herramienta: es
+# donde la reutilización de alias deja de ser una abstracción y pasa a ser un
+# riesgo concreto de extorsión. Omitirlas dejaba fuera justo eso.
+#
+# Lo que sí se hace es **marcarlas**, para que la interfaz las presente aparte y
+# la persona pueda mirarlas a propósito en vez de encontrárselas mezcladas.
+SENSITIVE_CATEGORIES = {"xx NSFW xx"}
+SENSITIVE_TAGS = {"adult", "porn", "nsfw", "xxx"}
+
+# Entradas cuyas cadenas de validación han dejado de discriminar, comprobado
+# contra el sitio real. No se corrigen en el fichero vendorizado a propósito:
+# parchear el snapshot lo haría divergir de su origen y rompería la
+# reproducibilidad ("N sitios, snapshot @ <sha>"). Se excluyen aquí, con la
+# fecha de la medición, y hay que re-comprobarlas al actualizar el snapshot.
+#
+# `Fanslist (OnlyFans)` (medido 2026-09-05): declara presencia `data-username=`
+# y ausencia `No results found for query`, pero su página de búsqueda devuelve
+# 200 con la marca de presencia para CUALQUIER alias. Daba un falso positivo de
+# "cuenta en OnlyFans", que en el expediente de una persona es de los errores
+# más dañinos que puede cometer esta herramienta.
+KNOWN_STALE_CHECKS = {"Fanslist (OnlyFans)"}
 
 # Protecciones que hacen inalcanzable un sitio con un cliente HTTP normal.
 # Intentarlo solo gasta reintentos y aumenta el ruido: se saltan y se cuentan.
@@ -105,6 +126,9 @@ class SiteCheck:
     tags: Tuple[str, ...] = field(default_factory=tuple)
     source: str = "whatsmyname"
     enriched_by: Optional[str] = None
+    # Plataforma de contenido adulto. No excluye el sitio: lo etiqueta, para que
+    # el hallazgo se presente en su propia categoría y con su propia advertencia.
+    sensitive: bool = False
 
     def accepts_username(self, username: str) -> bool:
         """
@@ -181,6 +205,8 @@ def load_whatsmyname() -> List[SiteCheck]:
             continue
         if raw.get("cat") in EXCLUDED_CATEGORIES:
             continue
+        if raw.get("name") in KNOWN_STALE_CHECKS:
+            continue
         uri_check = raw.get("uri_check")
         if not uri_check:
             continue
@@ -199,6 +225,7 @@ def load_whatsmyname() -> List[SiteCheck]:
                 absence=_as_tuple(raw.get("m_string")),
                 category=raw.get("cat"),
                 source="whatsmyname",
+                sensitive=raw.get("cat") in SENSITIVE_CATEGORIES,
             )
         )
     return sites
@@ -229,6 +256,8 @@ def load_maigret() -> List[SiteCheck]:
     for name, raw in (data.get("sites") or {}).items():
         if not isinstance(raw, dict) or raw.get("disabled"):
             continue
+        if name in KNOWN_STALE_CHECKS:
+            continue
         if raw.get("type", "username") != "username":
             continue
 
@@ -237,8 +266,6 @@ def load_maigret() -> List[SiteCheck]:
             continue
 
         raw_tags = {t.lower() for t in _as_tuple(raw.get("tags"))}
-        if raw_tags & EXCLUDED_TAGS:
-            continue
 
         # El engine aporta los valores base; lo que el sitio declare manda.
         merged: Dict[str, Any] = {}
@@ -273,6 +300,7 @@ def load_maigret() -> List[SiteCheck]:
                 category=tags[0] if tags else None,
                 tags=tags,
                 source="maigret",
+                sensitive=bool(raw_tags & SENSITIVE_TAGS),
             )
         )
     return sites
@@ -376,6 +404,8 @@ def build_catalog(limit: Optional[int] = None) -> List[SiteCheck]:
                 tags=twin.tags,
                 source=site.source,
                 enriched_by="maigret",
+                # Basta con que uno de los dos catálogos lo marque.
+                sensitive=site.sensitive or twin.sensitive,
             )
         )
 
@@ -422,5 +452,6 @@ def catalog_stats(catalog: List[SiteCheck]) -> Dict[str, Any]:
         "with_regex_check": sum(1 for s in catalog if s.regex_check),
         "with_absence_strings": sum(1 for s in catalog if s.absence),
         "ranked": sum(1 for s in catalog if s.rank < NO_RANK),
+        "sensitive": sum(1 for s in catalog if s.sensitive),
         "maigret_commit": MAIGRET_COMMIT,
     }
