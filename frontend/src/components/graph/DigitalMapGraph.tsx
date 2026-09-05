@@ -185,12 +185,53 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
   const [error, setError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [activeCategory, setActiveCategory] = useState<string>("all");
-  // Bandas de certeza visibles. Arranca sin las dos de abajo a propósito: una
-  // investigación real produce cientos de homónimos descartados, y mostrarlos
-  // de entrada convierte el mapa en una maraña donde no se distingue lo que sí
-  // es de la persona.
-  const [visibleBands, setVisibleBands] = useState<Set<string>>(
-    () => new Set(DEFAULT_VISIBLE_BANDS)
+  // Bandas de certeza que el usuario ha elegido. `null` = no ha tocado el
+  // filtro y manda el criterio automático de abajo.
+  const [userBands, setUserBands] = useState<Set<string> | null>(null);
+
+  /**
+   * Bandas realmente visibles.
+   *
+   * Por defecto se ocultan las dos de abajo: una investigación con muchos
+   * resultados produce cientos de homónimos y mostrarlos de entrada convierte
+   * el mapa en una maraña.
+   *
+   * **Pero nunca a costa de dejar el mapa vacío.** Una persona con huella
+   * modesta —el caso típico de un estudiante, que es el público de esta
+   * herramienta— puede tener todos sus hallazgos en las bandas bajas, y
+   * entonces el filtro por defecto escondía absolutamente todo y solo quedaba
+   * el nodo raíz. Pasó con una búsqueda real: 17 hallazgos, ninguno visible.
+   */
+  const visibleBands = useMemo(() => {
+    if (userBands) return userBands;
+
+    const porDefecto = new Set(DEFAULT_VISIBLE_BANDS);
+    const hayAlguno = allNodes.some(
+      (n) => n.type !== "personRoot" && porDefecto.has(bandOfNode(n.data).id)
+    );
+    return hayAlguno ? porDefecto : new Set(CERTAINTY_BANDS.map((b) => b.id));
+  }, [userBands, allNodes]);
+
+  /**
+   * Cuántos hallazgos alcanzaron al menos "Probable".
+   *
+   * Si son cero, el mapa se ve raro y hay que decir por qué: no es que la
+   * herramienta no haya encontrado nada, es que no pudo atribuir nada. Son
+   * cosas distintas y callarlo deja al usuario pensando que falló el sistema.
+   */
+  const atribuibles = useMemo(
+    () =>
+      allNodes.filter(
+        (n) =>
+          n.type !== "personRoot" &&
+          !bandOfNode(n.data).dim &&
+          bandOfNode(n.data).id !== "verified"
+      ).length,
+    [allNodes]
+  );
+  const totalHallazgos = useMemo(
+    () => allNodes.filter((n) => n.type !== "personRoot").length,
+    [allNodes]
   );
 
   const nodeTypes = useMemo(
@@ -343,8 +384,8 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
                   key={banda.id}
                   type="button"
                   onClick={() =>
-                    setVisibleBands((prev) => {
-                      const next = new Set(prev);
+                    setUserBands(() => {
+                      const next = new Set(visibleBands);
                       if (next.has(banda.id)) next.delete(banda.id);
                       else next.add(banda.id);
                       return next;
@@ -438,6 +479,22 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
             </p>
           </div>
         ) : null}
+
+        {!loading && !error && totalHallazgos > 0 && atribuibles === 0 && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 max-w-xl px-4 py-2.5 rounded-md bg-[#1a1408] border border-amber-500/40 shadow-lg">
+            <p className="text-[11px] text-amber-200 font-semibold">
+              Se encontraron {totalHallazgos} hallazgos, pero ninguno se pudo
+              atribuir con seguridad.
+            </p>
+            <p className="text-[11px] text-slate-300 mt-1 leading-snug">
+              No es que no haya huella: es que no hay <strong>datos en común</strong>{" "}
+              suficientes para demostrar que esas cuentas son tuyas. Con solo un
+              nombre y un correo, la mayoría de perfiles no ofrecen nada que
+              comparar. Añadir tu alias habitual o tu universidad al buscar suele
+              cambiar el resultado por completo.
+            </p>
+          </div>
+        )}
 
         <ReactFlow
           nodes={nodes}
