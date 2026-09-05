@@ -44,6 +44,7 @@ Estados: 🟢 operativa · 🟡 degradada · 🔴 muerta · ⚪ evaluada, no ado
 | **Avatares directos** | `github.com/{u}.png` · `t.me/i/userpic/320/{u}.jpg` · `keybase.io/{u}/picture` · `gravatar.com/avatar/{md5}?d=404` | No | 🟢 | 2026-09-05 | `avatar_harvest` — cosecha activa. Los cuatro devuelven imagen con 200 para una cuenta que existe y 404 para una que no |
 | **Avatares vía API** | `dev.to/api/users/by_username` · `mastodon.social/api/v1/accounts/lookup` | No | 🟢 | 2026-09-05 | `avatar_harvest` — dos pasos: JSON y de ahí la URL del avatar |
 | **Hudson Rock Cavalier** | `cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email\|username` | No | 🟢 | 2026-09-04 | `infostealer_checker`. **Solo con consentimiento explícito.** Límite de 50 req/10 s por host, respetado con `register_host_rate_limit` |
+| **HIBP Pwned Passwords** | `api.pwnedpasswords.com/range/{5 primeros del SHA-1}` | No | 🟢 | 2026-09-05 | `frontend/src/lib/pwnedPasswords.ts` — **única fuente consultada desde el navegador, no desde el backend**. k-anonimato: salen 5 caracteres del hash y vuelven ~2.000 sufijos que se comparan en local |
 
 ### Trampas verificadas en producción
 
@@ -151,6 +152,24 @@ nadie los reintente sin motivo: GitLab y Codeberg responden 403 al patrón
 directo, Bitbucket 404 siempre, Reddit devuelve HTML en lugar de JSON y el
 registro de NPM exige autenticación.
 
+**Pwned Passwords — el relleno puede leerse como una coincidencia.** Con la
+cabecera `Add-Padding: true` el servicio inyecta sufijos **inventados** en la
+respuesta para que su tamaño no delate cuántas coincidencias reales hay. Medido
+el 2026-09-05: entre 112 y 157 entradas falsas por consulta, todas con contador
+`0`. Un cliente que comprobara solo "¿está mi sufijo en la lista?" podría
+declarar filtrada una contraseña por haber chocado con relleno inventado. Por
+eso `parseRange` devuelve el **contador** y no un booleano de pertenencia, y 0
+significa exactamente lo mismo que ausente. Es el mismo error de fondo que las
+sondas de correo de la Fase 4.3: confundir "hay respuesta" con "hay hallazgo".
+
+**Esta es la única fuente que NO pasa por el backend, y es deliberado.** Si la
+contraseña llegara a `:8000`, la promesa de no guardarla valdría lo mismo que la
+de cualquier web que pide contraseñas. Verificado en el navegador el 2026-09-05
+instrumentando `window.fetch` durante una comprobación: **una sola petición
+saliente**, `api.pwnedpasswords.com/range/B4399`, y ninguna hacia el backend.
+Añadir un proxy propio "para centralizar" destruiría la única propiedad que hace
+defendible la funcionalidad.
+
 ### Licencias que obligan a atribución
 
 - **WhatsMyName** — *CC BY-SA 4.0*, © 2015-2026 Micah Hoffman y colaboradores.
@@ -207,7 +226,7 @@ trae el dato o la técnica, reimplementados sobre `app/tools/http_client.py`.
 
 | Fuente | Motivo |
 |---|---|
-| **HaveIBeenPwned API v3** | De pago (desde $4.39/mes). El proyecto se restringe a fuentes gratuitas sin key; XposedOrNot y Hudson Rock cubren el caso |
+| **HaveIBeenPwned — API de brechas v3** | De pago (desde $4.39/mes). El proyecto se restringe a fuentes gratuitas sin key; XposedOrNot y Hudson Rock cubren el caso. **Ojo: el descarte es solo de esta API.** El endpoint *Pwned Passwords* del mismo servicio es gratuito, sin key y sí está en uso — son dos cosas distintas y durante meses esta línea sugirió lo contrario |
 | **Brave Search API** | Requiere registro y key ($5/mes de crédito gratuito). Se optó por Tavily, que da 1.000 créditos/mes y devuelve JSON pensado para agentes |
 | **SerpApi / Bing Visual Search** | De pago. `reverse_image_search.py` queda implementado pero desactivado; la cosecha activa de avatares lo sustituye sin coste |
 | **SearXNG público** | La salida JSON está desactivada en la mayoría de instancias públicas; auto-hospedado recibe CAPTCHA de Google/Brave/Startpage desde una sola IP |
@@ -219,6 +238,7 @@ trae el dato o la técnica, reimplementados sobre `app/tools/http_client.py`.
 
 | Fecha | Alcance | Resultado |
 |---|---|---|
+| 2026-09-05 | Integración de Pwned Passwords (autodefensa) | 🟢 Verificados en vivo los cuatro supuestos que sostienen el diseño: la API responde 200 sin key; `Access-Control-Allow-Origin: *` permite llamarla **desde el navegador sin proxy propio**; el preflight devuelve `Access-Control-Allow-Headers: Add-Padding`, así que el relleno anti-análisis-de-tamaño es usable; y el prefijo `CBFDA` devuelve 1.971 sufijos, es decir el anonimato real es de ~2.000 candidatos. Medido que el relleno inyecta entre 112 y 157 entradas falsas **con contador 0**, lo que obliga a leer el contador y no la mera pertenencia |
 | 2026-09-03 | Revisión inicial del ecosistema para el plan de ejecución | Se verificaron en vivo Hudson Rock, crt.sh y los patrones directos de avatar (todos 🟢, sin key). Se midió el dataset de Maigret (3653 sitios). Se descartaron `ignorant` por motivos éticos y HIBP/Brave/SerpApi por coste |
 | 2026-09-04 | Integración de Tavily como motor de dorking | 🟢 operativa. Dos trampas detectadas solo al probar contra la API real, no en los tests con mock: `exact_match` devuelve cero resultados siempre, y la búsqueda es semántica (un correo inexistente devuelve la portada de su dominio). Ambas mitigadas en `search_dorker`; ver "Trampas verificadas en producción" |
 | 2026-09-04 | Barrido completo al abrir la **Fase 3** (`hybrid`) | 🟢 XposedOrNot, OpenAlex, Gravatar (404 limpio), Keybase, MediaWiki, GitHub API y avatar, Hudson Rock, Tavily y el `data.json` de Maigret (1,66 MB). 🟡 DuckDuckGo responde **202**, no 200. 🔴→🟡 **crt.sh se ha degradado**: 1 de 4 peticiones dio 200 y tres dieron 502, lo que obliga a reintentos en la Fase 4.4 |

@@ -196,7 +196,7 @@ El ecosistema se degrada rápido (Holehe lleva años sin mantenerse y tiene mód
 
 ### 4. Restricciones del usuario
 
-- **Solo fuentes gratuitas y sin API key.** Descartados HIBP, SerpApi y Brave Search API. Esto redefine los ítems P1#6 y P1#9 del análisis y obliga a resolver el reverse-image-search por otra vía (Fase 5).
+- **Solo fuentes gratuitas y sin API key.** Descartados SerpApi, Brave Search API y la **API de brechas** de HIBP. *Corregido el 2026-09-05:* el descarte de HIBP era demasiado ancho — su endpoint **Pwned Passwords** es gratuito y sin key, y ahora está en uso. Esto redefine los ítems P1#6 y P1#9 del análisis y obliga a resolver el reverse-image-search por otra vía (Fase 5).
 - **Embeddings vía `litellm.aembedding`** (verificado disponible en litellm 1.99.0), degradando a fuzzy si no hay LLM.
 
 ---
@@ -942,7 +942,7 @@ Nuevo `backend/app/tools/avatar_harvester.py` que construye URLs con patrones di
 ```bash
 cd backend && uv run pytest -q
 ```
-Línea base: **16 passed** (~3 min). Tras la Fase 0 debe correr **sin Internet** (`-m 'not network'`).
+Línea base: **200 passed, 3 deselected** (~68 s). Corre **sin Internet**; los 3 deselectos llevan marca `network` o `db`.
 
 **Frontend**
 ```bash
@@ -961,3 +961,47 @@ Línea base: `tsc` limpio; `eslint` con **19 errores preexistentes** (ver
 **Fuentes externas**
 
 Antes de cada fase, re-verificar con `curl` que los endpoints gratuitos siguen vivos y anotar el resultado en `docs/OSINT_SOURCES.md`. Se degradan y mueren sin aviso — es la razón de ser del principio de vigilancia continua.
+
+---
+
+## Extensión: autodefensa (2026-09-05)
+
+Fuera de la numeración de fases, a petición del usuario. **Comprobación de
+contraseñas filtradas** contra Pwned Passwords, en `/seguridad`.
+
+**Por qué está fuera del expediente.** Todo el resto del proyecto responde a
+"qué puede averiguar un tercero sobre esta persona". Una contraseña no se
+averigua desde fuera: la tiene que teclear su dueño. Meterla como pestaña de la
+investigación insinuaría que el sistema comprueba las contraseñas del objetivo,
+que es justo lo que no hace. Por eso es una ruta propia, no un `entity_type`, y
+no genera ninguna entidad ni toca el scorer, el orquestador ni las métricas del
+artículo.
+
+**Por qué vive en el navegador.** Es la decisión de diseño central y la única
+que hace la funcionalidad defendible. Si la contraseña llegara al backend
+tendríamos que *prometer* que no la guardamos; en el navegador no hace falta
+prometerlo. Verificado instrumentando `window.fetch` durante una comprobación
+real: una sola petición saliente, `api.pwnedpasswords.com/range/B4399`, y
+ninguna hacia `:8000`.
+
+**k-anonimato.** Se envían los **5 primeros caracteres** del SHA-1; vuelven unos
+2.000 sufijos y la comparación es local. El servicio no recibe el hash completo
+y no puede saber cuál de los ~2.000 candidatos era el nuestro.
+
+**Medido en vivo el 2026-09-05:**
+
+| Contraseña | Prefijo enviado | Apariciones | Lectura |
+|---|---|---|---|
+| `password123` | `CBFDA` | 2.266.543 | Cabecera de los diccionarios de ataque |
+| `Verano2024!` | `591EA` | 17 | **El caso pedagógico**: mayúscula, dígitos y símbolo, aspecto de contraseña fuerte, y ya está filtrada |
+| aleatoria de 16 caracteres | `B4399` | 0 | No aparece |
+
+`Verano2024!` es el ejemplo que conviene enseñar en la defensa: cumple todas las
+reglas de complejidad que se enseñan y aun así está en las listas, porque el
+patrón "estación + año + símbolo" es predecible aunque el resultado parezca
+aleatorio.
+
+**Red de seguridad:** `backend/tests/test_password_exposure.py` (8 tests
+estructurales). Vigilan que ninguna ruta del backend reciba contraseñas, que
+solo salga el prefijo, que no haya persistencia de ningún tipo y que el relleno
+de la API no pueda leerse como una coincidencia.
