@@ -2,6 +2,7 @@
 
 import { AlertCircle, Check, HelpCircle, X } from "lucide-react";
 import type { IdentityBreakdown } from "@/lib/types";
+import { bandOf } from "@/lib/certainty";
 
 /**
  * El porcentaje explicado en castellano llano.
@@ -104,52 +105,17 @@ function groupSignals(breakdown: IdentityBreakdown): Grouped {
   return out;
 }
 
-/** El veredicto, con los mismos umbrales que usan el grafo y el resolutor. */
-function verdict(score: number, verified: boolean, encaja: number) {
-  if (verified) {
-    return {
-      titulo: "Confirmado a mano",
-      texto:
-        "Alguien revisó este hallazgo y confirmó que pertenece a la persona. " +
-        "La revisión manual manda sobre el modelo.",
-      tone: "text-emerald-300",
-    };
-  }
-  if (score >= 0.7) {
-    return {
-      titulo: "Es de esta persona, casi con seguridad",
-      texto:
-        "Varias señales independientes apuntan a la misma persona, y eso es " +
-        "difícil que ocurra por casualidad.",
-      tone: "text-emerald-300",
-    };
-  }
-  if (score >= 0.4) {
-    return {
-      titulo: "Probablemente sí, pero conviene comprobarlo",
-      texto:
-        "Hay indicios, pero no los suficientes para afirmarlo. Merece una " +
-        "revisión manual antes de darlo por bueno.",
-      tone: "text-amber-300",
-    };
-  }
-  if (encaja === 0) {
-    return {
-      titulo: "Probablemente NO es esta persona",
-      texto:
-        "No se encontró ninguna señal que ligue este hallazgo con la persona. " +
-        "Coincidir en un alias no basta: puede ser alguien distinto que " +
-        "registró el mismo nombre de usuario.",
-      tone: "text-slate-300",
-    };
-  }
-  return {
-    titulo: "Probablemente NO es esta persona",
-    texto:
-      "Lo poco que encaja no compensa lo que falta. Es más plausible que se " +
-      "trate de un homónimo.",
-    tone: "text-slate-300",
-  };
+/**
+ * El veredicto sale de `lib/certainty`, la misma fuente que usan el nodo del
+ * mapa y sus filtros. Si esta vista calculara sus propios umbrales, un hallazgo
+ * podría salir "seguro" en el grafo y "probable" al pulsarlo.
+ *
+ * El único matiz que se añade aquí: cuando NADA encaja, el sistema no está
+ * concluyendo que sea otra persona, está diciendo que no tiene con qué
+ * comparar. No es lo mismo y no debe afirmarse igual.
+ */
+function verdictFor(band: ReturnType<typeof bandOf>) {
+  return band.verdict;
 }
 
 interface Props {
@@ -168,7 +134,14 @@ export function PlainExplanation({ breakdown, score, verified = false }: Props) 
   }
 
   const { encaja, noEncaja, sinDato } = groupSignals(breakdown);
-  const v = verdict(score, verified, encaja.length);
+  const band = bandOf(
+    score,
+    verified,
+    typeof breakdown.signals_evaluated === "number"
+      ? breakdown.signals_evaluated
+      : undefined
+  );
+  const v = verdictFor(band);
   const pct = Math.round(score * 100);
 
   return (
@@ -176,6 +149,9 @@ export function PlainExplanation({ breakdown, score, verified = false }: Props) 
       <div className="p-2.5 rounded-md bg-[#0c111a] border border-[#1e293b]">
         <p className={`font-semibold ${v.tone}`}>
           {pct}% · {v.titulo}
+        </p>
+        <p className="text-[10px] font-mono uppercase tracking-wider text-slate-500 mt-0.5">
+          nivel: {band.label}
         </p>
         <p className="text-slate-400 mt-1 leading-snug">{v.texto}</p>
       </div>
