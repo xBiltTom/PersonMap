@@ -55,8 +55,80 @@ function PersonRootNode({ data }: { data: any }) {
 }
 
 // 2. Satellite Entity Node Component
+/**
+ * Los tres niveles de ATRIBUCIÓN, con los mismos umbrales que usa el resolutor
+ * para formar los clusters. Que coincidan importa: si el grafo pintara un nodo
+ * como seguro y la pestaña de identidad lo pusiera entre los descartados, el
+ * expediente se contradiría a sí mismo.
+ */
+const CERTAINTY_TIERS = {
+  attributed: {
+    id: "attributed",
+    label: "Atribuido",
+    min: 0.7,
+    badge: "bg-emerald-500/20 text-emerald-300",
+    ring: "ring-1 ring-emerald-500/50",
+    help: "El modelo atribuye este hallazgo a la persona investigada.",
+  },
+  probable: {
+    id: "probable",
+    label: "Probable",
+    min: 0.4,
+    badge: "bg-amber-500/15 text-amber-300",
+    ring: "ring-1 ring-amber-500/30",
+    help: "Evidencia parcial. Conviene confirmarlo o descartarlo a mano.",
+  },
+  discarded: {
+    id: "discarded",
+    label: "Descartado",
+    min: 0,
+    badge: "bg-slate-700/60 text-slate-400",
+    ring: "",
+    help:
+      "Sin evidencia suficiente de pertenecer al objetivo. Coincidir en un alias " +
+      "no basta: puede ser otra persona con el mismo nombre de usuario.",
+  },
+} as const;
+
+type TierId = keyof typeof CERTAINTY_TIERS;
+
+/**
+ * Probabilidad de que el hallazgo sea del objetivo.
+ *
+ * Se lee `identity_score` y NO `confidence`. Son cosas distintas y el grafo
+ * mostraba la equivocada: `confidence` es el máximo entre la certeza de
+ * DETECCIÓN que reporta la herramienta ("esta cuenta existe") y la de
+ * atribución. Medido sobre una investigación real de 312 nodos, el grafo pintaba
+ * 184 como alta confianza mientras el modelo solo atribuía 32 — `TikTok:
+ * @torvalds` salía al 90 % cuando su atribución era del 1 %.
+ */
+/** Lo mínimo que hace falta leer de un nodo para decidir su certeza. */
+interface NodeCertainty {
+  identity_score?: number | null;
+  confidence?: number | null;
+  existence_confidence?: number | null;
+  verified?: boolean;
+  metadata_info?: { identity_score?: number };
+}
+
+function attributionOf(data: NodeCertainty | undefined): number {
+  const score = data?.identity_score ?? data?.metadata_info?.identity_score;
+  if (typeof score === "number") return score;
+  // Entidades anteriores a la separación de métricas.
+  return Number(data?.confidence || 0);
+}
+
+function tierOf(data: NodeCertainty | undefined): TierId {
+  if (Boolean(data?.verified)) return "attributed";
+  const score = attributionOf(data);
+  if (score >= CERTAINTY_TIERS.attributed.min) return "attributed";
+  if (score >= CERTAINTY_TIERS.probable.min) return "probable";
+  return "discarded";
+}
+
 function CustomEntityNode({ data, selected }: { data: any; selected?: boolean }) {
-  const isHighConf = Number(data.confidence || 0) >= 0.70;
+  const attribution = attributionOf(data);
+  const tier = CERTAINTY_TIERS[tierOf(data)];
   const isVerified = Boolean(data.verified);
   const entityType = data.entity_type as string | undefined;
   const meta = getEntityTypeMeta(entityType);
@@ -66,13 +138,12 @@ function CustomEntityNode({ data, selected }: { data: any; selected?: boolean })
   // El estilo del nodo lo decide su tipo, no solo la confianza. Antes solo
   // `breach` y `phone` tenían tratamiento propio y los otros ocho tipos eran
   // visualmente idénticos entre sí.
+  // El color del nodo sigue diciendo QUÉ es (su tipo); el halo y la insignia
+  // dicen CUÁNTO se le atribuye. Los descartados se atenúan para que la maraña
+  // de una investigación con cientos de resultados deje ver lo que importa.
   const nodeClass = selected
     ? "border-sky-400 ring-2 ring-sky-500/30 bg-[#162030]"
-    : isVerified
-    ? `${meta.node} ring-1 ring-emerald-500/40`
-    : isHighConf
-    ? meta.node
-    : `${meta.node} opacity-85`;
+    : `${meta.node} ${tier.ring} ${tier.id === "discarded" ? "opacity-60" : ""}`;
 
   return (
     <div
@@ -98,15 +169,17 @@ function CustomEntityNode({ data, selected }: { data: any; selected?: boolean })
         </div>
 
         <span
-          className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
-            isVerified
-              ? "bg-emerald-500/20 text-emerald-300"
-              : isHighConf
-              ? "bg-sky-500/10 text-sky-400"
-              : "bg-amber-500/10 text-amber-400"
-          }`}
+          title={
+            `${tier.help}
+
+Atribución (¿es del objetivo?): ` +
+            `${intPercent(attribution)}
+Detección (¿existe la cuenta?): ` +
+            `${intPercent(Number(data.existence_confidence ?? data.confidence ?? 0))}`
+          }
+          className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${tier.badge}`}
         >
-          {intPercent(Number(data.confidence || 0))}
+          {intPercent(attribution)}
         </span>
       </div>
 
@@ -120,8 +193,13 @@ function CustomEntityNode({ data, selected }: { data: any; selected?: boolean })
         </div>
       )}
 
-      <div className={`text-[9px] font-mono uppercase tracking-wide mt-1 ${meta.accent}`}>
-        {meta.label}
+      <div className="flex items-center justify-between gap-2 mt-1">
+        <span className={`text-[9px] font-mono uppercase tracking-wide ${meta.accent}`}>
+          {meta.label}
+        </span>
+        <span className="text-[9px] font-mono text-slate-500" title={tier.help}>
+          {isVerified ? "verificado" : tier.label.toLowerCase()}
+        </span>
       </div>
     </div>
   );
@@ -140,6 +218,11 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
   const [error, setError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [activeCategory, setActiveCategory] = useState<string>("all");
+  // Nivel mínimo de atribución que se dibuja. Arranca en "probable" a
+  // propósito: una investigación real produce cientos de homónimos descartados,
+  // y mostrarlos todos de entrada convierte el mapa en una maraña donde no se
+  // distingue lo que sí es de la persona.
+  const [minTier, setMinTier] = useState<"all" | "probable" | "attributed">("probable");
 
   const nodeTypes = useMemo(
     () => ({
@@ -173,14 +256,30 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
 
   // Apply layer filtering
   useEffect(() => {
+    const passesTier = (n: { type?: string; data?: NodeCertainty }) => {
+      if (n.type === "personRoot") return true;
+      const tier = tierOf(n.data);
+      if (minTier === "all") return true;
+      if (minTier === "probable") return tier !== "discarded";
+      return tier === "attributed";
+    };
+
     if (activeCategory === "all") {
-      setNodes(allNodes);
-      setEdges(allEdges);
+      const soloCertidumbre = allNodes.filter(passesTier);
+      const idsVisibles = new Set(soloCertidumbre.map((n) => n.id));
+      setNodes(soloCertidumbre);
+      setEdges(
+        allEdges.filter(
+          (e: { source: string; target: string }) =>
+            idsVisibles.has(e.source) && idsVisibles.has(e.target)
+        )
+      );
       return;
     }
-
     const filteredNodes = allNodes.filter(
-      (n) => n.type === "personRoot" || n.data.entity_type === activeCategory
+      (n) =>
+        (n.type === "personRoot" || n.data.entity_type === activeCategory) &&
+        passesTier(n)
     );
     const visibleNodeIds = new Set(filteredNodes.map((n) => n.id));
     const filteredEdges = allEdges.filter(
@@ -189,7 +288,7 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
 
     setNodes(filteredNodes);
     setEdges(filteredEdges);
-  }, [activeCategory, allNodes, allEdges, setNodes, setEdges]);
+  }, [activeCategory, minTier, allNodes, allEdges, setNodes, setEdges]);
 
   const onNodeClick = useCallback((_: any, node: any) => {
     setSelectedNode(node);
@@ -260,6 +359,37 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Filtro por certeza de ATRIBUCIÓN. Es lo que hace legible el mapa:
+              una investigación real produce cientos de homónimos descartados. */}
+          <div
+            className="flex items-center gap-1 bg-[#151e2c] rounded-md border border-[#2b3a52] p-0.5"
+            role="group"
+            aria-label="Filtrar por certeza de atribución"
+          >
+            {(
+              [
+                ["attributed", "Atribuidos", "Solo los que el modelo atribuye a la persona (≥70%)."],
+                ["probable", "+ Probables", "Añade los de evidencia parcial (40-70%)."],
+                ["all", "Todos", "Incluye los homónimos descartados. Con cientos de resultados, el mapa se vuelve una maraña."],
+              ] as const
+            ).map(([id, etiqueta, ayuda]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setMinTier(id)}
+                title={ayuda}
+                aria-pressed={minTier === id}
+                className={`text-[11px] font-mono px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                  minTier === id
+                    ? "bg-sky-500 text-white font-bold"
+                    : "text-slate-300 hover:text-white hover:bg-[#1e2b3e]"
+                }`}
+              >
+                {etiqueta}
+              </button>
+            ))}
+          </div>
+
           <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950/40 px-2.5 py-1 rounded border border-emerald-500/30">
             {nodes.length} nodos activos
           </span>
