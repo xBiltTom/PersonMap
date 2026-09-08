@@ -5,8 +5,17 @@ from app.models.investigation import Investigation
 from app.models.target import Target
 
 
+@pytest.mark.network
+@pytest.mark.db
 @pytest.mark.asyncio
 async def test_end_to_end_investigation_rule_based():
+    """
+    Integración completa: PostgreSQL real y peticiones reales a las fuentes OSINT.
+
+    Marcado como `network`/`db` y excluido del `pytest` por defecto: tarda varios
+    minutos y falla sin conexión. Ejecutar a mano antes de una demo con:
+        uv run pytest -m "network or db"
+    """
     async with async_session_maker() as db:
         # Create test student target
         target = Target(

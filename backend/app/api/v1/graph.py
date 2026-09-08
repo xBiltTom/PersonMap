@@ -1,4 +1,5 @@
 import math
+from typing import Any, Dict, List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -75,14 +76,45 @@ async def get_investigation_graph(
         )
     )
 
-    # 2. Entity Nodes in concentric arrangement
-    total_entities = len(entities)
-    radius = 280.0 if total_entities < 15 else 360.0
+    # 2. Nodos de entidad, en anillos concéntricos POR CERTEZA DE ATRIBUCIÓN.
+    #
+    #    El radio deja de ser decorativo y pasa a significar algo: cuanto más
+    #    cerca de la persona está un nodo, más probable es que sea suyo. Con
+    #    cientos de resultados es lo que permite leer el mapa de un vistazo, en
+    #    vez de tener que inspeccionar nodo a nodo.
+    #
+    #    Antes el ángulo salía del índice en la lista y el radio era constante,
+    #    así que la posición no decía nada y al filtrar quedaban huecos.
+    def _attribution(ent) -> float:
+        if ent.identity_score is not None:
+            return float(ent.identity_score)
+        return float(ent.confidence or 0.0)
+
+    def _ring(ent) -> int:
+        if ent.verified or _attribution(ent) >= 0.70:
+            return 0
+        return 1 if _attribution(ent) >= 0.40 else 2
+
+    RING_RADIUS = {0: 260.0, 1: 430.0, 2: 620.0}
+
+    rings: Dict[int, List[Any]] = {0: [], 1: [], 2: []}
+    for ent in entities:
+        rings[_ring(ent)].append(ent)
+
+    positions: Dict[Any, tuple] = {}
+    for ring_index, members in rings.items():
+        radius = RING_RADIUS[ring_index]
+        # Los anillos exteriores tienen más nodos: se reparten en toda la
+        # circunferencia para que no se amontonen.
+        for j, ent in enumerate(members):
+            angle = (2 * math.pi * j) / max(len(members), 1)
+            positions[ent.id] = (
+                round(400.0 + radius * math.cos(angle), 1),
+                round(300.0 + radius * math.sin(angle), 1),
+            )
 
     for i, ent in enumerate(entities):
-        angle = (2 * math.pi * i) / max(total_entities, 1)
-        x_pos = round(400.0 + radius * math.cos(angle), 1)
-        y_pos = round(300.0 + radius * math.sin(angle), 1)
+        x_pos, y_pos = positions[ent.id]
 
         ent_id = f"ent-{ent.id}"
         nodes.append(
@@ -97,6 +129,8 @@ async def get_investigation_graph(
                     value=ent.value,
                     display_name=ent.display_name,
                     confidence=ent.confidence,
+                    existence_confidence=ent.existence_confidence,
+                    identity_score=ent.identity_score,
                     verified=ent.verified,
                     metadata_info=ent.metadata_info or {},
                     is_root=False,
@@ -106,17 +140,29 @@ async def get_investigation_graph(
 
         # Primary Edge from Root to Entity
         edge_id = f"edge-root-{ent.id}"
-        is_high_conf = ent.confidence >= 0.70
+        # La arista raíz→entidad expresa ATRIBUCIÓN, no detección: es la que
+        # responde "¿esto es suyo?". Antes usaba `confidence`, que es el máximo
+        # con la certeza de detección de la herramienta, y pintaba como fuertes
+        # cientos de aristas hacia homónimos descartados.
+        attribution = _attribution(ent)
+        is_high_conf = ent.verified or attribution >= 0.70
         edges.append(
             GraphEdge(
                 id=edge_id,
                 source=root_id,
                 target=ent_id,
-                label=f"{int(ent.confidence * 100)}%",
+                label=f"{int(attribution * 100)}%",
                 relation_type="identified_profile",
-                strength=ent.confidence,
+                strength=attribution,
                 animated=is_high_conf,
-                style={"stroke": "#22d3ee" if is_high_conf else "#71717a", "strokeWidth": 2 if is_high_conf else 1},
+                style={
+                    "stroke": (
+                        "#34d399" if is_high_conf
+                        else "#fbbf24" if attribution >= 0.40
+                        else "#475569"
+                    ),
+                    "strokeWidth": 2 if is_high_conf else 1,
+                },
             )
         )
 

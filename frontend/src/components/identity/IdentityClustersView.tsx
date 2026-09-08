@@ -9,8 +9,6 @@ import {
   XCircle,
   ExternalLink,
   ShieldCheck,
-  ShieldAlert,
-  HelpCircle,
 } from "lucide-react";
 
 interface Props {

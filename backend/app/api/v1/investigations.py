@@ -6,6 +6,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db
+from app.core.events import event_bus
 from app.engine.orchestrator import orchestrator
 from app.models.entity import Entity
 from app.models.identity_cluster import IdentityCluster
@@ -39,7 +40,13 @@ async def create_investigation(
         dni=payload.target.dni,
         university=payload.target.university,
         description=payload.target.description,
-        extra_data=payload.target.extra_data or {},
+        extra_data={
+            **(payload.target.extra_data or {}),
+            # Se guarda con el objetivo, no en una columna nueva: `extra_data`
+            # es JSONB y ya existe, así que no hace falta migración para una
+            # bandera que además pertenece al encargo concreto.
+            "self_consent": bool(payload.self_consent),
+        },
     )
     db.add(target)
     await db.flush()
@@ -140,4 +147,9 @@ async def delete_investigation(
 
     await db.delete(inv)
     await db.commit()
+
+    # El bus de eventos guarda el historial de logs en memoria; sin esto quedaría
+    # retenido para una investigación que ya no existe.
+    await event_bus.clear(str(id))
+
     return {"status": "success", "message": "Investigación eliminada"}

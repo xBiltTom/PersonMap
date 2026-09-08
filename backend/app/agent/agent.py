@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 from app.agent.llm_client import llm_client
 from app.models.entity import Entity
@@ -20,8 +21,23 @@ class OSINTAgent:
         if not llm_client.enabled:
             return self._fallback_template(target, entities, risk_score, risk_level)
 
+        # Se entregan las DOS métricas, no una.
+        #
+        # Antes se mandaba solo `confidence` (el máximo de ambas) etiquetado como
+        # "Certeza", y el modelo escribía "se confirmó la presencia del objetivo"
+        # con un 97% que en realidad era la certeza de DETECCIÓN: que el registro
+        # existe, no que sea de esta persona. En un informe que se le enseña a la
+        # persona investigada, esa confusión es la diferencia entre una
+        # afirmación defendible y uno falso.
         prompt_entities = [
-            f"- [{e.entity_type.upper()}] {e.platform or 'web'}: {e.display_name or e.value} (Certeza: {int(e.confidence*100)}%)"
+            f"- [{e.entity_type.upper()}] {e.platform or 'web'}: "
+            f"{e.display_name or e.value} "
+            f"(detección {int((e.existence_confidence if e.existence_confidence is not None else e.confidence) * 100)}%"
+            + (
+                f", atribución al objetivo {int(e.identity_score * 100)}%)"
+                if e.identity_score is not None
+                else ")"
+            )
             for e in entities[:20]
         ]
 
@@ -32,12 +48,32 @@ class OSINTAgent:
                     "Eres un analista de ciberinteligencia (OSINT) y experto en concientización de seguridad digital para estudiantes. "
                     "Tu objetivo es explicar cómo los datos públicos dispersos de una persona pueden correlacionarse para reconstruir su identidad, "
                     "los riesgos de ingeniería social o doxxing que enfrenta, y cómo mitigar dicha exposición. "
-                    "Sé riguroso, analítico y formativo (estilo Palantir Intelligence Report)."
+                    "Sé riguroso, analítico y formativo (estilo Palantir Intelligence Report).\n\n"
+                    "REGLAS ESTRICTAS:\n"
+                    "- No inventes NINGÚN dato que no esté en los hallazgos entregados. Este "
+                    "informe se le enseña a la persona investigada: un dato falso destruye la "
+                    "credibilidad de todo lo demás.\n"
+                    "- No escribas fechas de tu cosecha. La fecha del análisis se te da y es la "
+                    "única válida.\n"
+                    "- Cada hallazgo trae DOS cifras y no significan lo mismo. La "
+                    "**detección** es la certeza de que el registro o la cuenta existe. La "
+                    "**atribución** es la probabilidad de que sea de esta persona. Una "
+                    "detección del 97% con una atribución del 10% NO es un hallazgo "
+                    "confirmado: es un registro que existe y que probablemente sea de otra "
+                    "persona. Nunca escribas 'confirmado' apoyándote en la detección.\n"
+                    "- Formato Markdown simple: `##` para las secciones, `**negrita**` para lo "
+                    "destacado y `-` para las listas. Nada de HTML ni de tablas."
                 ),
             },
             {
                 "role": "user",
                 "content": (
+                    # La fecha se inyecta porque el modelo se la inventaba: el
+                    # informe salía fechado dos años atrás. Mostrado a la persona
+                    # investigada, un dato así tira por tierra la credibilidad
+                    # del resto del expediente.
+                    f"Fecha del análisis (usa EXACTAMENTE esta): "
+                    f"{datetime.now(timezone.utc).strftime('%d/%m/%Y')}\n"
                     f"Objetivo de la investigación: {target.full_name or target.username or target.email}\n"
                     f"Correo: {target.email or 'No proporcionado'}\n"
                     f"Universidad: {target.university or 'No especificada'}\n"

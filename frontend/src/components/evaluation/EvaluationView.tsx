@@ -1,65 +1,94 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  BarChart3,
+  AlertTriangle,
   Copy,
   Check,
   Download,
   BookOpen,
-  HelpCircle,
   Award,
-  Sparkles,
-  Workflow,
-  Cpu,
 } from "lucide-react";
+import { getMetricsComparison, getSurveyStats } from "@/lib/api";
+import type {
+  EngineId,
+  EngineMetrics,
+  HybridContribution,
+  MetricsComparison,
+  SurveyStats,
+} from "@/lib/types";
+import { ScoreDistribution } from "@/components/evaluation/ScoreDistribution";
 
-interface ComparisonData {
-  summary: {
-    total_investigations: number;
-    rule_based: {
-      count: number;
-      avg_execution_time: number;
-      avg_entities: number;
-      avg_clusters: number;
-      avg_risk_score: number;
-    };
-    agentic: {
-      count: number;
-      avg_execution_time: number;
-      avg_entities: number;
-      avg_clusters: number;
-      avg_risk_score: number;
-    };
-  };
-  latex_table: string;
-  investigations_sample: Array<{
-    id: string;
-    strategy: string;
-    execution_time: number;
-    entities_count: number;
-    risk_score: number;
-    created_at: string | null;
-  }>;
-}
+const EMPTY_METRICS: EngineMetrics = {
+  count: 0,
+  avg_execution_time: 0,
+  avg_entities: 0,
+  avg_clusters: 0,
+  avg_risk_score: 0,
+};
+
+const METRIC_ROWS: Array<{
+  key: keyof EngineMetrics;
+  label: string;
+  hint: string;
+  suffix?: string;
+}> = [
+  {
+    key: "count",
+    label: "Muestras analizadas",
+    hint: "Investigaciones completadas con este motor (n)",
+  },
+  {
+    key: "avg_execution_time",
+    label: "Latencia media",
+    hint: "Segundos de extremo a extremo, incluido el scoring",
+    suffix: "s",
+  },
+  {
+    key: "avg_entities",
+    label: "Entidades descubiertas",
+    hint: "Media de hallazgos únicos por investigación",
+  },
+  {
+    key: "avg_clusters",
+    label: "Clusters de identidad",
+    hint: "Media de agrupaciones resueltas por union-find",
+  },
+  {
+    key: "avg_risk_score",
+    label: "Exposición media",
+    hint: "Score de exposición 0-100 del scorecard",
+    suffix: "/100",
+  },
+];
 
 export function EvaluationView() {
-  const [data, setData] = useState<ComparisonData | null>(null);
+  const [data, setData] = useState<MetricsComparison | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Pre-test / Post-test state for educational evaluation
-  const [preTestScore, setPreTestScore] = useState<number | null>(null);
-  const [postTestScore, setPostTestScore] = useState<number | null>(null);
+  // NOTA: el cuestionario de concientización es hoy una maqueta sin estado ni
+  // envío. Los antiguos `preTestScore`/`postTestScore` se declaraban y no se
+  // leían nunca. Se cablea de verdad contra POST /api/v1/surveys en la Fase 1.
   const [showSurvey, setShowSurvey] = useState(false);
 
-  useEffect(() => {
-    fetch("http://localhost:8000/api/v1/investigations/metrics/comparison")
-      .then((res) => res.json())
-      .then((d) => setData(d))
-      .catch((err) => console.error("Error loading comparison metrics", err))
+  const loadMetrics = useCallback(() => {
+    setLoading(true);
+    getMetricsComparison()
+      .then((d) => {
+        setData(d);
+        setError(null);
+      })
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : "No se pudieron cargar las métricas")
+      )
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadMetrics();
+  }, [loadMetrics]);
 
   const handleCopyLatex = () => {
     if (!data?.latex_table) return;
@@ -70,11 +99,15 @@ export function EvaluationView() {
 
   const handleExportCsv = () => {
     if (!data?.investigations_sample) return;
-    const headers = "id,strategy,execution_time_seconds,entities_count,risk_score,created_at\n";
+    // `engine_used` va en su propia columna, aparte de `strategy`: son cosas
+    // distintas, y confundirlas es lo que hacía que la comparativa contase como
+    // agéntica una investigación que había ejecutado el motor de reglas.
+    const headers =
+      "id,strategy,engine_used,execution_time_seconds,entities_count,risk_score,created_at\n";
     const rows = data.investigations_sample
       .map(
         (s) =>
-          `${s.id},${s.strategy},${s.execution_time},${s.entities_count},${s.risk_score},${s.created_at || ""}`
+          `${s.id},${s.strategy},${s.engine_used || ""},${s.execution_time},${s.entities_count},${s.risk_score},${s.created_at || ""}`
       )
       .join("\n");
     const blob = new Blob([headers + rows], { type: "text/csv" });
@@ -88,14 +121,65 @@ export function EvaluationView() {
 
   if (loading) {
     return (
-      <div className="panel-card p-12 text-center text-xs font-mono text-slate-500">
+      <div role="status" className="panel-card p-12 text-center text-xs font-mono text-slate-400">
         Cargando métricas de evaluación científica...
       </div>
     );
   }
 
-  const rb = data?.summary.rule_based || { count: 0, avg_execution_time: 0, avg_entities: 0, avg_clusters: 0, avg_risk_score: 0 };
-  const ag = data?.summary.agentic || { count: 0, avg_execution_time: 0, avg_entities: 0, avg_clusters: 0, avg_risk_score: 0 };
+  // Sin esto, un fallo de red renderizaba el dashboard completo con todos los
+  // valores a 0 y el bloque LaTeX vacío, sin ningún aviso: una pantalla titulada
+  // "Módulo de Evaluación para Artículo Científico" mostrando cifras inventadas.
+  if (error || !data) {
+    return (
+      <div className="panel-card p-10 text-center border border-rose-500/30">
+        <AlertTriangle className="w-9 h-9 text-rose-400 mx-auto mb-3" aria-hidden="true" />
+        <h3 className="text-sm font-semibold text-slate-200">
+          No se pudieron cargar las métricas de evaluación
+        </h3>
+        <p className="text-xs text-slate-400 mt-1.5 max-w-md mx-auto">
+          {error || "El backend no devolvió datos."} Las cifras no se muestran para no
+          presentar valores incorrectos como si fueran resultados reales.
+        </p>
+        <button
+          type="button"
+          onClick={loadMetrics}
+          className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#182334] hover:bg-[#223148] text-slate-200 text-xs font-mono border border-[#2b3a52] transition-colors cursor-pointer"
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
+
+  // Tres brazos experimentales, no dos. `hybrid` se añadió sin tocar los otros
+  // dos precisamente para que la tabla del artículo pase de dos filas a tres sin
+  // invalidar las mediciones ya tomadas.
+  const engines: Array<{
+    id: EngineId;
+    label: string;
+    tone: string;
+    metrics: EngineMetrics;
+  }> = [
+    {
+      id: "rules",
+      label: data.engine_labels?.rules ?? "Motor por Reglas",
+      tone: "text-sky-400",
+      metrics: data.summary.rule_based ?? EMPTY_METRICS,
+    },
+    {
+      id: "agentic",
+      label: data.engine_labels?.agentic ?? "Agente IA Autónomo",
+      tone: "text-purple-400",
+      metrics: data.summary.agentic ?? EMPTY_METRICS,
+    },
+    {
+      id: "hybrid",
+      label: data.engine_labels?.hybrid ?? "Híbrido (Reglas + IA)",
+      tone: "text-emerald-400",
+      metrics: data.summary.hybrid ?? EMPTY_METRICS,
+    },
+  ];
 
   return (
     <div className="space-y-8">
@@ -107,10 +191,14 @@ export function EvaluationView() {
             <span>Módulo de Evaluación para Artículo Científico</span>
           </div>
           <h2 className="text-base font-bold text-slate-100">
-            Comparativa Experimental: Motor por Reglas vs. Agente Autónomo IA
+            Comparativa Experimental: Reglas vs. Agente Autónomo IA vs. Híbrido
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Métricas de cobertura, latencia y precisión para contrastar ambas aproximaciones metodológicas.
+          <p className="text-xs text-slate-400 mt-0.5 max-w-2xl">
+            Métricas de cobertura, latencia y precisión para contrastar las tres aproximaciones
+            metodológicas. Cada investigación se agrupa por el motor que{" "}
+            <em>realmente</em> se ejecutó, no por la estrategia solicitada: sin LLM configurado,
+            las estrategias que dependen de él degradan al motor de reglas y se contabilizan
+            como tales.
           </p>
         </div>
 
@@ -133,56 +221,76 @@ export function EvaluationView() {
         </div>
       </div>
 
-      {/* Comparative Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {/* Metric 1: Muestras */}
-        <div className="panel-card p-4">
-          <span className="text-[10px] font-mono uppercase text-slate-500 block mb-1">Muestras Totales</span>
-          <div className="text-2xl font-bold font-mono text-slate-100">{data?.summary.total_investigations || 0}</div>
-          <div className="flex justify-between text-[11px] font-mono mt-2 pt-2 border-t border-[#1e293b]">
-            <span className="text-sky-400">Reglas: {rb.count}</span>
-            <span className="text-purple-400">Agente: {ag.count}</span>
-          </div>
+      {/* Tabla comparativa de los tres brazos experimentales.
+          Antes eran cuatro tarjetas con dos cifras cada una ("12s / 34s"); con
+          un tercer motor esa forma deja de leerse. Una tabla métrica × motor es
+          además la forma exacta en la que el dato acaba en el artículo. */}
+      <div className="panel-card overflow-hidden">
+        <div className="px-5 py-3 border-b border-[#1e293b] flex flex-wrap items-baseline justify-between gap-3">
+          <h3 className="text-xs font-mono font-bold uppercase text-slate-300">
+            Resultados por motor
+          </h3>
+          <span className="text-[11px] font-mono text-slate-400">
+            {data.summary.total_investigations} investigación(es) completada(s)
+          </span>
         </div>
 
-        {/* Metric 2: Tiempo de Ejecución */}
-        <div className="panel-card p-4">
-          <span className="text-[10px] font-mono uppercase text-slate-500 block mb-1">Latencia Media</span>
-          <div className="text-2xl font-bold font-mono text-slate-100">
-            {rb.avg_execution_time || ag.avg_execution_time ? `${rb.avg_execution_time}s / ${ag.avg_execution_time}s` : "0s"}
-          </div>
-          <div className="flex justify-between text-[11px] font-mono mt-2 pt-2 border-t border-[#1e293b]">
-            <span className="text-sky-400">Reglas: {rb.avg_execution_time}s</span>
-            <span className="text-purple-400">Agente: {ag.avg_execution_time}s</span>
-          </div>
-        </div>
-
-        {/* Metric 3: Entidades Promedio */}
-        <div className="panel-card p-4">
-          <span className="text-[10px] font-mono uppercase text-slate-500 block mb-1">Entidades Descubiertas</span>
-          <div className="text-2xl font-bold font-mono text-slate-100">
-            {rb.avg_entities || ag.avg_entities ? `${rb.avg_entities} vs ${ag.avg_entities}` : "0"}
-          </div>
-          <div className="flex justify-between text-[11px] font-mono mt-2 pt-2 border-t border-[#1e293b]">
-            <span className="text-sky-400">Reglas: {rb.avg_entities}</span>
-            <span className="text-purple-400">Agente: {ag.avg_entities}</span>
-          </div>
-        </div>
-
-        {/* Metric 4: Score de Riesgo */}
-        <div className="panel-card p-4">
-          <span className="text-[10px] font-mono uppercase text-slate-500 block mb-1">Exposición Promedio</span>
-          <div className="text-2xl font-bold font-mono text-slate-100">
-            {rb.avg_risk_score || ag.avg_risk_score ? `${rb.avg_risk_score}/100` : "0"}
-          </div>
-          <div className="flex justify-between text-[11px] font-mono mt-2 pt-2 border-t border-[#1e293b]">
-            <span className="text-sky-400">Reglas: {rb.avg_risk_score}</span>
-            <span className="text-purple-400">Agente: {ag.avg_risk_score}</span>
-          </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <caption className="sr-only">
+              Comparativa de latencia, cobertura y exposición entre los tres motores de
+              orquestación
+            </caption>
+            <thead className="bg-[#0c111a] text-[10px] font-mono uppercase tracking-wider text-slate-400 border-b border-[#1e293b]">
+              <tr>
+                <th scope="col" className="py-3 px-4">
+                  Métrica
+                </th>
+                {engines.map((e) => (
+                  <th key={e.id} scope="col" className={`py-3 px-4 text-right ${e.tone}`}>
+                    {e.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#161f2e] text-xs font-mono text-slate-200">
+              {METRIC_ROWS.map((row) => (
+                <tr key={row.key} className="hover:bg-[#111826] transition-colors">
+                  <th
+                    scope="row"
+                    title={row.hint}
+                    className="py-2.5 px-4 font-normal text-slate-300 font-sans text-xs"
+                  >
+                    {row.label}
+                  </th>
+                  {engines.map((e) => (
+                    <td key={e.id} className="py-2.5 px-4 text-right tabular-nums">
+                      {e.metrics.count === 0 && row.key !== "count" ? (
+                        <span className="text-slate-500" title="Sin muestras de este motor">
+                          —
+                        </span>
+                      ) : (
+                        `${e.metrics[row.key]}${row.suffix ?? ""}`
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
+      {/* Aportación específica del refinamiento por IA */}
+      {data.hybrid_contribution && data.hybrid_contribution.investigations > 0 && (
+        <HybridContributionPanel contribution={data.hybrid_contribution} />
+      )}
+
       {/* LaTeX Preview Block */}
+      {data.identity_score_distribution && (
+        <ScoreDistribution data={data.identity_score_distribution} />
+      )}
+
       <div className="panel-card p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-xs font-mono font-bold uppercase text-slate-300">
@@ -222,50 +330,254 @@ export function EvaluationView() {
         </div>
 
         {showSurvey && (
-          <div className="mt-4 pt-4 border-t border-[#1e293b] space-y-4 animate-in fade-in duration-200 text-xs">
-            <div className="p-3.5 rounded bg-[#0c111a] border border-[#1e293b] space-y-2">
-              <span className="font-semibold text-slate-200 block">
-                1. ¿Creías que tu correo universitario o personal era inaccesible si no lo publicabas en tu bio?
-              </span>
-              <div className="flex gap-3 text-slate-400 font-mono">
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="q1" /> Sí, creía que era privado
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="q1" /> No, sabía que los commits git lo revelan
-                </label>
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded bg-[#0c111a] border border-[#1e293b] space-y-2">
-              <span className="font-semibold text-slate-200 block">
-                2. ¿Reutilizas el mismo alias de usuario en cuentas académicas, de ocio y redes sociales?
-              </span>
-              <div className="flex gap-3 text-slate-400 font-mono">
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="q2" /> Sí, en la mayoría de servicios
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="q2" /> No, mantengo identidades separadas
-                </label>
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded bg-[#0c111a] border border-[#1e293b] space-y-2">
-              <span className="font-semibold text-slate-200 block">
-                3. Tras visualizar tu mapa digital y las recomendaciones, ¿modificarás tus hábitos de privacidad?
-              </span>
-              <div className="flex gap-3 text-slate-400 font-mono">
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="q3" /> Sí, cambiaré alias y activaré 2FA
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" name="q3" /> No considero necesario cambiar nada
-                </label>
-              </div>
-            </div>
+          <div className="mt-4 pt-4 border-t border-[#1e293b] animate-fade-in">
+            <SurveyStatsPanel />
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Qué aporta la capa de refinamiento por IA, en cifras.
+ *
+ * Es la pregunta que decide si la tercera condición experimental se justifica.
+ * "El híbrido encuentra más" no es una afirmación defendible sin separar cuánto
+ * puso el barrido heurístico y cuántas entidades existen únicamente porque el
+ * LLM las pidió. Las llamadas descartadas miden lo contrario: cuánto trabajo
+ * redundante propuso el modelo y el motor le ahorró al no repetirlo.
+ */
+function HybridContributionPanel({ contribution }: { contribution: HybridContribution }) {
+  const share =
+    contribution.avg_heuristic_findings + contribution.avg_refinement_findings > 0
+      ? (contribution.avg_refinement_findings /
+          (contribution.avg_heuristic_findings + contribution.avg_refinement_findings)) *
+        100
+      : 0;
+
+  return (
+    <div className="panel-card p-5 border-l-4 border-l-emerald-500">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+        <h3 className="text-sm font-bold text-slate-100">
+          Aportación de la capa de refinamiento IA
+        </h3>
+        <span className="text-[11px] font-mono text-slate-400">
+          sobre {contribution.investigations} investigación(es) híbrida(s)
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatTile
+          label="Hallazgos capa 1"
+          value={contribution.avg_heuristic_findings.toFixed(1)}
+          hint="Media de hallazgos en bruto del barrido heurístico determinista"
+        />
+        <StatTile
+          label="Hallazgos capa 2"
+          value={contribution.avg_refinement_findings.toFixed(1)}
+          hint="Media de hallazgos añadidos por las llamadas que pidió el LLM"
+        />
+        <StatTile
+          label="Entidades solo de la IA"
+          value={contribution.avg_entities_only_from_llm.toFixed(1)}
+          hint="Entidades finales que ninguna herramienta del barrido llegó a descubrir. Es la aportación neta del refinamiento."
+          highlight={contribution.avg_entities_only_from_llm > 0}
+        />
+        <StatTile
+          label="Llamadas evitadas"
+          value={String(contribution.refinement_calls_skipped)}
+          hint="Llamadas que el LLM pidió repetir y el motor descartó porque el barrido ya las había ejecutado"
+        />
+      </div>
+
+      <div className="mt-4">
+        <div className="flex items-center justify-between text-[11px] font-mono mb-1.5">
+          <span className="text-slate-300">Proporción de hallazgos aportados por la IA</span>
+          <span className="font-bold text-slate-100">{share.toFixed(1)}%</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-[#161f2e] overflow-hidden">
+          <div
+            className="h-full rounded-full bg-emerald-400"
+            style={{ width: `${Math.min(100, Math.max(0, share))}%` }}
+          />
+        </div>
+      </div>
+
+      {contribution.arbitration_used > 0 && (
+        <p className="text-[11px] text-fuchsia-300 mt-3">
+          {contribution.arbitration_used} investigación(es) usaron además el arbitraje por LLM
+          de la franja ambigua. Es una condición opcional y no determinista: los resultados
+          arbitrados no son comparables con los que resolvió solo el modelo.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Resultados agregados del cuestionario de concientización.
+ *
+ * Antes aquí había una maqueta de tres preguntas con radios sin estado ni
+ * envío. La captura se ha movido al informe de cada investigación (donde
+ * ocurre el momento pedagógico) y esta pantalla, que es la orientada al
+ * artículo, muestra el agregado.
+ */
+function SurveyStatsPanel() {
+  const [stats, setStats] = useState<SurveyStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    getSurveyStats()
+      .then((s) => {
+        setStats(s);
+        setError(null);
+      })
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : "No se pudieron cargar las respuestas")
+      )
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) {
+    return (
+      <p role="status" className="text-xs font-mono text-slate-400">
+        Cargando respuestas del cuestionario...
+      </p>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-rose-300">
+        <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+        <span>{error}</span>
+        <button
+          type="button"
+          onClick={load}
+          className="ml-2 underline hover:text-rose-200 cursor-pointer"
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
+
+  if (!stats || stats.total_responses === 0) {
+    return (
+      <p className="text-xs text-slate-400 leading-relaxed max-w-2xl">
+        Todavía no hay respuestas. El cuestionario se contesta al final del{" "}
+        <span className="text-slate-200 font-semibold">
+          Informe de Concientización
+        </span>{" "}
+        de cada investigación, justo después de que la persona ve su propia huella
+        digital. El delta pre/post que se agrega aquí es la métrica pedagógica del
+        estudio.
+      </p>
+    );
+  }
+
+  const delta = stats.delta_awareness;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatTile
+          label="Respuestas"
+          value={String(stats.total_responses)}
+          hint="Tamaño de muestra (n)"
+        />
+        <StatTile
+          label="Percepción previa"
+          value={stats.avg_pre_awareness.toFixed(2)}
+          hint="Media de exposición percibida ANTES de ver el expediente (escala 1-5)"
+        />
+        <StatTile
+          label="Percepción posterior"
+          value={stats.avg_post_awareness.toFixed(2)}
+          hint="Media DESPUÉS de ver el expediente (escala 1-5)"
+        />
+        <StatTile
+          label="Delta de concienciación"
+          value={`${delta > 0 ? "+" : ""}${delta.toFixed(2)}`}
+          hint="Diferencia post - pre. Es la variable dependiente del estudio."
+          highlight={delta > 0}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+        <PctBar
+          label="Reutiliza el mismo alias"
+          pct={stats.reused_alias_pct}
+          tone="bg-amber-400"
+        />
+        <PctBar
+          label="Ignoraba la fuga por commits"
+          pct={stats.ignorant_commit_leak_pct}
+          tone="bg-rose-400"
+        />
+        <PctBar
+          label="Cambiará sus hábitos"
+          pct={stats.will_change_habits_pct}
+          tone="bg-emerald-400"
+        />
+      </div>
+    </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  hint,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      title={hint}
+      className={`p-3.5 rounded-md border ${
+        highlight
+          ? "bg-emerald-500/10 border-emerald-500/30"
+          : "bg-[#0c111a] border-[#1e293b]"
+      }`}
+    >
+      <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+        {label}
+      </div>
+      <div
+        className={`text-xl font-bold font-mono mt-1 ${
+          highlight ? "text-emerald-300" : "text-slate-100"
+        }`}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function PctBar({ label, pct, tone }: { label: string; pct: number; tone: string }) {
+  return (
+    <div className="p-3.5 rounded-md bg-[#0c111a] border border-[#1e293b]">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-slate-300">{label}</span>
+        <span className="font-mono font-bold text-slate-100">{pct.toFixed(1)}%</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-[#161f2e] overflow-hidden">
+        <div
+          className={`h-full rounded-full ${tone}`}
+          style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+        />
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { use, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { InvestigationData } from "@/lib/types";
 import { getInvestigation } from "@/lib/api";
+import { ENGINE_META, resolveEngine } from "@/lib/engines";
 import { DigitalMapGraph } from "@/components/graph/DigitalMapGraph";
 import { IdentityClustersView } from "@/components/identity/IdentityClustersView";
 import { FindingsTable } from "@/components/findings/FindingsTable";
@@ -106,6 +107,9 @@ export default function InvestigationDetailPage({
 
   const isRunning = investigation.status === "running" || investigation.status === "pending";
 
+  const engineMeta =
+    ENGINE_META[resolveEngine(investigation.strategy, investigation.metrics)];
+
   const tabs = [
     { id: "graph", label: "Mapa Digital", icon: Network },
     { id: "identity", label: "Reconstrucción de Identidad", icon: ShieldCheck },
@@ -148,9 +152,51 @@ export default function InvestigationDetailPage({
               {investigation.target?.username && <span>👤 @{investigation.target.username}</span>}
               {investigation.target?.dni && <span>🪪 DNI: {investigation.target.dni}</span>}
             </div>
+
+            {/* Motor que realmente ejecutó la investigación. Hacerlo visible es
+                lo que impide que la comparativa y el expediente cuenten cosas
+                distintas: una estrategia con IA sin LLM configurado corre por
+                reglas, y eso tiene que verse aquí y no solo en las métricas. */}
+            <div className="flex flex-wrap items-center gap-2 mt-2.5">
+              <span
+                title={engineMeta.description}
+                className={`text-[10px] font-mono px-2 py-0.5 rounded border ${engineMeta.badge}`}
+              >
+                {engineMeta.label}
+              </span>
+
+              {investigation.metrics?.strategy_used &&
+                investigation.metrics.hybrid_degraded && (
+                  <span
+                    title="Se pidió el motor híbrido, pero sin LLM configurado solo se ejecutó su capa heurística. Se contabiliza como motor por reglas."
+                    className="text-[10px] font-mono px-2 py-0.5 rounded border bg-amber-500/10 text-amber-300 border-amber-500/30"
+                  >
+                    Híbrido degradado · capa IA omitida
+                  </span>
+                )}
+
+              {typeof investigation.metrics?.hybrid_entities_only_from_llm === "number" &&
+                investigation.metrics.hybrid_entities_only_from_llm > 0 && (
+                  <span
+                    title="Entidades que ninguna herramienta del barrido heurístico llegó a descubrir: son la aportación neta de la capa de refinamiento."
+                    className="text-[10px] font-mono px-2 py-0.5 rounded border bg-purple-500/10 text-purple-300 border-purple-500/30"
+                  >
+                    +{investigation.metrics.hybrid_entities_only_from_llm} hallazgo(s) solo de la IA
+                  </span>
+                )}
+
+              {investigation.metrics?.arbitration_answered ? (
+                <span
+                  title="Arbitraje por LLM de la franja ambigua: es una condición opcional y no determinista, y queda registrada por hallazgo."
+                  className="text-[10px] font-mono px-2 py-0.5 rounded border bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30"
+                >
+                  Arbitraje IA: {investigation.metrics.arbitration_answered} hallazgo(s)
+                </span>
+              ) : null}
+            </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-3 shrink-0 print:hidden">
             <div className="text-right">
               <div className="text-xs font-mono font-bold text-slate-200">
                 Score: {investigation.risk_score}/100
@@ -188,21 +234,28 @@ export default function InvestigationDetailPage({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-1 overflow-x-auto border-t border-[#1e293b] mt-5 pt-3">
+        <div
+          role="tablist"
+          aria-label="Secciones del expediente"
+          className="flex items-center gap-1 overflow-x-auto border-t border-[#1e293b] mt-5 pt-3 print:hidden"
+        >
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-mono transition-all whitespace-nowrap ${
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-mono transition-all whitespace-nowrap cursor-pointer border ${
                   isActive
-                    ? "bg-sky-500/20 text-sky-300 border border-sky-500/30 font-semibold"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-[#151e2c]"
+                    ? "bg-sky-500/20 text-sky-300 border-sky-500/30 font-semibold"
+                    : "text-slate-300 hover:text-slate-100 hover:bg-[#151e2c] border-transparent"
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
+                <Icon className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>{tab.label}</span>
               </button>
             );

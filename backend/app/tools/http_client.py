@@ -8,9 +8,11 @@ Adapts battle-tested resilience patterns used by mature OSINT scanners
   robotic request patterns that WAFs detect easily).
 - Exponential backoff with retries on transient errors (timeouts, connection
   resets, 429/5xx) instead of failing a whole tool on one flaky response.
-- A single global concurrency gate shared by every tool in the registry, so
-  a single investigation never opens more sockets than the operator allows,
-  regardless of how many tools run in parallel during a round.
+- Dos puertas de concurrencia con propósitos distintos: una **por host**, que
+  es la cortesía real con cada sitio, y una **global**, que es el guardarraíl
+  de recursos del proceso. Antes solo existía la global, lo que trataba igual
+  500 peticiones a 500 hosts que 500 al mismo host y obligaba a mantenerla
+  artificialmente baja.
 
 Usage: every OSINT tool should build its client with `build_client(...)`
 instead of `httpx.AsyncClient(...)`. All resilience (retry, backoff, jitter,
@@ -24,7 +26,9 @@ raised exception.
 
 import asyncio
 import random
-from typing import Any, Optional
+import time
+from collections import deque
+from typing import Any, Deque, Optional
 
 import httpx
 
@@ -48,6 +52,7 @@ USER_AGENTS = [
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 _global_semaphore: Optional[asyncio.Semaphore] = None
+_host_semaphores: "dict[str, asyncio.Semaphore]" = {}
 
 
 def _get_global_semaphore() -> asyncio.Semaphore:
@@ -56,6 +61,80 @@ def _get_global_semaphore() -> asyncio.Semaphore:
     if _global_semaphore is None:
         _global_semaphore = asyncio.Semaphore(settings.http_max_concurrency)
     return _global_semaphore
+
+
+def _get_host_semaphore(host: str) -> asyncio.Semaphore:
+    """
+    Puerta de concurrencia **por host**, que es donde vive la cortesía real.
+
+    El diseño anterior solo tenía el tope global, y eso confundía dos cosas
+    distintas: 500 peticiones a 500 hosts distintos no molestan a nadie, pero
+    500 al mismo host sí. Al separar los dos límites, el global puede subir
+    (es un guardarraíl de recursos del proceso) sin volvernos descorteses, y
+    un sitio concreto nunca recibe más de `http_max_per_host` a la vez por
+    muchas herramientas que lo consulten en paralelo.
+
+    Los semáforos se cachean por host durante la vida del proceso: son objetos
+    diminutos y el conjunto de hosts está acotado por los catálogos.
+    """
+    sem = _host_semaphores.get(host)
+    if sem is None:
+        sem = asyncio.Semaphore(max(1, settings.http_max_per_host))
+        _host_semaphores[host] = sem
+    return sem
+
+
+class HostRateLimiter:
+    """
+    Ventana deslizante de peticiones por host.
+
+    El semáforo por host acota cuántas peticiones hay **a la vez**; esto acota
+    cuántas hay **por unidad de tiempo**, que es lo que miden los límites que
+    publican las APIs. Hudson Rock documenta 50 peticiones cada 10 s por host:
+    con solo el semáforo de concurrencia, una investigación con varios correos y
+    alias descubiertos se lo salta y la primera demo se lleva un 429.
+    """
+
+    def __init__(self, max_requests: int, per_seconds: float) -> None:
+        self.max_requests = max_requests
+        self.per_seconds = per_seconds
+        self._hits: Deque[float] = deque()
+        self._lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        while True:
+            async with self._lock:
+                now = time.monotonic()
+                while self._hits and now - self._hits[0] >= self.per_seconds:
+                    self._hits.popleft()
+                if len(self._hits) < self.max_requests:
+                    self._hits.append(now)
+                    return
+                wait = self.per_seconds - (now - self._hits[0])
+            # Se espera FUERA del lock, y también fuera de los semáforos: quien
+            # aguarda su turno no debe retener una ranura del presupuesto.
+            await asyncio.sleep(max(wait, 0.01))
+
+
+_host_rate_limits: "dict[str, HostRateLimiter]" = {}
+
+
+def register_host_rate_limit(host: str, max_requests: int, per_seconds: float) -> None:
+    """
+    Declara el límite publicado por un host.
+
+    Lo llama la propia herramienta que consume esa API, junto al endpoint, para
+    que el límite viva al lado del motivo por el que existe y no en un fichero
+    de configuración lejano que nadie actualiza cuando la API cambia.
+    """
+    _host_rate_limits[host] = HostRateLimiter(max_requests, per_seconds)
+
+
+def reset_concurrency_gates() -> None:
+    """Descarta los semáforos cacheados. Solo para los tests."""
+    global _global_semaphore
+    _global_semaphore = None
+    _host_semaphores.clear()
 
 
 def random_user_agent() -> str:
@@ -103,7 +182,10 @@ class ResilientTransport(httpx.AsyncHTTPTransport):
         self.rotate_ua = rotate_ua
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        host = request.url.host or ""
         sem = _get_global_semaphore()
+        host_sem = _get_host_semaphore(host)
+        rate_limiter = _host_rate_limits.get(host)
         last_exc: Optional[Exception] = None
 
         for attempt in range(self.max_retries + 1):
@@ -111,8 +193,18 @@ class ResilientTransport(httpx.AsyncHTTPTransport):
                 request.headers["User-Agent"] = random_user_agent()
 
             await asyncio.sleep(random.uniform(0, self.jitter))
+
+            # El límite de tasa se espera ANTES de tomar los semáforos: quien
+            # aguarda su turno no debe retener una ranura del presupuesto
+            # mientras duerme.
+            if rate_limiter is not None:
+                await rate_limiter.acquire()
+
             try:
-                async with sem:
+                # El global se toma primero y el de host después, siempre en el
+                # mismo orden: invertirlo en algún camino abriría un interbloqueo
+                # entre dos peticiones al mismo host.
+                async with sem, host_sem:
                     response = await super().handle_async_request(request)
                 if response.status_code in RETRYABLE_STATUS and attempt < self.max_retries:
                     await response.aclose()
@@ -140,7 +232,7 @@ def build_client(
     *,
     timeout: float = 10.0,
     follow_redirects: bool = True,
-    verify: bool = False,
+    verify: bool = True,
     headers: Optional[dict] = None,
     max_retries: int = 2,
     rotate_ua: bool = True,
@@ -157,6 +249,13 @@ def build_client(
     explicitly ask for this as part of their public API etiquette/"polite pool"
     policies) -- impersonating a rotating browser UA against those APIs would
     be counterproductive, not stealthier.
+
+    `verify` defaults to True. It used to default to False, which silently
+    disabled TLS certificate verification for every tool in the registry --
+    an indefensible default in a platform whose subject matter is information
+    security, and one that exposed every request to trivial interception.
+    A tool that genuinely needs to reach a host with a broken chain must opt
+    out explicitly at its own call site and document why.
     """
     transport = ResilientTransport(verify=verify, max_retries=max_retries, rotate_ua=rotate_ua)
     merged_headers = build_headers(headers)

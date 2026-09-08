@@ -1,0 +1,1007 @@
+# Plan de ejecución — PersonMap: de P0 a "world-class"
+
+> **Documento vivo.** Actualiza el estado al cerrar cada fase.
+> Rama de trabajo: `mejoras`.
+
+---
+
+## ESTADO — actualizado 2026-09-04
+
+| Fase | Estado | Commit |
+|---|---|---|
+| 0 · Estabilización | ✅ **Completada** | `3c2f8e4` |
+| 1 · Hacer visible lo que ya existe | ✅ **Completada** | `3021b53` |
+| — · Tavily para dorking *(añadido a petición)* | ✅ **Completada** | `3021b53`, `6a85719` |
+| 2 · Corregir el modelo de identidad | ✅ **Completada** | `941b5a5`, `d3cc158` |
+| 3 · `hybrid` como tercera estrategia | ✅ **Completada** | `da1cb85`, `3070e26` |
+| 3.5 · Presupuesto de concurrencia y progreso | ✅ **Completada** | `45eebe7` |
+| 4 · Cobertura de fuentes | ✅ **Completada** | `e7610f5`, `80472a0`, `bc3e1e6`, `899e68e` |
+| 5 · Cosecha activa de avatares | ✅ **Completada** | — |
+
+**Línea base al retomar:** 192 tests en ~68 s sin red · `tsc` limpio · backend `:8000` y frontend `:3000`.
+
+### Cómo retomar en otra sesión
+
+1. `cd "C:\octavo\seguridad de la info\proyecto\PersonMap"` y `git checkout mejoras`.
+2. Levantar: `cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000`
+   y `cd frontend && pnpm dev`.
+   **`--reload` no funciona en esta ruta** (StatReload se cuelga a medias con
+   los espacios del path en Windows): hay que reiniciar el backend a mano tras
+   tocar Python.
+3. Leer este fichero y "Correcciones aprendidas" antes de abrir la fase siguiente.
+4. Re-verificar las fuentes externas con `curl` y anotarlo en
+   [`OSINT_SOURCES.md`](./OSINT_SOURCES.md) — se degradan sin avisar.
+
+`uv` está instalado en `%APPDATA%\Python\Python311\Scripts` y **no está en el
+PATH**; hay que añadirlo en cada shell.
+
+---
+
+## Correcciones aprendidas durante la ejecución
+
+Cosas que el plan original daba por buenas y que la realidad desmintió. Merecen
+leerse antes de seguir, porque cambian decisiones de las fases pendientes.
+
+**El modelo de identidad no decidía nada.** No era solo que las señales sin dato
+penalizaran: el `max(f.confidence, score)` descartaba el resultado del modelo
+*siempre*, porque las herramientas emiten constantes de 0.85-1.0 y el modelo
+saturaba en 0.45. Sobre 392 entidades reales, el `identity_score` era 0.45 en
+las 392. Cualquier trabajo sobre señales nuevas habría sido inútil sin arreglar
+esto primero.
+
+**Las tautologías son el enemigo principal, y aparecen en tres capas.** En el
+grafo (aristas `same_username` entre hermanos de enumeración: 3835 → 117
+aristas), en el scorer (la señal de alias), y en la propia URL (contener el
+alias buscado no es evidencia; sin esa corrección
+`xboxgamertag.com/search/<alias>` puntuaba 0.99). **Al añadir cualquier fuente
+nueva, preguntar siempre: ¿esta coincidencia está garantizada por cómo busqué?**
+
+**Los tests con mock no bastan para una API externa.** Los 10 tests de Tavily
+pasaban mientras la integración real devolvía cero resultados: su parámetro
+`exact_match` está documentado pero rompe en producción, y su búsqueda es
+semántica (un correo inexistente devuelve la portada de su dominio). **Toda
+fuente nueva debe verificarse en vivo con `curl` antes de darla por integrada.**
+
+**`uvicorn --reload` no es fiable aquí.** Varias medidas salieron mal hasta
+descubrir que el backend servía código viejo. Reiniciar a mano y confirmar en el
+log que el arranque completó.
+
+**`npx next lint` ya no existe** (Next 16 lo retiró: devuelve *"Invalid project
+directory provided, no such directory: .../lint"*). El comando real es
+`npx eslint src`, y su **línea base son 19 errores preexistentes** (`no-explicit-any`
+y `react-hooks/set-state-in-effect`, sobre todo en `DigitalMapGraph`). No son
+regresiones: para saber si una tanda de cambios introduce alguno, comparar contra
+esa cifra con `git stash`.
+
+**La capa IA se puede verificar en vivo sin clave de proveedor.** LiteLLM
+respeta `OPENAI_BASE_URL`, así que un servidor OpenAI-compatible de tres
+funciones en `localhost` permite ejercitar el camino HTTP completo — esquema de
+funciones, parseo de `tool_calls`, secuencia `assistant`/`tool` del segundo
+turno — que es justo donde los mocks no llegan. **No sustituye a una prueba
+contra un proveedor real** (la lección de Tavily fue que el fallo estaba en el
+comportamiento del proveedor, no en el formato), pero cubre todo lo demás.
+
+**El listado de modelos de un proveedor no es la verdad.** Con la clave de
+Gemini, `v1beta/models` devuelve 50 modelos, y `gemini-2.5-flash` **está en la
+lista pero responde 404** *"no longer available to new users"*. `gemini-2.0-flash`
+—que este mismo plan proponía como ejemplo— ya no existe. Y de dos modelos que
+responden 200, uno emite `functionCall` y el otro no. **Comprobar con curl el
+modelo concreto y la capacidad concreta**, no que el proveedor esté vivo. Fijar
+siempre una versión explícita: un alias como `gemini-flash-latest` rompe la
+reproducibilidad de las mediciones del artículo, igual que lo haría sincronizar
+el dataset de Maigret cada 24 h.
+
+**Un 503 del proveedor es lo normal, no la excepción.** La primera corrida real
+del híbrido recibió *"high demand"* en el segundo turno. El diseño lo aguanta —
+la capa 2 se cierra y el expediente conserva íntegro el barrido heurístico —
+pero conviene contarlo así en la sustentación: la capa determinista es la que
+garantiza el resultado, y la IA es la que lo amplía cuando el proveedor está
+disponible.
+
+**crt.sh está degradado y hay que planificarlo.** Medido el 2026-09-04: 1 de 4
+peticiones devolvió HTTP 200 y las otras tres, 502. Afecta directamente a la
+Fase 4.4: sin reintentos con espera no se puede depender de él, y en una
+sustentación en vivo es una fuente que se cae delante del jurado.
+
+**Los eventos de progreso de las tools no llevan capa.** `username_finder`
+publica su `phase: "progress"` directamente al bus, sin pasar por el motor, así
+que en una corrida híbrida esas líneas salen sin `layer`. La consola les reserva
+el hueco del distintivo para no romper la alineación. Si en la Fase 4 se cablea
+la barra de progreso real (M2), conviene propagar la capa hasta la tool.
+
+### Correcciones al plan de las fases pendientes
+
+- ~~**Fase 4 — el presupuesto de concurrencia es bloqueante.**~~ **Resuelto en la
+  Fase 3.5.** El semáforo global pasó de 40 a 120 y apareció un límite **por
+  host** (4), que es donde vive la cortesía real. `username_finder` ya no toma
+  una constante de 30 escrita a mano, sino una cuota acotada al 60 % del
+  presupuesto global. Medido: una investigación `rule_based` sobre el mismo
+  objetivo bajó de **318 s a 93 s** (el reparto de concurrencia puso 318→202, y
+  dejar de re-escanear alias ya barridos, 202→93). La Fase 4 puede subir el
+  catálogo sin que el barrido de alias mate de inanición al resto de la ronda.
+  **Y la mitigación que este plan recomendaba para demos —bajar
+  `USERNAME_SCAN_MAX_SITES`— ya no sirve de nada:** de 500 a 150 sitios el
+  tiempo no se movió. El coste escala con los **alias pivotados**, no con los
+  sitios.
+- **Fase 5 — la denylist de avatares por defecto sigue siendo obligatoria**, pero
+  el riesgo bajó: ya no existe el atajo `confidence = max(conf, 0.99)` que
+  convertía una coincidencia de avatar en "identidad confirmada" saltándose el
+  modelo. Ahora entra como una señal más, ponderada.
+- **La señal semántica está lista pero inactiva.** `enrichment.py` la calcula si
+  se configura `LLM_EMBEDDING_MODEL`; sin él degrada a cotejo léxico.
+- **Fase 4 — el filtro anti-repetición del híbrido depende de la clave de
+  ejecución.** `RuleEngine._get_tool_run_key` es hoy la única frontera entre "el
+  híbrido refina" y "el híbrido repite el barrido entero". Toda tool nueva debe
+  declarar bien sus `required_inputs`, o su clave no distinguirá dos llamadas
+  distintas y la capa 2 saltará trabajo que sí hacía falta (o repetirá el que no).
+- **El expediente `d2c282f8` es dato de verificación, no muestra.** Se creó para
+  probar la capa 2 contra un LLM simulado, y su hallazgo de GitHub lo pidió el
+  stub, no un modelo real. Conviene borrarlo antes de recoger las cifras
+  definitivas del artículo.
+
+---
+
+## Context
+
+`ANALISIS_OSINT_MUNDIAL.md` (2026-09-03) auditó el proyecto contra el estado del arte OSINT mundial y produjo una hoja de ruta de 20 ítems en 4 tramos (P0→P3). El commit `9e4e9ce` ejecutó **el tramo P0 completo** (5/5). De P1/P2/P3 no se ha empezado nada.
+
+Este plan cubre lo que falta, bajo tres objetivos simultáneos declarados por el usuario: **sustentación de curso** (la demo debe verse impecable), **artículo científico** (métricas reproducibles y defendibles), y **producto que seguirá creciendo**.
+
+### Dos problemas de fondo descubiertos al preparar este plan
+
+**1. Deuda de integración del batch P0.** El backend ya emite tres `entity_type` nuevos — `image_match`, `google_account`, `academic_profile` — que no tienen **ninguna** representación en el frontend (ni filtro, ni capa en el mapa, ni icono: caen en el `Globe` gris genérico) y que además suman **cero** al scorecard de exposición, porque `identity/risk.py` solo pondera `social_account`, `email`, `academic`, `search_mention`, `breach` y `phone`. Es exactamente el fallo que el usuario quiere evitar: capacidad interna invisible.
+
+**2. El motor de correlación no está decidiendo nada.** Verificado numéricamente ejecutando la fórmula de `scorer.py` con sus propios parámetros:
+
+```
+Caso base (7 señales, todos γ=0):  LLR = −31.60 bits  →  posterior ≈ 6.3e−12  →  clamp a 0.05
+Match fuerte de nombre (γ=0.8):    LLR = −22.67 bits  →  posterior ≈ 0        →  override a 0.45
+```
+
+Tres consecuencias encadenadas:
+
+- **La distribución de scores es trimodal `{0.05, 0.45, 0.95}`**, no continua. El `CONFIRMED_THRESHOLD = 0.70` del resolver es **inalcanzable por la vía Fellegi-Sunter**; solo se cruza por el override `max(posterior, 0.95)` de `scorer.py:127-128`.
+- **La causa raíz es metodológica: "dato ausente" se codifica como "desacuerdo".** Si el objetivo no tiene teléfono, `phone_match = 0.0` y el modelo cobra −4.32 bits por un campo que nunca se pudo observar. Fellegi-Sunter estándar tiene **tres** estados (acuerdo / desacuerdo / *missing* → peso exactamente 0). Esto es un error citable en revisión por pares.
+- **Y el score se descarta de todos modos.** `rule_engine.py:141` y `autonomous_agent.py:194` hacen `final_conf = max(f.confidence, score)`, y las tools emiten confianzas fijas de 0.85–1.0. Como el score real vale 0.05 o 0.45, el `max()` **lo tira siempre**. El resolver luego clusteriza sobre `e.confidence`.
+
+> **Hoy los clusters de identidad los decide un número escrito a mano en cada tool, no el modelo probabilístico que va al artículo.**
+
+Esto reordena el plan: añadir señales nuevas (embeddings, avatar) a un modelo cuyo output se descarta es trabajo desperdiciado. **Primero hay que hacer que el score importe.**
+
+---
+
+## Principios rectores
+
+### 1. No reinventar la rueda
+
+Antes de escribir cualquier módulo nuevo, buscar si ya existe. Orden de preferencia:
+
+1. **Reusar el dato** (dataset de otro proyecto, con su licencia y atribución).
+2. **Portar la técnica** (endpoint + heurística, reimplementados sobre nuestra `http_client`).
+3. **Construir desde cero** — solo si no existe.
+
+Nunca añadir el binario de otra herramienta como dependencia de ejecución: la arquitectura `BaseTool` + `ToolRegistry` + capa HTTP resiliente se rompería. Se trae el dato o la técnica, no el proceso.
+
+### 2. Vigilancia continua del ecosistema
+
+El ecosistema se degrada rápido (Holehe lleva años sin mantenerse y tiene módulos rotos). Es una **práctica permanente**, no una tarea:
+
+- Antes de abrir cada fase, revisar el estado de `soxoj/maigret`, `WebBreacher/WhatsMyName`, `kaifcodec/user-scanner`, `megadose/ignorant`, `mxrch/GHunt`, y las listas `jivoi/awesome-osint` y `edwardtay/awesome-OSINT`.
+- Registrar cada revisión en un fichero vivo **`docs/OSINT_SOURCES.md`**: fuente, licencia, técnica adoptada, fecha de última verificación, estado (operativa / degradada / muerta).
+- Anotar en el docstring de cada módulo el repo de origen y su licencia, como ya hacen `http_client.py` y `google_account_osint.py`.
+
+### 3. Toda mejora de backend lleva su mejora de frontend emparejada
+
+**Criterio de aceptación: ninguna tarea termina si su resultado no es visible, filtrable y legible en la UI.** Un `entity_type` nuevo exige como mínimo: icono propio, entrada en los filtros de `FindingsTable` **y** de `DigitalMapGraph`, estilo de nodo diferenciado, **y ponderación en `risk.py` con su recomendación pedagógica**.
+
+### 4. Restricciones del usuario
+
+- **Solo fuentes gratuitas y sin API key.** Descartados SerpApi, Brave Search API y la **API de brechas** de HIBP. *Corregido el 2026-09-05:* el descarte de HIBP era demasiado ancho — su endpoint **Pwned Passwords** es gratuito y sin key, y ahora está en uso. Esto redefine los ítems P1#6 y P1#9 del análisis y obliga a resolver el reverse-image-search por otra vía (Fase 5).
+- **Embeddings vía `litellm.aembedding`** (verificado disponible en litellm 1.99.0), degradando a fuzzy si no hay LLM.
+
+---
+
+## Punto de partida
+
+Rama `mejoras`, sincronizada con `origin/main` en `9e4e9ce`. Cambios **sin commitear** que hay que consolidar antes de empezar:
+
+- `.gitignore` — la regla `lib/` (patrón Python) ocultaba también `frontend/src/lib/`, por lo que `api.ts` y `types.ts` nunca se commitearon y el frontend no compilaba en un clon limpio. Corregido a `/lib/` y `/lib64/`.
+- `frontend/src/lib/api.ts` y `types.ts` — reconstruidos desde los schemas Pydantic. `tsc --noEmit` limpio.
+
+Línea base: backend `:8000` y frontend `:3000` en HTTP 200; `uv run pytest` da **16 passed** (~3 min).
+
+---
+
+## Fuentes gratuitas verificadas en vivo (2026-09-03, con `curl`)
+
+| Fuente | Endpoint | Key | Resultado |
+|---|---|---|---|
+| **Hudson Rock Cavalier** | `cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email\|username\|domain` | **No** | HTTP 200 con datos reales: `stealers[]` con `date_compromised`, `computer_name`, `operating_system`, `malware_path`, `total_user_services`. Límite documentado **50 req/10 s por host** |
+| **crt.sh** | `crt.sh/?q={dominio}&output=json` | **No** | HTTP 200 |
+| **Avatar GitHub** | `github.com/{user}.png` | **No** | HTTP 200, `image/jpeg` |
+| **Avatar Gravatar** | `gravatar.com/avatar/{md5}?d=404` | **No** | HTTP 200 (404 si no existe → señal binaria limpia) |
+| **Maigret `data.json`** | `raw.githubusercontent.com/soxoj/maigret/main/maigret/resources/data.json` | **No** | MIT. **3653 sitios**, 693 `disabled` → **2960 utilizables**; 278 con `protection` (TLS fingerprint, a saltar); 1156 con `alexaRank`; 163 con `regexCheck` |
+
+`unavatar.io` queda **descartado como dependencia de runtime** (25 req/día por IP en anónimo). Se usa solo como *referencia* de su lista open-source de proveedores.
+
+---
+
+## Fase 0 — Estabilización ✅ COMPLETADA (`3c2f8e4`)
+
+> **Resultado medido:** aristas del grafo 3835 → 117 (−97%) sin perder ningún
+> hallazgo; suite de tests 194 s → 6.5 s y ya no requiere Internet.
+
+
+Prerrequisitos duros. Nada de lo que sigue es seguro sin esto.
+
+### Backend
+
+| Tarea | Por qué |
+|---|---|
+| **`MutableDict.as_mutable(JSONB)`** en los modelos | `resolver.py:45` escribe `metadata_info["avatar_correlated"] = True` **después** del flush; sin `MutableDict` ese flag **se pierde siempre**. La UI nunca podrá mostrar "correlacionado por avatar". Cambio de una línea, **sin migración** |
+| **Extraer `persist_findings()` + `build_relationships()`** a `app/engine/persistence.py` y llamarlo desde ambos motores | `autonomous_agent.py:212-233` duplica la persistencia en versión degradada (sin dedup, sin `_detect_relationship`, sin pivoteo). Son ~40 líneas movidas sin cambio de comportamiento, y el agente hereda **gratis** lo que hoy le falta. Sin esto, **cada cambio de las fases 2–5 se paga dos veces** |
+| **Quitar el fallback `same_platform` de `_detect_relationship`** (`rule_engine.py:240-241`) | Es O(n²) sobre todas las entidades y su último caso empareja cualquier par con la misma plataforma — incluido `None == None`. Con ~30 entidades son 450 pares; **al escalar a 500 entidades son 125.000 pares y decenas de miles de aristas sin significado**. El mapa se vuelve una bola de pelo ilegible y el `flush` de relaciones, el cuello de botella. **Prerrequisito duro de la Fase 4** |
+| **`avatar_hasher.py` → `http_client`** | Crea su propio `httpx.AsyncClient(..., **`verify=False`**)`: fuera del semáforo global, fuera del backoff, fuera de la rotación de UA, y **con verificación TLS desactivada en un proyecto de seguridad de la información**. Un jurado que abra ese fichero lo va a ver |
+| **Cap del `_history` del EventBus** + purga al completar | Crece sin límite y nunca se purga. Añadir aviso en arranque si `workers > 1` (el bus es in-process; el SSE se rompe en silencio) |
+
+### Frontend
+
+- **Centralizar las 5 URLs hardcodeadas** que se saltan `lib/api.ts`: `Navbar.tsx:11` (health), `LiveConsole.tsx:29,49` (logs, stream), `DigitalMapGraph.tsx:216` (graphml), `EvaluationView.tsx:57` (metrics).
+- **Crear `error.tsx`, `loading.tsx`, `global-error.tsx`** (App Router) — hoy inexistentes, igual que cualquier Error Boundary.
+- **Estados de error honestos.** Hoy la UI miente cuando algo falla: `EvaluationView.tsx:60` renderiza un dashboard de **ceros sin aviso** en una pantalla titulada "Módulo de Evaluación para Artículo Científico"; `InvestigationHistory.tsx:28` traga el error con `.catch(() => setInvestigations([]))` y muestra "No hay investigaciones registradas" cuando el backend está caído.
+- **`LiveConsole`:** quitar el `eventSource.close()` del `onerror` (L78-81), que **cancela deliberadamente la reconexión nativa de `EventSource`**. Y colorear por `phase`, no por `type` — hoy `agent_error` viaja con `type: "log"` y **se pinta en gris**.
+- **Clases inexistentes:** `animate-in` / `slide-in-from-right` / `fade-in` son de `tailwindcss-animate`, dependencia **ausente de `package.json`** (`DigitalMapGraph.tsx:306`, `InvestigationForm.tsx:189`, `EvaluationView.tsx:225`). También `py-0.2` (`DiscoveryTimeline.tsx:43`) no existe en la escala de Tailwind.
+- **Bug de layout del grafo:** el panel de detalle usa `w-80 border-l shrink-0` (`DigitalMapGraph.tsx:305`) dentro de un contenedor `flex flex-col` → se renderiza apilado debajo del canvas y recortado por `h-[680px] overflow-hidden`.
+
+### Tests
+
+Añadir **`respx`** al grupo dev (mock de transporte nativo de httpx, encaja con `ResilientTransport`). Reestructurar:
+
+```
+tests/
+  unit/          # sin I/O: scorer, adaptador de datasets, union-find, dHash
+  integration/   # tools con respx + fixtures grabadas
+    fixtures/<tool>_hit.html, <tool>_miss.html, <tool>_ratelimited.json
+  e2e/           # @pytest.mark.network, deseleccionado por defecto
+```
+
+En `pyproject.toml`: `addopts = "-m 'not network'"`, `markers = ["network", "db"]`. Hoy **no hay ningún mock** y `test_e2e.py` golpea PostgreSQL real e Internet real.
+
+**Verificable por:** el sistema nunca miente al usuario cuando algo falla, y la suite corre sin Internet.
+
+---
+
+## Fase 1 — Hacer visible lo que ya existe ✅ COMPLETADA (`3021b53`)
+
+> **Resultado medido:** los 3 `entity_type` huérfanos ya tienen icono, filtro,
+> color de nodo y peso en el scorecard. La encuesta captura datos: verificada
+> end-to-end con delta de concienciación +3.00. Se añadió además Tavily como
+> motor de dorking, a petición del usuario (ver `6a85719`).
+
+
+**Máximo retorno, riesgo de backend ≈ 0.** Es la fase que hace que la sustentación se vea impecable y no toca ni un algoritmo.
+
+### Backend (mínimo)
+
+Emitir el `breakdown` del scorer **dentro de `metadata_info`** al construir la `Entity` (antes del flush, donde `MutableDict` no aplica porque el dict se pasa completo al constructor). Hoy el `breakdown` **se descarta** en los dos call-sites y es el dato más rico del modelo. **Cero migración.**
+
+Ponderar los tres `entity_type` huérfanos en `risk.py` con su recomendación pedagógica.
+
+### Frontend
+
+| Tarea | Detalle |
+|---|---|
+| **Módulo compartido `lib/entityTypes.ts`** | La lista de categorías está **duplicada y divergente**: `FindingsTable.tsx:28-37` tiene 8 entradas, `DigitalMapGraph.tsx:219-226` tiene 6. Esa duplicación es la causa raíz de los tipos huérfanos; centralizarla evita que se repita con cada tipo nuevo |
+| **Representar los huérfanos** | `image_match`, `google_account`, `academic_profile` con icono, color de nodo y filtro en ambas vistas. Añadir `search_mention` y `document` al filtro del grafo. Ampliar `getPlatformIcon` (`DigitalMapGraph.tsx:38-51`), que no cubre facebook, tiktok, youtube, reddit, telegram, keybase, gravatar ni wikipedia — plataformas que las tools ya producen. Dar estilo de nodo por tipo (hoy solo `breach` y `phone` lo tienen). Eliminar las ramas muertas de `FindingsTable.tsx:21-22` |
+| **Panel "¿Por qué creemos que es esta persona?"** | Desglose del breakdown por señal y su peso en log-likelihood. Convierte una caja negra que escupe "87%" en una explicación auditable — el tipo de evidencia que defiende un tribunal y sostiene un artículo |
+| **Encuesta de concientización viva** | Ver abajo |
+| **`@theme` de Tailwind v4 + estilos `print:`** | Ver abajo |
+
+### La encuesta: la variable dependiente del artículo, hoy sin capturar
+
+El backend está **completo** (`POST /api/v1/surveys`, `GET /api/v1/surveys/stats` con el delta pre/post, modelo `AwarenessSurvey`, registrado en el router). El frontend es una **maqueta muerta**: los `<input type="radio">` de `EvaluationView.tsx:224-268` no tienen `value`, ni `checked`, ni `onChange`, ni estado, ni `<form>`, ni botón de envío. `preTestScore`/`postTestScore` (L52-53) se declaran y nunca se usan. Faltan `investigation_id`, `pre_awareness` y `post_awareness`, que el POST exige.
+
+**El proyecto no está capturando su propia métrica pedagógica.** Sin esto no hay dato de "antes vs después" que reportar. Añadir `createSurvey` y `getSurveyStats` a `lib/api.ts` (no existen), cablear el formulario, visualizar el delta agregado.
+
+### Informe imprimible
+
+`globals.css` **no tiene ninguna regla `@media print`**; solo hay dos utilidades `print:` en todo el proyecto. Como los fondos son `background-color` y los navegadores no los imprimen por defecto, el informe sale con **texto gris claro sobre papel blanco, prácticamente ilegible**, y no se ocultan Navbar, footer ni la barra de tabs. Una hoja de impresión completa es mucho más barata que generar PDF server-side (P3#17) y resuelve el 90% del problema.
+
+Además, el bloque `@theme` de Tailwind v4: hoy las variables de `:root` (L3-16) no generan utilidades, de ahí ~30 hex hardcodeados repartidos por los componentes.
+
+---
+
+## Fase 2 — Corregir el modelo de identidad ✅ COMPLETADA (`941b5a5`, `d3cc158`)
+
+> **Resultado medido** sobre las mismas 392 entidades reales: `identity_score`
+> pasa de 0.45 en las 392 a una distribución continua 0.010–0.990, con 26
+> (6.6%) sobre el umbral y los perfiles correctos en cabeza. Conjunto
+> etiquetado de 12 casos con precisión 1.00 y exhaustividad 1.00.
+
+
+Corresponde a los ítems P1#11, P2#12 y P2#14 del análisis, pero reordenados: **antes de añadir señales hay que arreglar el modelo**.
+
+### 2.1 Señales con tres estados
+
+Registro de señales, cada una con `applicable(target, metadata) -> bool` y `gamma(...) -> float`. **Si no es aplicable, el campo no entra en el bucle** (contribución 0 bits), en vez de entrar con γ=0. Con esto el caso base pasa de −31.6 bits a **0 bits** y el posterior base = prior = 0.02. Una señal nueva deja de penalizar a nadie: es aditiva y opcional por construcción.
+
+**Este es el único cambio que hace seguro añadir `avatar_match` y `semantic_bio_match`.**
+
+### 2.2 Separar detección de atribución
+
+`f.confidence` de la tool responde *"¿existe esta cuenta?"*. El score responde *"¿es de mi objetivo?"*. Son ortogonales y hoy están colapsadas en una sola columna. **Eliminar el `max()`**, guardar `existence_confidence` e `identity_score` por separado. Da un eje narrativo para el artículo y una columna extra en la UI que se explica sola.
+
+### 2.3 Eliminar los overrides y recalibrar
+
+- Fuera `max(posterior, 0.45)` y `max(posterior, 0.95)` (`scorer.py:125-129`). Existen solo para compensar la penalización del caso base; con 2.1 sobran. Si `cryptographic_proof` merece 0.95, su m/u ya lo expresa (+16.6 bits).
+- **Recalibrar `u`.** `cross_link` con `u=0.01` afirma que solo el 1% de perfiles no-match tienen algún `linked_profiles`: es falso, debería rondar 0.4–0.6. `name_match` con `u=0.005` sobre `fuzz.partial_ratio` de un corpus que incluye la bio es optimista (partial_ratio sobre texto largo produce falsos positivos altos).
+- `name_match` / `username_match` / `cross_link` **violan independencia condicional** entre sí: capar `total_weight` (±20 bits) o agruparlas.
+- **`SCORER_VERSION`** en el breakdown persistido. Sin eso, investigaciones viejas y nuevas no son comparables y el artículo pierde trazabilidad.
+
+### 2.4 Scoring en dos pasadas
+
+No resolver el desorden avatar/scorer moviendo llamadas:
+
+- **Pasada 1** (síncrona, barata): señales textuales sobre `metadata_info`. Donde está hoy.
+- **Pasada 2** (async, en lote, tras el flush): enriquecimiento — dHash de avatares + embeddings LiteLLM **en un solo batch** — que escribe `avatar_match` y `semantic_similarity` en metadata y **re-puntúa** las entidades afectadas.
+
+Resuelve a la vez el orden del pipeline, evita convertir `compute_identity_score` en corutina (cambio que se propagaría a los dos motores) y evita un `await aembedding` por entidad dentro de un bucle.
+
+`semantic_bio_match` resuelve el caso "UNMSM" vs "Universidad Nacional Mayor de San Marcos", que hoy da 0 porque `university_match` compara por substring exacta (`scorer.py:55-65`).
+
+### 2.5 Clustering real
+
+`resolver.py` **no agrupa**: particiona por umbral en 3 clusters de etiqueta fija, ignorando las aristas de `Relationship` y los pares de correlación de avatar. Sustituir por **union-find** sobre esas aristas — el enfoque de `clawithme`, señalado en el análisis como el benchmark más cercano. **Solo funciona una vez que los scores dejan de ser trimodales.**
+
+### 2.6 Migraciones: Alembic aquí, no antes
+
+`create_all` no altera tablas existentes, así que añadir columnas rompe instalaciones desplegadas. En la Fase 1 se evita el problema metiendo el breakdown en `metadata_info` (compromiso consciente: no es consultable por SQL en agregado). **Aquí ese coste muerde**, porque el artículo necesita agregar sobre los scores (histogramas, curvas de calibración, ablación).
+
+Introducir Alembic con **baseline aplanado**: `alembic stamp head` sobre la BD existente (que ya coincide con los modelos) y **una sola revisión** que añada de golpe `identity_score`, `existence_confidence`, `score_breakdown`, `scorer_version`, más los índices que faltan (**no hay ni uno**, ni siquiera en `entities.investigation_id`, que PostgreSQL no crea solo para las FK).
+
+### 2.7 Artefactos que valen doble
+
+- **Fixture de ground truth:** 20–40 pares `(entidad, objetivo, es_match)` etiquetados a mano. Es test de regresión **y** tabla de resultados del artículo. Se construye una vez, se usa dos.
+- **Ablación con/sin embeddings**, etiquetada por `scorer_version`. Esa comparación es la contribución del artículo, no el hecho de usar embeddings.
+
+**Frontend emparejado:** vista de clusters con la evidencia por arista; histograma de distribución de scores y curva de calibración en `EvaluationView`. La "Matriz de Correlación" (`IdentityClustersView.tsx:94-158`) hoy es cosmética — empareja cada entidad con `allEntities[(idx+1) % n]`, es decir **su vecina en el array**, no una correlación calculada; con union-find pasa a mostrar cruces reales.
+
+---
+
+## Fase 3 — `hybrid` como tercera estrategia ✅ COMPLETADA (`da1cb85`)
+
+> **Resultado medido** contra la API real: una investigación `hybrid` con la capa
+> IA activa registra `engine_used: hybrid`, 13 hallazgos heurísticos + 1 de
+> refinamiento, **1 llamada del LLM descartada** por haberla hecho ya el barrido,
+> y **1 entidad que solo existe gracias a la IA** (7,1 % del total). Sin LLM, la
+> misma estrategia registra `engine_used: rules` y `hybrid_degraded: true`.
+
+El análisis (§5.3) recomienda un orquestador híbrido: `rule_engine` siempre primero, y el LLM como capa de refinamiento. **Pero implementarlo como reemplazo del `if/else` de `orchestrator.py` destruiría una feature existente**: el commit `f2ab953` añadió el apartado de comparativas de motores, y si el rule engine corre siempre, `rules` y `agentic` dejan de ser condiciones independientes — se pierde el diseño experimental más limpio que tiene el proyecto.
+
+**Se añadió, no se reemplazó.** Cuatro valores de `strategy` (`auto`, `rule_based`, `agentic`, `hybrid`) y tres motores comparables. Los dos brazos anteriores no se tocaron.
+
+### 3.1 El motor de dos capas
+
+`backend/app/engine/hybrid_engine.py`:
+
+- **Capa 1** — `rule_engine.collect_findings()`, la barrida heurística completa. Se extrajo de `execute_investigation` precisamente para poder encadenarla sin persistir.
+- **Capa 2** — el LLM recibe un **resumen agregado** (hallazgos por tipo, plataformas con presencia, identificadores tras pivotar, herramientas ya ejecutadas y las que no llegaron a ejecutarse) y pide solo lo que falta. No se le manda el volcado de hallazgos: gastaría contexto sin mejorar la decisión de dónde mirar.
+- **Persistencia única al final**, con los hallazgos de las dos capas juntos. Si cada capa persistiera por su cuenta, la deduplicación no vería a la otra y un perfil hallado por ambas produciría dos entidades.
+
+**Lo que distingue al híbrido del agente autónomo es el filtro anti-repetición.** `HybridEngine._run_key()` reconstruye la misma clave de ejecución que usó la capa 1 (`RuleEngine._get_tool_run_key`), de modo que una llamada ya cubierta se descarta sin gastar red. Sin ese filtro el híbrido sería el agente corriendo dos veces.
+
+### 3.2 `engine_used`: la métrica que estaba mal
+
+`EvaluationView` clasificaba `strategy == "auto"` como agéntico aunque el orquestador hubiera caído al rule engine por no haber LLM. Corregido en las dos puntas:
+
+- El orquestador anota `engine_used` — el motor que **realmente** corrió — junto a `strategy_used`.
+- `metrics.py:engine_of()` agrupa por ese campo y, para los expedientes anteriores a esta fase, lo reconstruye desde `ai_enhanced`, que ya registraba si había LLM en el momento de ejecutar. Sobre las 8 investigaciones existentes, las 8 se reclasificaron a `rules`.
+- Una `hybrid` sin LLM **no se acredita al híbrido**: es una corrida de reglas con otro nombre, y así se contabiliza.
+
+`InvestigationCreate.strategy` pasó de `str` libre a `Literal`. Antes una errata (`"hybird"`) devolvía HTTP 201 y caía al motor de reglas en silencio, contaminando la muestra con una condición que nadie pidió; ahora devuelve 422.
+
+### 3.3 Arbitraje por LLM — opcional, apagado y sin contaminar el modelo
+
+`backend/app/identity/arbitration.py`, tras `HYBRID_LLM_ARBITRATION` (por defecto `false`). Somete al LLM los hallazgos de la franja 0.40–0.70 y **nunca sobrescribe `identity_score`**: escribe el veredicto en `metadata_info["llm_arbitration"]` y el resolutor lo lee como *puntuación efectiva* para agrupar. Así el histograma y la curva de calibración siguen midiendo Fellegi-Sunter puro, y el expediente muestra las dos cifras (`0.62 del modelo → 0.72 efectivo`) con la justificación y el modelo que la emitió.
+
+Los veredictos aplican 0.72 / 0.38, justo al otro lado del umbral: el arbitraje decide de qué lado cae un caso fronterizo, no cuánta certeza hay. Fingir un 0.99 sería el mismo atajo que se le quitó al avatar en la Fase 2.
+
+### 3.4 Frontend emparejado
+
+- **Selector de estrategia** con las cuatro opciones, cada una con su explicación, y **aviso previo** si el backend no tiene LLM: la estrategia degradará y quedará registrada como reglas.
+- **Consola**: cada evento viaja con `layer` (`heuristic` / `refinement`) y la consola pinta un distintivo `H` / `IA` con su leyenda **solo cuando la investigación tuvo dos capas** — en una corrida heurística marcaría todas las líneas igual y sería ruido.
+- **Cabecera del expediente**: motor real, aviso de híbrido degradado, y contador de hallazgos aportados en exclusiva por la IA.
+- **Tabla de hallazgos**: distintivo de capa por fila. Un perfil visto por las dos lleva los dos.
+- **`EvaluationView`**: las 4 tarjetas de dos cifras se sustituyeron por una tabla métrica × motor de tres columnas (con dos motores ya se leía mal; con tres, imposible), más un panel de **aportación de la capa IA** y la columna `engine_used` en el CSV.
+- **`lib/engines.ts`**: fuente única de la presentación de motores y capas, en la línea de `entityTypes.ts` (M1).
+
+### 3.5 Variables de entorno nuevas
+
+```bash
+# backend/.env — la capa 2 solo se activa si hay LLM configurado
+LLM_MODEL=gemini/gemini-3.6-flash   # verificado con function calling; ver 3.6
+LLM_API_KEY=...
+
+HYBRID_MAX_REFINEMENT_TURNS=2      # turnos de la capa de refinamiento
+HYBRID_LLM_ARBITRATION=false       # arbitraje de la franja ambigua (no determinista)
+HYBRID_ARBITRATION_MAX_ENTITIES=12 # tope de hallazgos a arbitrar por investigación
+```
+
+### 3.6 Verificación contra un proveedor real ✅
+
+Cerrada el 2026-09-04 con **`gemini/gemini-3.6-flash`** (nivel gratuito). La
+corrida `hybrid` completa, sobre 61 hallazgos heurísticos, ejercitó los tres
+caminos de la capa 2 —incluido el de fallo, sin que hubiera que provocarlo:
+
+| Comportamiento | Evidencia |
+|---|---|
+| El modelo propone lo que falta | Pidió `username_finder` sobre **`charlitamendoza`**, una variante de alias que el barrido nunca probó → 5 hallazgos, **1 entidad que solo existe gracias a la IA** (TikTok) |
+| El filtro anti-repetición funciona contra un modelo real | Pidió también `username_finder` sobre `carloseduardo.mendozasilva`; **descartada**, porque el barrido ya había pivotado a ese alias |
+| La corroboración cruzada se registra | 4 entidades quedaron con `engine_layers: ["heuristic", "refinement"]` — las vieron las dos capas y son **una sola entidad**, que es lo que la persistencia única garantiza |
+| Un fallo del proveedor no arrastra la investigación | El turno 2 devolvió **503 "high demand"**; la capa 2 se cerró y el expediente conservó íntegros los 61 hallazgos heurísticos y los 5 ya refinados |
+
+Cifras: `engine_used: hybrid`, 27 entidades, 3 llamadas pedidas / 1 descartada,
+530 s con el catálogo de sitios completo.
+
+**Trampa de versiones de Gemini, verificada con curl.** El `gemini-2.0-flash`
+que sugería este plan **no existe** para una clave nueva, y `gemini-2.5-flash`
+**aparece en el listado de `v1beta/models` pero devuelve 404** *"no longer
+available to new users"*. `gemini-3.5-flash` responde 200 pero **no emite
+`functionCall`** con el prompt de refinamiento; `gemini-3.6-flash` sí. Es la
+misma lección que Tavily: el listado del proveedor no es la verdad, la petición
+real sí. Y hay que fijar una versión explícita, nunca `gemini-flash-latest`: un
+alias móvil rompe la reproducibilidad de las mediciones del artículo.
+
+---
+
+## Fase 3.5 — Presupuesto de concurrencia y progreso visible ✅ COMPLETADA (`45eebe7`)
+
+Fase corta, **habilitante**, abierta con la sustentación a una semana. No estaba
+en el plan original: salió de comprobar que una investigación tardaba 530 s, que
+la consola parecía congelada mientras tanto, y que la Fase 4 iba a empeorar
+ambas cosas.
+
+### 3.5.1 Dos límites donde antes había uno
+
+El diseño anterior tenía un único semáforo global de 40 peticiones, y eso
+confundía dos cosas que no son la misma:
+
+- **Cortesía** con cada sitio. Es una propiedad *del host*.
+- **Consumo de recursos** del proceso (sockets, CPU). Es global.
+
+Mandar 500 peticiones a 500 hosts distintos no molesta a nadie, pero el tope
+global lo trataba igual que 500 peticiones al mismo host — y obligaba a
+mantenerlo artificialmente bajo. `username_finder` se llevaba 30 de esas 40
+ranuras: **una sola herramienta con el 75 % del proceso** y diez ranuras para
+las otras diecisiete de la ronda.
+
+Ahora son dos puertas independientes: `http_max_per_host = 4` (la cortesía real)
+y `http_max_concurrency = 120` (el guardarraíl). Con la cortesía garantizada por
+host, el tope global puede subir sin volvernos abusivos con nadie. La constante
+`CONCURRENCY_LIMIT = 30` de la tool desapareció: ahora pide
+`settings.tool_concurrency_budget()`, acotado al 60 % del presupuesto global,
+de modo que ninguna herramienta pueda repetir el acaparamiento.
+
+**El límite por host es además el prerrequisito de la Fase 4.2**, que necesita
+respetar los 50 req/10 s de Hudson Rock.
+
+### 3.5.2 Medido, y comprobado que no cuesta hallazgos
+
+| Medición | Antes | Después |
+|---|---|---|
+| Investigación `rule_based` completa, mismo objetivo | 318 s | **93 s** (−71 %) |
+| — solo por el reparto de concurrencia | 318 s | 202 s |
+| — más el fin del re-escaneo de alias (3.5.3) | 202 s | **93 s** |
+| `username_finder` en aislado sobre `@torvalds` | 39,3 s | **28,0 s** (−29 %) |
+
+La primera comparación mostraba 25 → 21 entidades, lo que parecía un precio.
+**No lo era**, y conviene saber cómo se descartó, porque el método vale para
+cualquier medición futura de este proyecto: se repitió el barrido en aislado
+—sin búsqueda web de por medio, que es la fuente de varianza— con la
+configuración antigua **dos veces** y la nueva una:
+
+```
+antigua: 87 hallazgos · nueva: 88 · antigua otra vez: 86
+diferencia antigua↔nueva : 4-5 sitios
+diferencia antigua↔antigua: 4 sitios   <-- el mismo tamaño
+```
+
+Los sitios que entran y salen son los mismos flaky (Quora, Spotify, Wowhead) en
+las dos comparaciones. **El ruido de plataformas es de ~5 % y no depende de la
+concurrencia.** La caída de 25 a 21 en la investigación completa venía de
+Tavily: devolvió otros resultados, el pivoteo extrajo otros alias y el barrido
+buscó otra cosa.
+
+> **Para el artículo:** ese ~5 % es el suelo de ruido de la medición. Cualquier
+> diferencia menor entre dos configuraciones no es una diferencia.
+
+### 3.5.3 El verdadero cuello de botella: alias re-escaneados
+
+Con la concurrencia repartida, bajar el catálogo de 500 a 150 sitios **no
+cambió nada** (205 s frente a 202 s). Eso desmintió la mitigación que este
+mismo plan recomendaba para las demos —"bajar `USERNAME_SCAN_MAX_SITES`"— y
+obligó a medir dónde se iba el tiempo de verdad. Perfilando los eventos
+`tool_start`/`tool_complete`:
+
+```
+username_finder  ronda 1:  23,0 s
+username_finder  ronda 2:  45,4 s
+username_finder  ronda 3:  68,0 s
+                          -------
+                          136,4 s  de 205 s totales
+```
+
+**El coste no escalaba con los sitios, sino con los alias, y crecía porque se
+repetía.** La clave de ejecución del motor incluye la lista completa de alias,
+así que cada vez que el pivoteo descubre uno nuevo la herramienta se vuelve a
+lanzar **sobre todos**, re-comprobando los que ya había barrido. Con tres
+rondas eso son 1+2+3 = 6 barridos donde bastaban 3: casi la mitad del trabajo,
+tirado.
+
+La corrección es un registro de alias ya barridos en `context.extra` —no en la
+instancia de la herramienta, que es un singleton del registry compartido por
+todas las investigaciones—. Resultado: **202 s → 93 s**, con el catálogo
+completo de 500 sitios.
+
+> **Consecuencia para la Fase 4:** el catálogo de Maigret asusta menos de lo que
+> parecía. Lo que multiplica el coste es el número de alias pivotados, no el de
+> sitios. Pero sigue habiendo un techo: cada alias nuevo cuesta un barrido
+> entero del catálogo.
+
+### 3.5.4 Barra de progreso real (M2)
+
+El evento `phase: "progress"` ya se emitía y se desperdiciaba como una línea de
+log más. Ahora viaja con `checked`, `total`, `pct` y `subject`, y la consola
+pinta una barra con sus atributos ARIA. Cadencia cada 25 sitios (antes 40).
+
+Sin esto, el barrido de 500 plataformas son minutos de pantalla aparentemente
+congelada. Con un jurado delante, eso no se puede defender.
+
+### 3.5.5 Huella de configuración (`app/core/fingerprint.py`)
+
+`scorer_version` protegía el modelo de identidad; el resto de la configuración
+no lo protegía nadie. Cada investigación registra ahora, con prefijo `config_`:
+herramientas registradas, catálogo disponible y escaneado, topes de
+concurrencia y motor de búsqueda.
+
+**Por qué antes de la Fase 4 y no después:** ampliar el catálogo cambia
+"entidades descubiertas" y "latencia media", y sin este campo las filas medidas
+antes y después quedarían mezcladas en la misma tabla **sin nada que permitiera
+distinguirlas**.
+
+De paso corrigió un dato que los documentos daban por bueno: el catálogo
+utilizable de WhatsMyName son **667** sitios, no 716. La cifra antigua contaba
+entradas NSFW, archivadas y sin `uri_check`.
+
+---
+
+## Ensayo de la sustentación (2026-09-04) ✅
+
+Recorrido completo de las seis pestañas, la impresión y el modo de fallo, con
+la demo a una semana. Cuatro defectos, corregidos en `b872679`:
+
+1. **El informe mostraba el Markdown en crudo.** La narrativa se insertaba tal
+   cual en un `div` con `whitespace-pre-line`: la pantalla que se imprime y se
+   le enseña a la persona investigada salía con los `###` y los `**` a la vista.
+   Nuevo `report/Markdown.tsx`, sin dependencia nueva: el texto lo escribe un
+   LLM y conviene controlar exactamente qué se renderiza (solo se construyen
+   elementos de React, nunca HTML, así que no hay vía de inyección).
+2. **La IA se inventaba la fecha** — el informe salía fechado "24 de mayo de
+   2024". Ahora se inyecta en el prompt, con prohibición explícita de inventar
+   datos. Verificado: `Fecha del análisis: 04/09/2026`.
+3. **La consola repetía ~20 líneas de "Progreso: X/500"** que la barra ya
+   muestra, sepultando los eventos que importan. Se filtran en cuanto hay barra;
+   el contador de la cabecera sigue contándolos todos para no mentir.
+4. **"1 hallazgos atribuidos"** — falta de concordancia en la pantalla de
+   identidad.
+
+Comprobado y **sin** defectos: las seis pestañas, el grafo, la barra de
+progreso en vivo, los 18 estilos de impresión, y las tres pantallas con el
+backend caído (portada, métricas y expediente muestran la causa y un reintento;
+ninguna finge ceros).
+
+> **Nota de método:** los cuatro defectos son de presentación y ninguno se veía
+> desde los tests. Un ensayo recorriendo la interfaz encuentra una clase de
+> fallo que la suite no cubre; conviene repetirlo antes de la sustentación real.
+
+---
+
+## Fase 4 — Cobertura de fuentes ✅ COMPLETADA
+
+> **Resultado medido.** Catálogo de 2.441 sitios (667 de WhatsMyName + 1.774 de
+> Maigret). Frente a solo WhatsMyName: **+48 % de cobertura** (86 → 127 hallazgos
+> sobre `@torvalds`) **a cambio de 5 falsos positivos por alias**, todos con
+> atribución 0.10. Investigación híbrida completa: **6,4 min**, dentro del
+> presupuesto de 15 acordado.
+
+### El patrón que se repitió en los cuatro apartados
+
+Cada uno empezó con "añadir X" y terminó descubriendo que lo que ya había
+mentía. Merece leerse como una sola lección:
+
+| Apartado | Lo que se iba a hacer | Lo que hubo que arreglar antes |
+|---|---|---|
+| 4.1 | Ampliar el catálogo | Ordenar por ranking **quitaba** Reddit e Instagram del top 500 |
+| 4.2 | Añadir Hudson Rock | Un registro hallado buscando el alias puntuaba 0.893 por **tautología** |
+| 4.3 | Añadir vectores de correo | 7 de 20 sondas apuntaban a endpoints muertos, 1 inventaba hallazgos y 1 **intentaba iniciar sesión** |
+| 4.4 | Añadir crt.sh | — (salió limpio, reutilizando el filtro de plataformas de 4.1) |
+
+**Medir antes de añadir** dejó de ser una buena práctica y pasó a ser lo que
+más valor produjo en toda la fase.
+
+### 4.1 Catálogo unificado ✅ (`80472a0`)
+
+`dataset_adapter` normaliza WhatsMyName y Maigret **en memoria**: los ficheros
+siguen separados porque el ShareAlike de CC BY-SA se contagia a cualquier
+derivado que se redistribuya. Snapshot de Maigret fijado al commit `8f42a42`.
+
+Tres cosas que solo se supieron midiendo:
+
+1. **Emparejar por URL no funciona.** WhatsMyName apunta al endpoint de API
+   (`api.mixcloud.com/{username}`) y Maigret a la web: son el mismo sitio. La
+   clave es la plataforma, no la URL.
+2. **Ordenar por ranking era una regresión.** Los 681 sitios de Maigret con
+   `alexaRank` desplazaban a los de WhatsMyName sin ranking, y con tope 500
+   desaparecían Reddit e Instagram. Ahora el orden es en dos niveles: primero el
+   catálogo curado, después la cola larga, así que subir el tope solo añade.
+3. **El 36 % de Maigret no puede decir que no.** 1.098 sitios sin ninguna cadena
+   de validación, cuyo único criterio es el código de estado. Sobre un alias
+   sintético inexistente producían **255 "cuentas", todas falsas**. Se exige
+   validación de contenido; un ranking alto no la sustituye (WordPressOrg tiene
+   ranking 12, ninguna cadena, y responde 200 a cualquier cosa).
+
+**Corrección posterior (2026-09-05): las plataformas de contenido adulto no se
+excluyen.** Se habían filtrado por un error de criterio. Detectar que un alias
+reutilizado enlaza el perfil profesional de alguien con una cuenta de este tipo
+es **un objetivo declarado del proyecto**, y omitirlo dejaba fuera el hallazgo
+que más rápido convence a un estudiante de que reutilizar el alias tiene
+consecuencias. Se leen las dos convenciones (categoría `xx NSFW xx` de
+WhatsMyName y etiquetas de Maigret) y el hallazgo recibe tipo propio,
+`sensitive_account`, con su icono, filtro, peso en el scorecard y una
+recomendación que habla de extorsión. Auditadas en vivo contra un alias
+imposible: 1 falso positivo de 48, excluido; test `network` permanente.
+
+`regexCheck` es la mejora de precisión que no depende del volumen:
+
+```
+@torvalds                     ->   3 sitios descartados (0,1%)
+@carloseduardo.mendozasilva   -> 692 sitios descartados (20,4%)
+```
+
+El patrón dominante es "sin puntos ni guiones", así que el ahorro aparece justo
+en los alias que descubre el pivoteo. Cada petición ahorrada es además una
+oportunidad menos de falso positivo.
+
+**Y una tautología más, la cuarta del proyecto:** la heurística anti-página-
+genérica aceptaba si el alias aparecía en el cuerpo **o en la URL final** — y la
+URL la construimos nosotros con el alias, así que pasaba siempre. Para los
+sitios sin validación de contenido ahora se exige que aparezca en el CUERPO.
+
+### 4.2 Hudson Rock ✅ (`e7610f5`) · 4.4 crt.sh ✅ (`bc3e1e6`)
+
+Ver sus apartados propios más abajo. En los dos, el scorecard, el icono, los
+filtros y la recomendación pedagógica **ya existían desde la Fase 1**: solo
+faltaba la herramienta.
+
+### 4.3 Enumeración de correo ✅ (`899e68e`) — se corrigió, no se amplió
+
+La fase pedía añadir vectores. Medidos los 20 existentes: **0 útiles, 19 mudos y
+1 falso positivo garantizado**. La sonda de Quora marcaba todos los correos como
+registrados —su endpoint devuelve la portada HTML de 81 KB y la comprobación
+buscaba la palabra `"false"`— y llegó a un expediente real con un 90 % de
+confianza.
+
+Y la de Vimeo hacía **POST a `/log_in` con una contraseña**: un intento de acceso
+real contra la cuenta de una persona, que dispara alertas y puede bloquearla. Es
+el mismo criterio por el que el plan descarta `ignorant`.
+
+Sobre añadir: sondeados en vivo Instagram, Imgur, Archive.org, Zoho, Mercado
+Libre, Xbox y Bitmoji. **Ninguno sirve** (429 inmediato, 403, o no distinguen).
+El ecosistema se ha cerrado, coherente con que Holehe lleve años roto. Se
+documenta en vez de añadir sondas sin verificar, que es exactamente como llegó
+allí la de Quora.
+
+Hay ahora un test marcado `network` que pasa cada sonda por un correo de control
+imposible: cualquier "registrado" ahí es un falso positivo garantizado.
+
+### 4.5 Motores de búsqueda enchufables ✅
+
+`search_dorker` pasa de un `if/else` a una tabla de backends. Añadir un motor es
+una entrada más. **SearXNG no se añade**: las instancias públicas traen la salida
+JSON desactivada y una auto-hospedada recibe CAPTCHA desde una sola IP — queda
+como entrada futura de la tabla.
+
+### Presupuesto de tiempo
+
+Con el catálogo completo, la primera corrida tardó **14,5 min** y produjo 510
+entidades, de las cuales 508 eran homónimos descartados. Tras los filtros de
+calidad: **6,4 min y 30 entidades**. El tope de 3 alias por investigación
+(`USERNAME_SCAN_MAX_ALIASES`) es lo que acota la duración, porque cada alias
+cuesta un barrido entero del catálogo.
+
+---
+
+## Fase 4 — plan original de los apartados
+
+Cada tool nueva sigue el patrón `BaseTool` + `http_client.build_client()` + registro en `registry.py`. **No hace falta tocar el agente IA:** `_build_agent_tools()` ya genera el schema desde el registry, así que toda tool nueva es automáticamente visible para el LLM.
+
+### 4.1 Adaptador de datasets de username
+
+Nuevo `backend/app/tools/data/dataset_adapter.py` que normaliza **en memoria** dos fuentes que se mantienen en ficheros separados:
+
+| Fuente | Utilizables | Licencia | Aporta |
+|---|---|---|---|
+| WhatsMyName (ya bundleado) | 667 (hoy se usan 500) | CC BY-SA 4.0 | `uri_check`, `e_code`, `e_string`, `m_string`, `cat` |
+| **Maigret `data.json`** (nuevo) | **2960** de 3653 | MIT | `url`/`urlProbe`, `checkType`, `presenseStrs`/`absenceStrs`, **`regexCheck`**, **`alexaRank`**, `tags`, `disabled`, `protection` |
+
+> **El objetivo NO es el volumen, es la precisión.** El valor real de Maigret no son los 3000 sitios sino la calidad de la comprobación: `regexCheck` descarta usernames inválidos **sin gastar una petición**, `absenceStrs` reduce falsos positivos, `alexaRank`/`tags` dan priorización basada en datos en vez del set hardcodeado `PRIORITY_PLATFORMS` (`username_finder.py:34-40`), y `protection: "tls_fingerprint"` identifica los 278 sitios inalcanzables sin `curl_cffi` para saltarlos en vez de quemar reintentos. **Aplicar eso a los sitios que ya se escanean mejora la precisión sin tocar el volumen** — y así es como se defiende en el artículo.
+
+**Antes de subir el cap** hay que resolver el presupuesto de concurrencia: `username_finder` usa `CONCURRENCY_LIMIT = 30` pero el semáforo global de `http_client` es de **40 peticiones para todo el proceso**. Al escalar, el escaneo de usernames **acapara el presupuesto y mata de inanición al resto de tools de la ronda**. Hace falta un presupuesto por tool o por categoría.
+
+### 4.2 Hudson Rock Cavalier — infostealer logs ✅ COMPLETADA (`e7610f5`)
+
+> **Medido:** sin consentimiento, 0 entidades y riesgo 33 (MEDIO). Con
+> consentimiento, 5 equipos comprometidos y riesgo **83 (CRÍTICO)**.
+
+El scorecard, el icono, los filtros y la recomendación pedagógica **ya existían
+desde la Fase 1**: solo faltaba la herramienta. La regla de "toda mejora de
+backend lleva su contraparte en el frontend" se cumplió sola porque `M1`
+(`entityTypes.ts` como fuente única) ya había centralizado la presentación.
+
+**Tres trampas que solo aparecieron contra la API real**, ninguna visible desde
+los tests con mock — la lección de Tavily repitiéndose:
+
+| Lo que uno supondría | Lo que devuelve la API |
+|---|---|
+| `top_logins` = servicios afectados | **Correos enmascarados** (`e****@gmail.com`). Etiquetarlos como servicios habría metido una afirmación falsa en el expediente de una persona |
+| `ip`/`malware_path` ausentes si no se conocen | Traen la cadena literal `"Not Found"`. El informe decía "Ruta del malware: Not Found" |
+| Los totales están en la raíz | También por registro, y ese es el del equipo concreto |
+
+**La tautología, otra vez.** Un registro hallado buscando el alias `admin`
+puntuaba **0.893 de atribución con una sola señal evaluable**:
+`username_match = 1.0`. La coincidencia estaba garantizada por cómo se buscó.
+Añadida la tool a los enumeradores del scorer y de la persistencia, baja a 0.10.
+Es el tercer sitio donde aparece el mismo fallo; la pregunta del plan —*¿esta
+coincidencia está garantizada por cómo busqué?*— hay que hacérsela **a cada
+fuente nueva, sin excepción**.
+
+**Y eso destapó un error de categoría anterior.** `breach` e `infostealer` no
+son perfiles que atribuir: son hechos sobre un identificador que la propia
+persona aportó. Pasarlos por la resolución de homónimos los dejaba en "Posibles
+Homónimos Descartados" **mientras el scorecard los contaba como riesgo crítico**
+— dos afirmaciones contradictorias sobre el mismo hallazgo. Ahora tienen cluster
+propio: "Exposición de los Identificadores Aportados".
+
+**La narrativa recibe las dos métricas.** Antes se le mandaba solo `confidence`
+etiquetado como "Certeza" y escribía *"se confirmó la presencia del objetivo"*
+con un 97 % que era certeza de DETECCIÓN. Ahora distingue, y en la verificación
+escribió por su cuenta: *"97 % de detección… la probabilidad de que pertenezcan
+a este objetivo es solo del 10 %… 'admin' es un nombre por defecto utilizado
+masivamente"*.
+
+**Pendiente y anotado:** el endpoint `search-by-domain` devuelve estadística
+institucional sin individuos. Para `unmsm.edu.pe`: **3.232 cuentas de personal y
+8.048 de estudiantes comprometidas**, última infección cuatro días antes. No se
+integró porque es un dato sobre la institución y no sobre la persona, y
+mezclarlo en su expediente rompería el modelo de atribución — pero como panel de
+contexto del informe es material de concientización de primer orden.
+
+<details>
+<summary>Plan original de este apartado</summary>
+
+
+Nuevo `backend/app/tools/infostealer_checker.py`. Fuente #1 en calidad de OSINT de brechas en 2025-2026, gratuita, sin key, **verificada funcionando**. Complementa `breach_checker.py` (XposedOrNot) sin sustituirlo. Nuevo `entity_type`: `infostealer`.
+
+Devuelve datos cualitativamente distintos y muy potentes para la concientización: fecha de infección, nombre del equipo, sistema operativo, ruta del malware y número de servicios comprometidos. Respetar la minimización que ya practica `breach_checker.py`: **persistir el hecho de la exposición y los servicios afectados, nunca contraseñas**.
+
+**Dos requisitos previos:**
+- **Token bucket por host** en `ResilientTransport`. El límite de 50 req/10 s es *por host* y el semáforo global de 40 no lo respeta: la primera demo con varias consultas da 429.
+- **Checkbox de "solo sobre mi propia identidad"** en el frontend. Consultar esta API envía a un tercero la identidad de a quién investigas; el checkbox refuerza además el marco pedagógico.
+
+**Frontend emparejado:** tarjeta de alerta dedicada, visualmente más grave que un `breach` normal (es una máquina comprometida, no una filtración de terceros).
+
+</details>
+
+### 4.3 Ampliar `email_enumerator`
+
+De los ~20 probes actuales hacia los vectores de `kaifcodec/user-scanner` (MIT, 4.6k estrellas, activo, 175+ vectores de email) — el sucesor de facto de Holehe. Portar por lotes, priorizando plataformas relevantes para estudiantes LatAm.
+
+**Frontend emparejado:** con muchos más resultados, `FindingsTable` necesita **paginación o virtualización**; hoy renderiza todas las filas de golpe.
+
+### 4.4 Dominio personal (crt.sh)
+
+Nuevo `backend/app/tools/domain_finder.py`. Gratis, sin key, verificado. Relevante para el público objetivo: estudiantes de ingeniería con portfolio propio (`juan.dev`). **Frontend:** nueva capa "Infraestructura" en el grafo.
+
+### 4.5 Motor de búsqueda web (prioridad baja)
+
+Sin Brave API, la ruta gratuita es SearXNG auto-hospedado con `format=json`, con el scraping de DuckDuckGo como fallback. Refactorizar `search_dorker.py` a backends pluggables. **Expectativa realista:** desde una sola IP, SearXNG recibe CAPTCHA de Google/Brave/Startpage y en la práctica solo responde DuckDuckGo. La mejora aquí es **arquitectónica**, no de cobertura.
+
+**Frontend emparejado (toda la fase):** badge de fuente/dataset por hallazgo; contador de sitios escaneados vs descartados por `regexCheck`; y **barra de progreso real** del escaneo — el evento `phase: "progress"` de `username_finder` ya se emite y hoy se desperdicia como una línea de log más. Con miles de sitios, una consola muda durante minutos arruina la demo.
+
+---
+
+## Fase 5 — Cosecha activa de avatares ✅ COMPLETADA
+
+> **Medido.** 6 proveedores verificados en vivo. En una investigación real, las
+> entidades con avatar pasaron de 93 a **14** y las correlaciones visuales de 21
+> a **8** al quitar lo que no era un avatar. Las que quedan son fotos de persona.
+
+Se invierte el planteamiento de `reverse_image_search` —que sigue apagado porque
+exige una clave de pago—: en vez de *"busca esta imagen en la web"*, se hace
+*"descarga el avatar de esta cuenta en las plataformas donde ya la confirmamos y
+compara los hashes"*.
+
+### Proveedores, verificados uno a uno
+
+Directos: **GitHub**, **Telegram**, **Keybase** y **Gravatar** (con `d=404`, que
+da señal binaria limpia). Vía API: **dev.to** y **Mastodon**. Descartados tras
+probarlos: GitLab y Codeberg dan 403, Bitbucket 404 siempre, Reddit devuelve HTML
+y NPM exige autenticación.
+
+### Las tres salvaguardas, y por qué ninguna era la obvia
+
+**1. Los avatares por defecto colisionan.** Medido: la silueta genérica de
+Gravatar da el mismo dHash para tres semillas y tres tamaños — distancia de
+Hamming **0 entre identidades sin relación**.
+
+**Y la entropía no sirve para detectarlos**, que es lo primero que uno intenta:
+la silueta genérica y un `identicon` tienen la **misma** entropía (1.49) y son
+opuestos — el identicon se deriva del hash del correo, así que dos iguales sí son
+evidencia; la silueta es la misma imagen para todo el mundo. Eso no se deduce de
+la imagen: hay que saber cuáles son placeholders. De ahí una lista de hashes
+medidos y fechados, más el descarte genérico de imágenes planas.
+
+**2. `og:image` no es un avatar.** `social_verifier` lo guardaba como si lo
+fuera, y es la imagen de vista previa de la PÁGINA — en la mayoría de sitios, su
+logo. En una corrida real entraron como "foto de perfil" el logo de Imgur, la
+imagen social de Pastebin y la de PayPal, y **una correlacionó a distancia 0**:
+el sistema afirmaba que dos cuentas usaban la misma foto cuando lo que
+compartían era el logo del sitio. Es la misma clase de fallo que los avatares
+por defecto, por otra vía.
+
+**3. Una cuenta no puede correlacionarse consigo misma.** El avatar cosechado de
+`github.com/{u}.png` coincidía a distancia 0 con el que la API de GitHub había
+expuesto para esa misma cuenta. Coincidencia garantizada por cómo se buscó —la
+cuarta tautología del proyecto— que inflaba la puntuación con información
+inexistente.
+
+Las dos últimas **solo aparecieron al ejecutar una investigación real**; ningún
+test las habría encontrado, porque el fallo no estaba en la lógica sino en qué
+datos llegaban a ella.
+
+### Frontend emparejado
+
+Miniatura del avatar en la tabla de hallazgos y en el panel de evidencia, con la
+**distancia de Hamming visible** y un borde ámbar cuando hubo correlación. Antes
+la correlación visual ocurría y movía la puntuación, pero el usuario nunca veía
+las imágenes: era la evidencia más persuasiva del sistema y estaba oculta.
+
+`AvatarThumb` concentra la decisión de usar `<img>` en vez de `next/image`:
+optimizar haría que **nuestro servidor descargue URLs de hosts arbitrarios**
+descubiertos en ejecución, convirtiendo el frontend en un proxy de peticiones
+salientes. Los docs de Next piden acotar `remotePatterns` al máximo, y aquí el
+conjunto de hosts es abierto por diseño.
+
+---
+
+## Fase 5 — plan original
+
+`reverse_image_search.py` existe pero está **apagado**: exige `serpapi_key` o `bing_visual_search_key`, y la restricción es "sin key". Se invierte el planteamiento:
+
+> En lugar de *"busca esta imagen en la web"* (requiere API de pago), hacer *"descarga el avatar de este username en las plataformas donde lo confirmamos y compara los hashes"*.
+
+Nuevo `backend/app/tools/avatar_harvester.py` que construye URLs con patrones directos verificados, tomando como referencia la lista open-source de proveedores de `microlinkhq/unavatar` **sin consumir su API**. Alimenta `context.extra["avatar_urls"]`, que `pivot_rules.py:101-115` **ya recolecta**, y de ahí a `avatar_hasher`. Lo convierte de pasivo a activo.
+
+### Salvaguardas obligatorias (esta fase es la más peligrosa del plan)
+
+- **Solo sobre cuentas ya confirmadas** por `username_finder`, y **6–8 proveedores**, no la lista completa. Construir URLs de avatar para usernames *no confirmados* significa descargar y fingerprintear fotos de terceros que no son el objetivo — precisamente lo que una herramienta de concientización enseña a no hacer.
+- **Denylist de avatares por defecto.** dHash 8×8 con umbral Hamming ≤ 6 es permisivo, y los avatares por defecto (mystery-man de Gravatar, siluetas, placeholders monocromos) son **idénticos entre usuarios distintos** → distancia 0 → el resolver hace `confidence = max(confidence, 0.99)` → **dos personas distintas acaban en el cluster "Identidad Principal (Confirmada)"**. Con cosecha pasiva es raro; con cosecha activa sobre la cola larga es la norma, porque la mayoría de esas cuentas no tienen foto.
+- Descarte por baja varianza/entropía de imagen; **distancia ≤ 2** para boost automático; y **nunca el override a 0.99**: el avatar debe ser una señal más del Fellegi-Sunter, no un atajo que salta el modelo.
+
+**Frontend emparejado:** mostrar **las miniaturas de avatar** en el grafo y en las tarjetas de cluster, con la distancia de Hamming visible y una arista explícita entre los nodos correlacionados. Hoy la correlación visual ya ocurre y sube la confianza a 0.99, pero **el usuario nunca ve las imágenes ni sabe que pasó**. Es la evidencia más persuasiva del sistema y está oculta.
+
+---
+
+## Qué NO hacer
+
+| Ítem | Veredicto |
+|---|---|
+| **`phone_enumerator` por flujos de reset** (megadose/ignorant) | **Cortar.** Es el único ítem que **provoca un efecto en la cuenta de un tercero**: dispara SMS/emails de recuperación reales a alguien que no ha consentido. Además activa anti-abuso y bloquea la IP en mitad de la sustentación. No es OSINT pasivo. Para teléfono, quedarse con `phonenumbers` (operador, región, tipo de línea): menos espectacular y defendible |
+| **Job de sincronización de datasets cada 24 h** | **Cortar.** Rompe la reproducibilidad (el artículo necesita "N sitios, snapshot Maigret @ `<sha>`"), añade dependencia de red en arranque y es un vector de supply chain: un fichero remoto sin firmar define a qué 3000 hosts mandas tráfico. Snapshot fijado por commit + comando manual |
+| **Fusionar WMN + Maigret en un fichero único** | **Cortar.** WhatsMyName es CC BY-SA 4.0 y el ShareAlike se contagia al derivado. Dos ficheros fuente, un adaptador que normaliza en memoria |
+| **Vender "4x cobertura"** | **Cambiar el objetivo.** La cola larga de Maigret es de baja calidad y aumenta falsos positivos. Vender precisión (`regexCheck`, `absenceStrs`), no volumen |
+| **Lista completa de proveedores estilo unavatar** | Sobredimensionado. 6–8 bastan |
+| **`hybrid` como reemplazo del selector de motores** | **Corregir a "tercera estrategia".** Reemplazar mata una feature existente y un brazo experimental del artículo |
+| **Arbitraje de clusters por LLM como default** | No determinista en demo. Condición opcional y logueada |
+| **Avatar → `confidence = 0.99`** | **Cortar el override.** Señal Fellegi-Sunter, no atajo |
+| **Alembic en Fase 1** | Prematuro. Fase 2, con baseline aplanado |
+| **Unificar el flujo de control de los motores en Fase 0** | Solo unificar **datos** (persistencia). El control (E) es refactor de comportamiento: cambia coste de LLM, latencia y determinismo. Va en Fase 3, cuando ya haya tests que digan si se rompió algo. **Regla: unifica los datos, no el control** |
+
+---
+
+## Mejoras propuestas más allá del análisis original
+
+| # | Mejora | Por qué |
+|---|---|---|
+| M1 | **`lib/entityTypes.ts` compartido** | La duplicación divergente de categorías es la causa raíz de los tipos huérfanos; sin esto el bug se repite con cada tipo nuevo |
+| M2 | **Barra de progreso real** | El evento `phase: "progress"` ya se emite y se desperdicia |
+| M3 | **Miniaturas de avatar en la UI** | La correlación visual ya ocurre y es la evidencia más persuasiva; hoy es invisible |
+| M4 | **Panel "¿por qué?" del scorer** | Convierte el score en explicación auditable |
+| M5 | **`docs/OSINT_SOURCES.md` vivo** | Materializa la vigilancia continua y documenta licencias (obligatorio para el CC BY-SA de WhatsMyName) |
+| M6 | **Tests con `respx` + tiers** | Hoy cero mocks; `test_e2e.py` golpea Internet y tarda ~3 min. Con miles de sitios será inviable |
+| M7 | **"Golden investigation"** | Un JSON con `ToolFinding` grabados que se reproduce por `persistence → resolver → clusters`. **Es el único test que detecta si unificar los motores cambió el resultado**, y protege los refactors de las Fases 2 y 3 |
+| M8 | **Fixtures de avatares por defecto** | Dos avatares por defecto distintos, verificando que el sistema **no** los correlaciona. Red de seguridad de la Fase 5 |
+| M9 | **Accesibilidad y contraste** | Cero atributos ARIA en todo el proyecto; labels sin `htmlFor`; `text-slate-500` sobre `#0b0f17` ≈ 4.3:1 y `text-slate-600` ≈ 2.8:1, ambos bajo AA. 5 usos de `text-[9px]` y 34 de `text-[10px]`, algunos dentro de nodos del grafo que además se escalan con el zoom |
+| M10 | **Indicador de ruta activa en el Navbar** | No usa `usePathname()`; los enlaces se ven idénticos estés donde estés. El health check además corre **una sola vez** al montar: si el backend arranca después, la pill sigue roja hasta recargar |
+
+---
+
+## Verificación
+
+**Backend**
+```bash
+cd backend && uv run pytest -q
+```
+Línea base: **200 passed, 3 deselected** (~68 s). Corre **sin Internet**; los 3 deselectos llevan marca `network` o `db`.
+
+**Frontend**
+```bash
+cd frontend && npx tsc --noEmit && npx eslint src
+```
+Línea base: `tsc` limpio; `eslint` con **19 errores preexistentes** (ver
+"Correcciones aprendidas"). `npx next lint` ya no existe en Next 16.
+
+**End-to-end por fase**
+1. Levantar backend (`uv run uvicorn app.main:app --reload`) y frontend (`pnpm dev`).
+2. Lanzar una investigación con un objetivo de huella pública amplia.
+3. **Recorrer las 6 pestañas** del expediente y confirmar que **todo hallazgo nuevo aparece con icono, filtro y color propios en las dos vistas, y puntúa en el scorecard** — es el criterio de aceptación de la regla backend↔frontend.
+4. Apagar el backend y comprobar que cada pantalla muestra un error honesto, no un vacío ni un dashboard de ceros.
+5. Imprimir el informe (Ctrl+P) y confirmar legibilidad sobre papel blanco.
+
+**Fuentes externas**
+
+Antes de cada fase, re-verificar con `curl` que los endpoints gratuitos siguen vivos y anotar el resultado en `docs/OSINT_SOURCES.md`. Se degradan y mueren sin aviso — es la razón de ser del principio de vigilancia continua.
+
+---
+
+## Extensión: autodefensa (2026-09-05)
+
+Fuera de la numeración de fases, a petición del usuario. **Comprobación de
+contraseñas filtradas** contra Pwned Passwords, en `/seguridad`.
+
+**Por qué está fuera del expediente.** Todo el resto del proyecto responde a
+"qué puede averiguar un tercero sobre esta persona". Una contraseña no se
+averigua desde fuera: la tiene que teclear su dueño. Meterla como pestaña de la
+investigación insinuaría que el sistema comprueba las contraseñas del objetivo,
+que es justo lo que no hace. Por eso es una ruta propia, no un `entity_type`, y
+no genera ninguna entidad ni toca el scorer, el orquestador ni las métricas del
+artículo.
+
+**Por qué vive en el navegador.** Es la decisión de diseño central y la única
+que hace la funcionalidad defendible. Si la contraseña llegara al backend
+tendríamos que *prometer* que no la guardamos; en el navegador no hace falta
+prometerlo. Verificado instrumentando `window.fetch` durante una comprobación
+real: una sola petición saliente, `api.pwnedpasswords.com/range/B4399`, y
+ninguna hacia `:8000`.
+
+**k-anonimato.** Se envían los **5 primeros caracteres** del SHA-1; vuelven unos
+2.000 sufijos y la comparación es local. El servicio no recibe el hash completo
+y no puede saber cuál de los ~2.000 candidatos era el nuestro.
+
+**Medido en vivo el 2026-09-05:**
+
+| Contraseña | Prefijo enviado | Apariciones | Lectura |
+|---|---|---|---|
+| `password123` | `CBFDA` | 2.266.543 | Cabecera de los diccionarios de ataque |
+| `Verano2024!` | `591EA` | 17 | **El caso pedagógico**: mayúscula, dígitos y símbolo, aspecto de contraseña fuerte, y ya está filtrada |
+| aleatoria de 16 caracteres | `B4399` | 0 | No aparece |
+
+`Verano2024!` es el ejemplo que conviene enseñar en la defensa: cumple todas las
+reglas de complejidad que se enseñan y aun así está en las listas, porque el
+patrón "estación + año + símbolo" es predecible aunque el resultado parezca
+aleatorio.
+
+**Red de seguridad:** `backend/tests/test_password_exposure.py` (8 tests
+estructurales). Vigilan que ninguna ruta del backend reciba contraseñas, que
+solo salga el prefijo, que no haya persistencia de ningún tipo y que el relleno
+de la API no pueda leerse como una coincidencia.

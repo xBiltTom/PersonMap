@@ -1,15 +1,32 @@
 import asyncio
 import time
-from typing import List, Set
+from dataclasses import dataclass, field
+from typing import List, Optional, Set
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.events import event_bus
+from app.engine.persistence import build_relationships, persist_findings
 from app.engine.pivot_rules import extract_and_apply_pivots
-from app.identity.scorer import compute_identity_score
 from app.models.entity import Entity
-from app.models.relationship import Relationship
 from app.models.target import Target
 from app.tools.base import TargetContext, ToolFinding
 from app.tools.registry import tool_registry
+
+
+@dataclass
+class SweepResult:
+    """
+    Resultado de una barrida heurística, ANTES de persistir.
+
+    `execute_investigation` la consume y persiste; el motor hibrido la consume
+    para encadenar después su capa de refinamiento por IA y persistir una sola
+    vez, de modo que la deduplicación vea los hallazgos de las dos capas juntos
+    en lugar de crear entidades repetidas.
+    """
+
+    findings: List[ToolFinding] = field(default_factory=list)
+    context: Optional[TargetContext] = None
+    executed_runs: Set[str] = field(default_factory=set)
+    rounds: int = 0
 
 
 class RuleEngine:
@@ -41,13 +58,24 @@ class RuleEngine:
                 parts.append(f"{req}:{val}")
         return "|".join(parts)
 
-    async def execute_investigation(
+    async def collect_findings(
         self,
         investigation_id: str,
         target: Target,
-        db: AsyncSession,
-    ) -> List[Entity]:
-        start_time = time.time()
+    ) -> SweepResult:
+        """
+        Ejecuta la barrida heuristica completa y devuelve los hallazgos en bruto.
+
+        Se separó de `execute_investigation` porque el motor hibrido necesita
+        exactamente esta etapa -- las rondas con pivoteo determinista -- pero
+        persistiendo después, junto con lo que añada su capa de refinamiento por
+        IA. Si cada capa persistiera por su cuenta, la deduplicacion de
+        `persist_findings` no vería los hallazgos de la otra y un mismo perfil
+        descubierto por ambas acabaría como dos entidades.
+
+        Todos los eventos que emite viajan con `layer: "heuristic"`, para que la
+        consola pueda distinguir a simple vista qué capa produjo cada línea.
+        """
         context = TargetContext(
             full_name=target.full_name,
             email=target.email,
@@ -60,15 +88,21 @@ class RuleEngine:
                 "candidate_urls": [],
                 "avatar_urls": [],
                 "investigation_id": investigation_id,
+                # Consentimiento para las fuentes que revelan a un tercero a
+                # quién se investiga. Viaja en el contexto porque es la
+                # herramienta la que decide si puede ejecutarse.
+                "self_consent": bool((target.extra_data or {}).get("self_consent")),
             },
         )
 
         all_findings: List[ToolFinding] = []
         executed_runs: Set[str] = set()
+        rounds_run = 0
 
         await event_bus.publish(investigation_id, {
             "type": "log",
             "phase": "init",
+            "layer": "heuristic",
             "message": f"Iniciando orquestador OSINT para el objetivo: {target.full_name or target.username or target.email}",
             "timestamp": time.time(),
         })
@@ -81,9 +115,12 @@ class RuleEngine:
             if not runnable:
                 break
 
+            rounds_run = round_idx
+
             await event_bus.publish(investigation_id, {
                 "type": "log",
                 "phase": f"round_{round_idx}",
+                "layer": "heuristic",
                 "message": f"Ronda {round_idx}: Despachando {len(runnable)} módulos OSINT ({', '.join(t.name for t in runnable)})",
                 "timestamp": time.time(),
             })
@@ -108,6 +145,7 @@ class RuleEngine:
                 await event_bus.publish(investigation_id, {
                     "type": "log",
                     "phase": "pivot",
+                    "layer": "heuristic",
                     "message": (
                         f"Pivoteo heurístico activado: Descubiertos {len(context.all_emails())} correos, "
                         f"{len(context.all_usernames())} alias y {len(context.extra.get('candidate_urls', []))} enlaces candidatos."
@@ -117,65 +155,38 @@ class RuleEngine:
             else:
                 break
 
-        # Deduplicate findings by (entity_type, platform, normalized value), preserving highest confidence
-        deduped_findings: dict[tuple[str, str, str], ToolFinding] = {}
-        for f in all_findings:
-            key = (
-                f.entity_type,
-                (f.platform or "").lower(),
-                f.value.strip().rstrip("/").lower(),
-            )
-            if key not in deduped_findings or f.confidence > deduped_findings[key].confidence:
-                deduped_findings[key] = f
+        return SweepResult(
+            findings=all_findings,
+            context=context,
+            executed_runs=executed_runs,
+            rounds=rounds_run,
+        )
 
-        # Persist entities and compute identity resolution scores
-        entities: List[Entity] = []
-        for f in deduped_findings.values():
-            score, breakdown = compute_identity_score(
-                display_name=f.display_name,
-                value=f.value,
-                metadata=f.metadata_info,
-                target=target,
-            )
-            # Combine tool baseline with score
-            final_conf = round(max(f.confidence, score), 2)
+    async def execute_investigation(
+        self,
+        investigation_id: str,
+        target: Target,
+        db: AsyncSession,
+    ) -> List[Entity]:
+        start_time = time.time()
 
-            entity = Entity(
-                investigation_id=investigation_id,
-                entity_type=f.entity_type,
-                platform=f.platform,
-                value=f.value,
-                display_name=f.display_name or f.value,
-                metadata_info=f.metadata_info,
-                confidence=final_conf,
-                verified=False,
-                source_tool=f.metadata_info.get("source_tool", "osint_engine"),
-            )
-            db.add(entity)
-            entities.append(entity)
+        sweep = await self.collect_findings(investigation_id, target)
 
-        await db.flush()
-
-        # Build relationships between entities (graph edges)
-        for i, ent_a in enumerate(entities):
-            for ent_b in entities[i + 1 :]:
-                rel_type, strength = self._detect_relationship(ent_a, ent_b)
-                if rel_type:
-                    rel = Relationship(
-                        investigation_id=investigation_id,
-                        source_entity_id=ent_a.id,
-                        target_entity_id=ent_b.id,
-                        relation_type=rel_type,
-                        strength=strength,
-                    )
-                    db.add(rel)
-
-        await db.flush()
+        # Deduplicación, scoring y persistencia compartidos con el agente autónomo
+        entities = await persist_findings(
+            investigation_id=investigation_id,
+            findings=sweep.findings,
+            target=target,
+            db=db,
+            default_source_tool="osint_engine",
+        )
+        await build_relationships(investigation_id, entities, db)
 
         elapsed = round(time.time() - start_time, 2)
         await event_bus.publish(investigation_id, {
             "type": "log",
             "phase": "complete",
+            "layer": "heuristic",
             "message": f"Fase de extracción finalizada: {len(entities)} entidades públicas registradas en {elapsed}s",
             "timestamp": time.time(),
         })
@@ -191,6 +202,7 @@ class RuleEngine:
         await event_bus.publish(investigation_id, {
             "type": "tool_start",
             "tool": tool.name,
+            "layer": "heuristic",
             "message": f"Ejecutando [{tool.name}]: {tool.description[:60]}...",
             "timestamp": time.time(),
         })
@@ -204,6 +216,7 @@ class RuleEngine:
             await event_bus.publish(investigation_id, {
                 "type": "tool_complete",
                 "tool": tool.name,
+                "layer": "heuristic",
                 "findings_count": len(findings),
                 "message": f"[{tool.name}] completado: {len(findings)} hallazgos.",
                 "timestamp": time.time(),
@@ -213,34 +226,12 @@ class RuleEngine:
             await event_bus.publish(investigation_id, {
                 "type": "tool_error",
                 "tool": tool.name,
+                "layer": "heuristic",
                 "error": str(err),
                 "message": f"[{tool.name}] error: {err}",
                 "timestamp": time.time(),
             })
             return []
-
-    def _detect_relationship(self, a: Entity, b: Entity) -> tuple[str | None, float]:
-        # Same platform or shared username
-        user_a = a.metadata_info.get("username", "").lower()
-        user_b = b.metadata_info.get("username", "").lower()
-        if user_a and user_b and user_a == user_b:
-            return "same_username", 0.85
-
-        # Email linkage
-        if a.entity_type == "email" and b.metadata_info.get("emails"):
-            if a.value.lower() in [e.lower() for e in b.metadata_info["emails"]]:
-                return "uses_email", 0.95
-
-        # Cross link
-        links_a = a.metadata_info.get("linked_profiles", [])
-        if any(b.value in l for l in links_a):
-            return "linked_to", 0.90
-
-        # General correlation by common domain / context
-        if a.platform == b.platform:
-            return "same_platform", 0.50
-
-        return None, 0.0
 
 
 rule_engine = RuleEngine()

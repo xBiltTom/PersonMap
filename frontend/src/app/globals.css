@@ -1,18 +1,36 @@
 @import "tailwindcss";
 
+/**
+ * Tokens del tema.
+ *
+ * En Tailwind v4 los tokens se declaran en `@theme` para que el motor genere
+ * las utilidades correspondientes (`bg-panel`, `text-accent`, `border-subtle`...).
+ * Antes las variables vivían en un `:root` suelto, así que no generaban ninguna
+ * utilidad y los componentes acababan usando ~30 valores hexadecimales sueltos
+ * escritos a mano, imposibles de mantener coherentes.
+ */
+@theme {
+  --color-background: #0b0f17;
+  --color-panel: #121824;
+  --color-panel-elevated: #1a2232;
+  --color-panel-inset: #0c111a;
+  --color-edge: #1e293b;
+  --color-edge-strong: #2b3a52;
+  --color-edge-subtle: #162030;
+  --color-ink: #f1f5f9;
+  --color-ink-muted: #94a3b8;
+  --color-accent: #38bdf8;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-danger: #f87171;
+}
+
+/* Espejo en `:root` para el CSS plano de este mismo fichero. */
 :root {
   --background: #0b0f17;
   --panel: #121824;
-  --panel-elevated: #1a2232;
   --border: #1e293b;
-  --border-subtle: #162030;
   --foreground: #f1f5f9;
-  --muted: #8b9bb4;
-  --accent: #38bdf8;
-  --accent-glow: rgba(56, 189, 248, 0.15);
-  --success: #34d399;
-  --warning: #fbbf24;
-  --danger: #f87171;
 }
 
 body {
@@ -38,6 +56,14 @@ body {
   background: #334155;
 }
 
+/* Foco visible: los inputs anulan el outline del navegador y lo sustituyen por
+   un cambio de borde de bajo contraste. Esto devuelve un indicador claro para
+   quien navega con teclado. */
+:focus-visible {
+  outline: 2px solid var(--color-accent, #38bdf8);
+  outline-offset: 2px;
+}
+
 /* Glassmorphism panel utility */
 .panel-card {
   background-color: #121824;
@@ -59,4 +85,143 @@ body {
 
 .animate-pulse-subtle {
   animation: pulse-subtle 3s infinite ease-in-out;
+}
+
+/* Aparición de paneles desplegables.
+   Sustituye a las clases `animate-in fade-in` que se usaban en varios
+   componentes: son del plugin `tailwindcss-animate`, que nunca estuvo en
+   package.json, así que no generaban ningún CSS y la animación no existía. */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in-up 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-pulse-subtle {
+    animation: none;
+  }
+}
+
+/* =====================================================================
+   IMPRESIÓN — Informe forense
+   =====================================================================
+   La interfaz es oscura y los navegadores no imprimen fondos por defecto, así
+   que sin estas reglas el informe salía en gris claro sobre papel blanco:
+   prácticamente ilegible. Además se colaban la barra de navegación, el pie y
+   la barra de pestañas. Esto invierte la paleta para papel y deja únicamente
+   el contenido del informe.
+   ===================================================================== */
+@media print {
+  @page {
+    margin: 1.5cm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    overflow: visible !important;
+  }
+
+  /* Cromo de la aplicación: no pertenece a un documento impreso. */
+  header,
+  footer,
+  nav,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Las tarjetas pasan a ser bloques con borde fino, sin relleno oscuro. */
+  .panel-card {
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 4px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Toda la escala de grises del tema oscuro se colapsa a tinta legible.
+     Se usan selectores de atributo porque las clases de Tailwind van
+     directamente en el marcado. */
+  [class*="text-slate-"],
+  [class*="text-white"] {
+    color: #1e293b !important;
+  }
+
+  [class*="text-sky-"],
+  [class*="text-cyan-"] {
+    color: #0369a1 !important;
+  }
+
+  [class*="text-emerald-"],
+  [class*="text-green-"] {
+    color: #047857 !important;
+  }
+
+  [class*="text-rose-"],
+  [class*="text-red-"] {
+    color: #b91c1c !important;
+  }
+
+  [class*="text-amber-"],
+  [class*="text-orange-"],
+  [class*="text-yellow-"] {
+    color: #b45309 !important;
+  }
+
+  [class*="text-purple-"],
+  [class*="text-violet-"],
+  [class*="text-fuchsia-"] {
+    color: #6d28d9 !important;
+  }
+
+  /* Fondos de color tenue: se eliminan para no depender de que el usuario
+     active "imprimir gráficos de fondo". */
+  [class*="bg-[#"],
+  [class*="bg-slate-"] {
+    background: transparent !important;
+  }
+
+  /* Los enlaces se imprimen con su destino, que en papel es lo único que
+     hace accionable una referencia. */
+  a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 9px;
+    color: #475569 !important;
+    word-break: break-all;
+  }
+
+  h1, h2, h3, h4 {
+    break-after: avoid;
+    page-break-after: avoid;
+    color: #0f172a !important;
+  }
+
+  table {
+    break-inside: auto;
+  }
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  thead {
+    display: table-header-group;
+  }
+
+  /* El lienzo del grafo no se imprime: es interactivo y a esta escala sale
+     como una mancha. El informe ya lleva la tabla de hallazgos. */
+  .react-flow {
+    display: none !important;
+  }
 }
