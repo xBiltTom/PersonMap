@@ -59,6 +59,17 @@ const SIGNAL_PHRASES: Record<
     no: "la firma criptográfica no corresponde",
     missing: "no hay ninguna prueba criptográfica disponible",
   },
+  alias_specificity: {
+    yes:
+      "el alias es muy específico (largo y formado con su nombre), así que es " +
+      "difícil que lo haya registrado otra persona",
+    no:
+      "el alias es corto, genérico o no se forma con su nombre: otra persona " +
+      "podría haberlo registrado",
+    missing:
+      "no se valoró el alias: la cuenta no se halló buscándolo, o la dirección " +
+      "es una búsqueda y no un perfil",
+  },
   avatar_match: {
     yes: "usa la misma foto de perfil que otra cuenta ya atribuida",
     no: "la foto de perfil es distinta",
@@ -96,9 +107,14 @@ function groupSignals(breakdown: IdentityBreakdown): Grouped {
 
     const applicableRaw = breakdown[`${key}_applicable`];
     const applicable = applicableRaw === undefined ? true : Boolean(applicableRaw);
+    // Encaja lo que empuja HACIA la persona. El grado de acuerdo por sí solo no
+    // lo dice: un acuerdo pequeño puede restar (un alias poco específico, un
+    // nombre apenas parecido) y contarlo como "lo que encaja" contradecía el %.
+    const weight = breakdown[`${key}_weight`];
+    const supports = typeof weight === "number" ? weight > 0 : value > 0;
 
     if (!applicable) out.sinDato.push(phrases.missing);
-    else if (value > 0) out.encaja.push(phrases.yes);
+    else if (supports) out.encaja.push(phrases.yes);
     else out.noEncaja.push(phrases.no);
   }
 
@@ -134,13 +150,7 @@ export function PlainExplanation({ breakdown, score, verified = false }: Props) 
   }
 
   const { encaja, noEncaja, sinDato } = groupSignals(breakdown);
-  const band = bandOf(
-    score,
-    verified,
-    typeof breakdown.signals_evaluated === "number"
-      ? breakdown.signals_evaluated
-      : undefined
-  );
+  const band = bandOf(score, verified, breakdown);
   const v = verdictFor(band);
   const pct = Math.round(score * 100);
 
