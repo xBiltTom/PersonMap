@@ -8,11 +8,15 @@ import {
   MiniMap,
   useNodesState,
   useEdgesState,
+  useStore,
+  useStoreApi,
+  useReactFlow,
+  getViewportForBounds,
   Handle,
   Position,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { GraphResponse } from "@/lib/types";
+import type { GraphResponse, IdentityBreakdown } from "@/lib/types";
 import { getGraphmlUrl, getInvestigationGraph } from "@/lib/api";
 import {
   buildEntityFilters,
@@ -20,6 +24,12 @@ import {
   getFindingIcon,
 } from "@/lib/entityTypes";
 import { CERTAINTY_BANDS, DEFAULT_VISIBLE_BANDS, bandOf } from "@/lib/certainty";
+import {
+  layoutDigitalMap,
+  type GroupKind,
+  type LayoutGroup,
+  type MapLayout,
+} from "@/lib/graphLayout";
 import { IdentityEvidence } from "@/components/identity/IdentityEvidence";
 import { PlainExplanation } from "@/components/identity/PlainExplanation";
 import { User, ExternalLink, AlertTriangle, Filter } from "lucide-react";
@@ -65,7 +75,7 @@ interface NodeCertainty {
   verified?: boolean;
   metadata_info?: {
     identity_score?: number;
-    identity_breakdown?: { signals_evaluated?: number };
+    identity_breakdown?: IdentityBreakdown;
   };
 }
 
@@ -90,7 +100,7 @@ function bandOfNode(data: NodeCertainty | undefined) {
   return bandOf(
     attributionOf(data),
     Boolean(data?.verified),
-    data?.metadata_info?.identity_breakdown?.signals_evaluated
+    data?.metadata_info?.identity_breakdown
   );
 }
 
@@ -176,7 +186,250 @@ function intPercent(val: number): string {
   return `${Math.round((val || 0) * 100)}%`;
 }
 
-export function DigitalMapGraph({ investigationId }: { investigationId: string }) {
+interface EmailEvidence {
+  email: string;
+  repo: string;
+  commit_url: string;
+}
+
+/**
+ * Pruebas verificables del hallazgo, si las hay.
+ *
+ * Hoy son dos: un commit firmado con el correo de la persona (escáner de
+ * GitHub) y el registro de una cuenta con ese correo que superó el control
+ * negativo (enumerador de correos).
+ */
+function VerifiableProof({ data }: { data: { platform?: string; metadata_info?: Record<string, unknown> } }) {
+  const meta = data.metadata_info ?? {};
+  const commits = Array.isArray(meta.email_evidence) ? (meta.email_evidence as EmailEvidence[]) : [];
+  const registration =
+    meta.registered === true && meta.negative_control === "passed" && typeof meta.email === "string"
+      ? meta.email
+      : null;
+
+  if (commits.length === 0 && !registration) return null;
+
+  return (
+    <div className="p-2.5 rounded-md bg-emerald-950/20 border border-emerald-500/25">
+      <span className="text-[10px] font-mono text-emerald-300 uppercase block mb-1">
+        Prueba verificable
+      </span>
+      <ul className="space-y-1.5 text-[11px] text-slate-300 leading-snug">
+        {commits.map((ev) => (
+          <li key={ev.commit_url}>
+            <a
+              href={ev.commit_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sky-400 hover:underline inline-flex items-center gap-1"
+            >
+              Commit en {ev.repo} firmado con {ev.email}
+              <ExternalLink className="w-3 h-3 shrink-0" aria-hidden="true" />
+            </a>
+          </li>
+        ))}
+        {registration && (
+          <li>
+            {data.platform ?? "La plataforma"} confirma que <strong>{registration}</strong> tiene
+            una cuenta. Se comprobó que no responde lo mismo a un correo inventado.
+          </li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
+const GROUP_COLORS: Record<GroupKind, string> = {
+  evidence: "#38bdf8",
+  linked: "#a855f7",
+  type: "#64748b",
+};
+
+function sectorPath(g: LayoutGroup): string {
+  const { startAngle: a0, endAngle: a1, innerRadius: r0, outerRadius: r1 } = g;
+  const large = a1 - a0 > Math.PI ? 1 : 0;
+  const p = (r: number, a: number) =>
+    `${(r * Math.cos(a)).toFixed(1)} ${(r * Math.sin(a)).toFixed(1)}`;
+  return (
+    `M ${p(r0, a0)} L ${p(r1, a0)} A ${r1} ${r1} 0 ${large} 1 ${p(r1, a1)} ` +
+    `L ${p(r0, a1)} A ${r0} ${r0} 0 ${large} 0 ${p(r0, a0)} Z`
+  );
+}
+
+/** Separación mínima en pantalla entre dos rótulos de la regla de certeza. */
+const RULER_MIN_SPACING = 28;
+
+/**
+ * Sectores de grupo y regla de certeza, dibujados DETRÁS de aristas y nodos.
+ *
+ * No son nodos de React Flow: así no cuentan como "nodos activos", no se
+ * pueden pulsar ni arrastrar y no alteran el encuadre. Se pintan como
+ * `<Background>`: un SVG en la capa -1 que sigue la transformación del lienzo.
+ *
+ * Las formas escalan con el lienzo, pero los rótulos no: se colocan en
+ * coordenadas de pantalla con tamaño fijo. Escalados, al encuadrar un mapa
+ * de 44 hallazgos (zoom ~0.25) quedaban en 5 px, ilegibles.
+ */
+function GroupBackdrop({ layout }: { layout: MapLayout }) {
+  const [tx, ty, zoom] = useStore((s) => s.transform);
+  const { groups, bands } = layout;
+  const toScreen = (x: number, y: number) => [x * zoom + tx, y * zoom + ty];
+
+  // Con el mapa muy alejado las bandas quedan a pocos píxeles unas de otras:
+  // se rotulan solo las que caben sin pisarse, empezando por las más seguras.
+  const rulerMarks: Array<{ band: number; y: number }> = [];
+  for (const b of bands) {
+    const [, y] = toScreen(0, -(b.innerRadius + b.outerRadius) / 2);
+    const previous = rulerMarks[rulerMarks.length - 1];
+    if (!previous || previous.y - y >= RULER_MIN_SPACING) rulerMarks.push({ band: b.band, y });
+  }
+  const outermost = bands[bands.length - 1];
+
+  return (
+    <svg
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      style={{ zIndex: -1 }}
+      aria-hidden="true"
+    >
+      <g transform={`translate(${tx},${ty}) scale(${zoom})`}>
+        {/* Fronteras entre bandas: cruzar una hacia fuera es perder certeza. */}
+        {bands.slice(1).map((b, i) => (
+          <circle
+            key={b.band}
+            r={(bands[i].outerRadius + b.innerRadius) / 2}
+            fill="none"
+            stroke="#334155"
+            strokeWidth={1.5 / zoom}
+            strokeDasharray={`${6 / zoom} ${8 / zoom}`}
+          />
+        ))}
+
+        {groups.map((g) => {
+          const color = GROUP_COLORS[g.kind];
+          return (
+            <path
+              key={g.id}
+              d={sectorPath(g)}
+              fill={color}
+              fillOpacity={0.05}
+              stroke={color}
+              strokeOpacity={0.35}
+              strokeWidth={1.5 / zoom}
+            />
+          );
+        })}
+      </g>
+
+      <g fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace">
+        {groups.map((g) => {
+          const mid = (g.startAngle + g.endAngle) / 2;
+          const cos = Math.cos(mid);
+          const sin = Math.sin(mid);
+          const [ax, ay] = toScreen(g.outerRadius * cos, g.outerRadius * sin);
+          // El rótulo crece hacia fuera del sector, nunca hacia sus nodos. En la
+          // mitad superior tampoco se centra: invadiría la regla del eje vertical.
+          const anchor =
+            cos > 0.35 || (sin < 0 && cos >= 0)
+              ? "start"
+              : cos < -0.35 || sin < 0
+                ? "end"
+                : "middle";
+          const x = ax + cos * 10;
+          const y = ay + sin * 10 + (sin < 0 ? -16 : 12);
+          return (
+            <g key={g.id}>
+              <text x={x} y={y} textAnchor={anchor} fontSize={12} fontWeight={700} fill="#cbd5e1">
+                {g.label} · {g.size}
+              </text>
+              <text x={x} y={y + 13} textAnchor={anchor} fontSize={10} fill="#64748b">
+                {g.hint}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Regla de certeza, en el hueco que la disposición deja arriba. */}
+        {rulerMarks.map(({ band: index, y }) => {
+          const band = CERTAINTY_BANDS[index];
+          const width = band.label.length * 6.6 + 28;
+          return (
+            <g key={index} transform={`translate(${tx} ${y})`}>
+              <rect
+                x={-width / 2}
+                y={-10}
+                width={width}
+                height={20}
+                rx={10}
+                fill="#0b1220"
+                stroke={band.hex}
+                strokeOpacity={0.6}
+              />
+              <circle cx={-width / 2 + 10} r={3.5} fill={band.hex} />
+              <text x={5} y={4} textAnchor="middle" fontSize={11} fill={band.hex}>
+                {band.label}
+              </text>
+            </g>
+          );
+        })}
+        {outermost && (
+          <text
+            x={tx}
+            y={toScreen(0, -outermost.outerRadius)[1] - 26}
+            textAnchor="middle"
+            fontSize={10}
+            fill="#64748b"
+          >
+            ↑ cuanto más lejos, menos seguro
+          </text>
+        )}
+      </g>
+    </svg>
+  );
+}
+
+/** Margen del encuadre: el hueco de los rótulos de grupo, que miden hasta ~190 px. */
+const FIT_PADDING = { x: "200px", y: "56px" } as const;
+
+/**
+ * Encuadra el mapa cada vez que cambia la disposición.
+ *
+ * No usa `fitView`: solo cuenta los nodos ya medidos, y justo después de
+ * activar una banda la mitad aún no tiene tamaño, así que encuadraba la mitad
+ * del mapa. Tampoco `fitBounds`, cuyo margen solo admite una fracción: el hueco
+ * que hace falta es el de los rótulos, que tienen tamaño fijo en píxeles.
+ *
+ * Solo reencuadra al cambiar la disposición, no al cambiar el tamaño del
+ * lienzo: abrir el detalle de un nodo lo estrecha y no debe perderse el zoom.
+ */
+function FitToLayout({ bounds }: { bounds: MapLayout["bounds"] }) {
+  const store = useStoreApi();
+  const { setViewport } = useReactFlow();
+  const ready = useStore((s) => s.width > 0 && s.height > 0 && Boolean(s.panZoom));
+
+  useEffect(() => {
+    if (!ready) return;
+    const { width, height, minZoom, maxZoom } = store.getState();
+    setViewport(
+      getViewportForBounds(bounds, width, height, minZoom, maxZoom, FIT_PADDING),
+      { duration: 300 }
+    );
+  }, [bounds, ready, store, setViewport]);
+
+  return null;
+}
+
+export function DigitalMapGraph({
+  investigationId,
+  refreshKey,
+}: {
+  investigationId: string;
+  /**
+   * Cambia cuando cambia el expediente, por ejemplo al terminar la búsqueda.
+   * El grafo solo se pedía al montar la pestaña, así que quien la tenía abierta
+   * al terminar seguía viendo el mapa vacío hasta cambiar de pestaña y volver.
+   */
+  refreshKey?: string;
+}) {
   const [allNodes, setAllNodes] = useState<any[]>([]);
   const [allEdges, setAllEdges] = useState<any[]>([]);
   const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
@@ -248,8 +501,6 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
       const data: GraphResponse = await getInvestigationGraph(investigationId);
       setAllNodes(data.nodes);
       setAllEdges(data.edges);
-      setNodes(data.nodes);
-      setEdges(data.edges);
       setError(null);
     } catch (err: unknown) {
       // Antes esto solo hacía console.error y el usuario veía un lienzo vacío
@@ -258,42 +509,60 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
     } finally {
       setLoading(false);
     }
-  }, [investigationId, setNodes, setEdges]);
+  }, [investigationId]);
 
   useEffect(() => {
     loadGraph();
-  }, [loadGraph]);
+  }, [loadGraph, refreshKey]);
 
-  // Apply layer filtering
-  useEffect(() => {
-    const passesTier = (n: { type?: string; data?: NodeCertainty }) =>
-      n.type === "personRoot" || visibleBands.has(bandOfNode(n.data).id);
-
-    if (activeCategory === "all") {
-      const soloCertidumbre = allNodes.filter(passesTier);
-      const idsVisibles = new Set(soloCertidumbre.map((n) => n.id));
-      setNodes(soloCertidumbre);
-      setEdges(
-        allEdges.filter(
-          (e: { source: string; target: string }) =>
-            idsVisibles.has(e.source) && idsVisibles.has(e.target)
-        )
-      );
-      return;
-    }
-    const filteredNodes = allNodes.filter(
+  /**
+   * Lo que pasa los filtros, ya colocado por grupo y certeza (`lib/graphLayout`).
+   *
+   * Las posiciones del backend se ignoran y la disposición se recalcula con
+   * cada filtro: así los grupos se recomponen con lo que se ve, en vez de dejar
+   * huecos donde estaban los nodos ocultos.
+   */
+  const view = useMemo(() => {
+    const visibleNodes = allNodes.filter(
       (n) =>
-        (n.type === "personRoot" || n.data.entity_type === activeCategory) &&
-        passesTier(n)
+        n.type === "personRoot" ||
+        (visibleBands.has(bandOfNode(n.data).id) &&
+          (activeCategory === "all" || n.data.entity_type === activeCategory))
     );
-    const visibleNodeIds = new Set(filteredNodes.map((n) => n.id));
-    const filteredEdges = allEdges.filter(
-      (e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)
+    const visibleIds = new Set(visibleNodes.map((n) => n.id));
+    const visibleEdges = allEdges.filter(
+      (e) => visibleIds.has(e.source) && visibleIds.has(e.target)
     );
 
-    setNodes(filteredNodes);
-    setEdges(filteredEdges);
-  }, [activeCategory, visibleBands, allNodes, allEdges, setNodes, setEdges]);
+    const root = visibleNodes.find((n) => n.type === "personRoot");
+    const layout = layoutDigitalMap(
+      root?.id ?? "",
+      visibleNodes
+        .filter((n) => n.type !== "personRoot")
+        .map((n) => ({
+          id: n.id,
+          band: CERTAINTY_BANDS.indexOf(bandOfNode(n.data)),
+          score: attributionOf(n.data),
+          entityType: n.data.entity_type,
+          breakdown: n.data.metadata_info?.identity_breakdown,
+        })),
+      visibleEdges
+    );
+
+    return {
+      nodes: visibleNodes.map((n) => ({
+        ...n,
+        position: layout.positions.get(n.id) ?? n.position,
+      })),
+      edges: visibleEdges,
+      layout,
+    };
+  }, [activeCategory, visibleBands, allNodes, allEdges]);
+
+  useEffect(() => {
+    setNodes(view.nodes);
+    setEdges(view.edges);
+  }, [view, setNodes, setEdges]);
 
   const onNodeClick = useCallback((_: any, node: any) => {
     setSelectedNode(node);
@@ -503,18 +772,36 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={onNodeClick}
-          fitView
-          fitViewOptions={{ padding: 0.2 }}
-          minZoom={0.2}
+          nodeOrigin={[0.5, 0.5]}
+          // Con todas las bandas visibles una investigación grande ocupa ~7.000 px
+          // de alto y encuadrarla entera exige bajar de 0.1.
+          minZoom={0.04}
           maxZoom={1.5}
         >
           <Background color="#1e293b" gap={20} size={1} />
+          <GroupBackdrop layout={view.layout} />
+          <FitToLayout bounds={view.layout.bounds} />
           <Controls className="!bg-[#121824] !border-[#212d40] !text-slate-200" />
           <MiniMap
             className="!bg-[#0d121c] !border-[#1e293b] rounded-md"
-            nodeColor={(n) => (n.type === "personRoot" ? "#38bdf8" : "#334155")}
+            nodeColor={(n) =>
+              n.type === "personRoot" ? "#38bdf8" : bandOfNode(n.data as NodeCertainty).hex
+            }
           />
         </ReactFlow>
+
+        {!loading && !error && view.layout.groups.length > 0 && (
+          <div className="absolute bottom-3 left-14 z-10 max-w-[260px] px-3 py-2 rounded-md bg-[#0d131f]/90 border border-[#212f45] text-[10px] leading-snug text-slate-400 pointer-events-none">
+            <p>
+              <strong className="text-slate-200">Cada sector es un grupo:</strong>{" "}
+              hallazgos que comparten la misma evidencia hacia la persona.
+            </p>
+            <p className="mt-1">
+              <strong className="text-slate-200">La distancia es la certeza:</strong>{" "}
+              cuanto más lejos del centro, menos seguro.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Detail Slideout for Clicked Entity */}
@@ -559,6 +846,10 @@ export function DigitalMapGraph({ investigationId }: { investigationId: string }
                 <span className="font-mono text-slate-300 break-all">{selectedNode.data.value}</span>
               )}
             </div>
+
+            {/* Lo que se puede abrir delante de la persona si dice "esa cuenta
+                no es mía": no el porcentaje, sino el dato que lo sostiene. */}
+            <VerifiableProof data={selectedNode.data} />
 
             <div className="pt-3 border-t border-[#1e293b]">
               <span className="text-[10px] font-mono text-slate-400 uppercase block mb-2">
