@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
-from typing import Any, Dict, List, Optional
+import secrets
+import string
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 import httpx
 from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
@@ -21,6 +23,11 @@ class EmailEnumeratorTool(BaseTool):
     category = ToolCategory.EMAIL
     required_inputs = ["email"]
 
+    # Sondas que no se limitan a preguntar si el correo está libre: envían un
+    # alta completa. Con un correo inventado podrían crear una cuenta de verdad
+    # en un servicio ajeno, así que a estas no se les pasa el control negativo.
+    SUBMITS_A_SIGNUP = {"_check_discord", "_check_strava", "_check_tumblr"}
+
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
         findings: List[ToolFinding] = []
         emails = context.all_emails()
@@ -33,46 +40,87 @@ class EmailEnumeratorTool(BaseTool):
                 if not clean_email or "@" not in clean_email:
                     continue
 
-                probes = [
-                    self._check_spotify(client, clean_email),
-                    self._check_discord(client, clean_email),
-                    self._check_twitter(client, clean_email),
-                    self._check_github(client, clean_email),
-                    self._check_duolingo(client, clean_email),
-                    self._check_firefox(client, clean_email),
-                    self._check_chess(client, clean_email),
-                    self._check_lastpass(client, clean_email),
-                    self._check_adobe(client, clean_email),
-                    self._check_steam(client, clean_email),
-                    self._check_strava(client, clean_email),
-                    self._check_tumblr(client, clean_email),
+                checks = [
+                    self._check_spotify,
+                    self._check_discord,
+                    self._check_twitter,
+                    self._check_github,
+                    self._check_duolingo,
+                    self._check_firefox,
+                    self._check_chess,
+                    self._check_lastpass,
+                    self._check_adobe,
+                    self._check_steam,
+                    self._check_strava,
+                    self._check_tumblr,
                 ]
 
-                results = await asyncio.gather(*probes, return_exceptions=True)
+                results = await asyncio.gather(
+                    *(check(client, clean_email) for check in checks),
+                    return_exceptions=True,
+                )
 
-                for res in results:
-                    if isinstance(res, dict) and res.get("registered"):
-                        platform = res["platform"]
-                        profile_url = res.get("url", f"https://{platform.lower().replace(' ', '')}.com")
-                        findings.append(
-                            ToolFinding(
-                                entity_type="social_account",
-                                platform=platform,
-                                value=f"{platform} ({clean_email})",
-                                display_name=f"{platform}: Cuenta Activa",
-                                confidence=0.90,
-                                metadata_info={
-                                    "email": clean_email,
-                                    "platform": platform,
-                                    "registered": True,
-                                    "category": res.get("category", "services"),
-                                    "url": profile_url,
-                                    "source_tool": "email_enumerator",
-                                },
-                            )
+                for check, res in zip(checks, results):
+                    if not (isinstance(res, dict) and res.get("registered")):
+                        continue
+                    if getattr(check, "__name__", "") in self.SUBMITS_A_SIGNUP:
+                        control = "untested"
+                    elif await self._accepts_invented_email(client, check, clean_email):
+                        continue
+                    else:
+                        control = "passed"
+
+                    platform = res["platform"]
+                    profile_url = res.get("url", f"https://{platform.lower().replace(' ', '')}.com")
+                    findings.append(
+                        ToolFinding(
+                            entity_type="social_account",
+                            platform=platform,
+                            value=f"{platform} ({clean_email})",
+                            display_name=f"{platform}: Cuenta Activa",
+                            confidence=0.90,
+                            metadata_info={
+                                "email": clean_email,
+                                "platform": platform,
+                                "registered": True,
+                                "category": res.get("category", "services"),
+                                "url": profile_url,
+                                "source_tool": "email_enumerator",
+                                "negative_control": control,
+                            },
                         )
+                    )
 
         return findings
+
+    @staticmethod
+    def _invented_email(email: str) -> str:
+        """Correo del mismo dominio que nadie ha registrado."""
+        domain = email.rsplit("@", 1)[1]
+        alphabet = string.ascii_lowercase + string.digits
+        return f"pm{''.join(secrets.choice(alphabet) for _ in range(16))}@{domain}"
+
+    async def _accepts_invented_email(
+        self,
+        client: httpx.AsyncClient,
+        check: Callable[[httpx.AsyncClient, str], Awaitable[Optional[Dict[str, Any]]]],
+        email: str,
+    ) -> bool:
+        """
+        Control negativo: ¿la plataforma también da por registrado un correo inventado?
+
+        Una cuenta registrada con el correo de la persona se le atribuye al 99 %,
+        así que un falso "registrado" es lo peor que puede enseñarse: una cuenta
+        que no existe, presentada como suya. Un correo de prueba sintético
+        (`test_student_osint@gmail.com`) llegó a salir registrado en Quora; un
+        endpoint que responde "registrado" a cualquier correo lo hace también con
+        uno inventado, y así se descubre.
+        """
+        try:
+            res = await check(client, self._invented_email(email))
+        except Exception:
+            return False
+        return isinstance(res, dict) and bool(res.get("registered"))
 
     # --- INDIVIDUAL PASSIVE PROBES ---
 

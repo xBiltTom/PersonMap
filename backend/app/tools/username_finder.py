@@ -18,6 +18,8 @@ Lo que aporta la unificación no es sobre todo volumen, es **precisión**:
 """
 
 import asyncio
+import secrets
+import string
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -29,6 +31,10 @@ from app.core.events import event_bus
 from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 from app.tools.dataset_adapter import SiteCheck, build_catalog, catalog_stats
+
+HTML_ACCEPT = {
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+}
 
 
 class UsernameFinderTool(BaseTool):
@@ -51,6 +57,9 @@ class UsernameFinderTool(BaseTool):
     GENERIC_USERS_FILE = DATA_DIR / "generic_usernames.txt"
 
     PROGRESS_EVERY = 25
+
+    # Intentos de inventar un alias de control que el formato del sitio acepte.
+    CONTROL_ATTEMPTS = 5
 
     def __init__(self) -> None:
         self._catalog: Optional[List[SiteCheck]] = None
@@ -128,7 +137,8 @@ class UsernameFinderTool(BaseTool):
         # Contadores acumulados de la investigación, para que la interfaz pueda
         # decir cuántos sitios se descartaron sin gastar una petición.
         stats: Dict[str, int] = context.extra.setdefault(
-            "username_finder_stats", {"checked": 0, "skipped_by_regex": 0}
+            "username_finder_stats",
+            {"checked": 0, "skipped_by_regex": 0, "rejected_by_control": 0},
         )
 
         # El tope de alias es lo que acota la duración de la investigación: cada
@@ -180,7 +190,7 @@ class UsernameFinderTool(BaseTool):
                         "timestamp": time.time(),
                     })
 
-                progress_counter = {"checked": 0}
+                progress_counter = {"checked": 0, "control_rejected": 0}
                 tasks = [
                     self._check_site(
                         client,
@@ -195,6 +205,21 @@ class UsernameFinderTool(BaseTool):
                 ]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 stats["checked"] += len(applicable)
+
+                rejected = progress_counter["control_rejected"]
+                stats["rejected_by_control"] = stats.get("rejected_by_control", 0) + rejected
+                if investigation_id and rejected:
+                    await event_bus.publish(investigation_id, {
+                        "type": "log",
+                        "phase": "catalog_filter",
+                        "tool": self.name,
+                        "message": (
+                            f"[{self.name}] '@{clean_user}': {rejected} "
+                            f"{'plataforma descartada' if rejected == 1 else 'plataformas descartadas'} "
+                            f"por control negativo: también «encontraban» un alias inventado."
+                        ),
+                        "timestamp": time.time(),
+                    })
 
                 for res in results:
                     if isinstance(res, ToolFinding):
@@ -217,14 +242,7 @@ class UsernameFinderTool(BaseTool):
 
         try:
             async with semaphore:
-                resp = await http_client.get(
-                    client,
-                    url,
-                    headers={
-                        "Accept": "text/html,application/xhtml+xml,application/xml;"
-                        "q=0.9,image/webp,*/*;q=0.8"
-                    },
-                )
+                resp = await http_client.get(client, url, headers=HTML_ACCEPT)
 
             progress_counter["checked"] += 1
             if (
@@ -256,6 +274,17 @@ class UsernameFinderTool(BaseTool):
             if not self._matches(site, resp, username):
                 return None
 
+            # Control negativo: el mismo sitio con un alias inventado. Si también
+            # "lo encuentra", el sitio responde igual a cualquier alias y el
+            # resultado no prueba que la cuenta exista. Es lo que evita enseñar a
+            # alguien una cuenta que no tiene. Medido con "JorgeWueder": los foros
+            # de Southklad, Starsonice y Terminatorium lo "encontraban", y también
+            # encuentran un alias inventado.
+            control = await self._control_matches(client, site, username, semaphore)
+            if control is True:
+                progress_counter["control_rejected"] += 1
+                return None
+
             # Con cadena de presencia la comprobación es específica del sitio;
             # sin ella solo se ha visto un código de estado, que es más débil.
             confidence = 0.90 if site.presence else 0.85
@@ -280,6 +309,9 @@ class UsernameFinderTool(BaseTool):
                     "url": pretty_url,
                     "source_tool": "username_finder",
                     "checked_status": resp.status_code,
+                    # "untested" si no se pudo inventar un alias válido para el
+                    # formato del sitio o la petición de control falló.
+                    "negative_control": "passed" if control is False else "untested",
                     # Procedencia del dato del catálogo. Es lo que permite decir
                     # en el expediente de dónde salió la comprobación, y medir
                     # en el artículo qué aportó cada dataset.
@@ -290,6 +322,58 @@ class UsernameFinderTool(BaseTool):
             )
         except Exception:
             return None
+
+    def _invented_alias(self, site: SiteCheck, username: str) -> Optional[str]:
+        """
+        Alias con la forma del real que casi con seguridad no ha registrado nadie.
+
+        Conserva el tipo de cada carácter (letra, dígito, separador) para que el
+        sitio lo acepte igual que el real, y lo alarga hasta 12 caracteres si el
+        formato lo permite: un alias corto inventado sí puede existir por azar.
+        """
+
+        def shaped(template: str) -> str:
+            return "".join(
+                secrets.choice(string.ascii_lowercase)
+                if ch.isalpha()
+                else secrets.choice(string.digits)
+                if ch.isdigit()
+                else ch
+                for ch in template
+            )
+
+        for _ in range(self.CONTROL_ATTEMPTS):
+            for template in (username.ljust(12, "x"), username):
+                candidate = shaped(template)
+                if candidate.lower() != username.lower() and site.accepts_username(candidate):
+                    return candidate
+        return None
+
+    async def _control_matches(
+        self,
+        client: httpx.AsyncClient,
+        site: SiteCheck,
+        username: str,
+        semaphore: asyncio.Semaphore,
+    ) -> Optional[bool]:
+        """
+        ¿El sitio también "encuentra" un alias inventado?
+
+        `None` si no se pudo comprobar. En ese caso el hallazgo se conserva: sin
+        control no hay prueba de que el sitio falle, y descartarlo perdería
+        cuentas reales por un fallo de red.
+        """
+        control = self._invented_alias(site, username)
+        if control is None:
+            return None
+        try:
+            async with semaphore:
+                resp = await http_client.get(client, site.build_url(control), headers=HTML_ACCEPT)
+        except Exception:
+            return None
+        if resp is None:
+            return None
+        return self._matches(site, resp, control)
 
     def _matches(
         self,
