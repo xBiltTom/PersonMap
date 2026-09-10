@@ -129,6 +129,7 @@ async def dispatch_tool_call(
     base_context: Optional[TargetContext] = None,
     source_prefix: Optional[str] = None,
     engine_layer: Optional[str] = None,
+    investigation_id: Optional[str] = None,
 ) -> List[ToolFinding]:
     """
     Ejecuta la herramienta que pidió el modelo y etiqueta la procedencia.
@@ -137,12 +138,19 @@ async def dispatch_tool_call(
     por compatibilidad con los expedientes ya guardados). `engine_layer` marca
     en qué capa del motor nació el hallazgo, que es lo que permite a la interfaz
     distinguir la cosecha heurística del refinamiento por IA.
+
+    `investigation_id` es lo que permite a las herramientas largas publicar su
+    progreso. El agente autónomo construye el contexto desde cero y no lo
+    pasaba, así que `username_finder` barría miles de sitios sin emitir un solo
+    evento y la interfaz no tenía con qué dibujar la barra.
     """
     tool = tool_registry.get_tool(resolve_tool_name(name))
     if not tool:
         return []
 
     ctx = build_call_context(args, target, base_context)
+    if investigation_id:
+        ctx.extra["investigation_id"] = investigation_id
     findings = await tool.execute(ctx)
 
     for f in findings:
