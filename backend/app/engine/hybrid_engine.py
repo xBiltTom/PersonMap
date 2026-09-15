@@ -35,9 +35,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Set, Tuple
 
-import litellm
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.llm_client import complete_with_retries, describe_llm_error
 from app.agent.tool_dispatch import (
     build_tool_schemas,
     dispatch_tool_call,
@@ -234,12 +234,22 @@ class HybridEngine:
         for _ in range(max(1, settings.hybrid_max_refinement_turns)):
             turns_used += 1
             try:
-                response = await litellm.acompletion(
+                response = await complete_with_retries(
                     model=settings.llm_model,
                     api_key=settings.llm_api_key,
                     messages=messages,
                     tools=build_tool_schemas(),
                     temperature=0.2,
+                    on_retry=lambda attempt, delay, err: event_bus.publish(investigation_id, {
+                        "type": "log",
+                        "phase": "hybrid_refine_retry",
+                        "layer": REFINEMENT_LAYER,
+                        "message": (
+                            f"Capa 2/2 en espera: {describe_llm_error(err)}. "
+                            f"Reintento {attempt} en {delay:.0f} s..."
+                        ),
+                        "timestamp": time.time(),
+                    }),
                 )
             except Exception as err:
                 # El refinamiento es opcional por diseño: si el proveedor falla,
@@ -249,8 +259,8 @@ class HybridEngine:
                     "phase": "hybrid_refine_error",
                     "layer": REFINEMENT_LAYER,
                     "message": (
-                        f"Capa 2/2 interrumpida ({err}). Se conserva el resultado "
-                        f"completo del barrido heurístico."
+                        f"Capa 2/2 interrumpida ({describe_llm_error(err)}). Se conserva "
+                        f"el resultado completo del barrido heurístico."
                     ),
                     "timestamp": time.time(),
                 })

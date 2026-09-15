@@ -10,6 +10,8 @@ import { IdentityClustersView } from "@/components/identity/IdentityClustersView
 import { FindingsTable } from "@/components/findings/FindingsTable";
 import { DiscoveryTimeline } from "@/components/timeline/DiscoveryTimeline";
 import { LiveConsole } from "@/components/console/LiveConsole";
+import { InvestigationProgress } from "@/components/console/InvestigationProgress";
+import { useInvestigationStream } from "@/lib/useInvestigationStream";
 import { ReportView } from "@/components/report/ReportView";
 import {
   ArrowLeft,
@@ -62,6 +64,16 @@ export default function InvestigationDetailPage({
 
     return () => clearInterval(interval);
   }, [id, loadData, investigation?.status]);
+
+  // Un único stream para toda la página: lo comparten la consola y la barra de
+  // progreso, que tiene que verse en cualquier pestaña mientras dura la búsqueda.
+  // Al cerrarse se recarga el expediente sin esperar al siguiente sondeo (solo
+  // si seguía en curso: el stream de una ya terminada también manda el cierre).
+  const wasRunning = investigation?.status === "running" || investigation?.status === "pending";
+  const handleStreamFinished = useCallback(() => {
+    if (wasRunning) loadData();
+  }, [wasRunning, loadData]);
+  const stream = useInvestigationStream(id, handleStreamFinished);
 
   const handleExportJson = () => {
     if (!investigation) return;
@@ -175,6 +187,18 @@ export default function InvestigationDetailPage({
                   </span>
                 )}
 
+              {investigation.metrics?.agent_fallback_to_rules && (
+                <span
+                  title={
+                    `El modelo de IA dejó de responder (${investigation.metrics.agent_llm_error ?? "error del proveedor"}). ` +
+                    "Para no dejar la investigación incompleta se ejecutó el barrido heurístico completo."
+                  }
+                  className="text-[10px] font-mono px-2 py-0.5 rounded border bg-amber-500/10 text-amber-300 border-amber-500/30"
+                >
+                  IA no disponible · completado con reglas
+                </span>
+              )}
+
               {typeof investigation.metrics?.hybrid_entities_only_from_llm === "number" &&
                 investigation.metrics.hybrid_entities_only_from_llm > 0 && (
                   <span
@@ -263,10 +287,21 @@ export default function InvestigationDetailPage({
         </div>
       </div>
 
+      {isRunning && (
+        <InvestigationProgress
+          stream={stream}
+          startedAt={investigation.created_at}
+          onOpenConsole={() => setActiveTab("console")}
+        />
+      )}
+
       {/* Tab Content Panels */}
       <div>
         {activeTab === "graph" && (
-          <DigitalMapGraph investigationId={investigation.id} />
+          <DigitalMapGraph
+            investigationId={investigation.id}
+            refreshKey={`${investigation.status}:${investigation.completed_at ?? ""}`}
+          />
         )}
 
         {activeTab === "identity" && (
@@ -287,7 +322,7 @@ export default function InvestigationDetailPage({
 
         {activeTab === "console" && (
           <LiveConsole
-            investigationId={investigation.id}
+            stream={stream}
             isFinished={investigation.status === "completed" || investigation.status === "failed"}
           />
         )}

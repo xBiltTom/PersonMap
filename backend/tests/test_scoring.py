@@ -109,6 +109,110 @@ def test_enumerated_username_is_not_evidence():
     assert breakdown2["username_match"] == 1.0
 
 
+# Objetivo de los casos reales de la investigación del 2026-09-10.
+def _jorge() -> Target:
+    return Target(
+        full_name="Jorge Wueder de la Cruz Ortiz",
+        email="jorgewueder@outlook.es",
+        username="JorgeWueder",
+    )
+
+
+def test_account_registered_with_the_target_email_is_evidence():
+    """
+    Una cuenta registrada con el correo del objetivo es suya: un correo tiene un
+    único dueño. Antes se le aplicaba la regla del alias enumerado y quedaba en
+    "sin datos" (10 %). Caso real: X registrado con jorgewueder@outlook.es.
+    """
+    metadata = {
+        "source_tool": "agent:email_enumerator",
+        "source_tools": ["email_enumerator"],
+        "email": "jorgewueder@outlook.es",
+        "registered": True,
+        "url": "https://x.com",
+    }
+    score, breakdown = compute_identity_score(
+        "Twitter/X: Cuenta Activa", "Twitter/X (jorgewueder@outlook.es)", metadata, _jorge()
+    )
+
+    assert breakdown["email_match_applicable"] is True
+    assert breakdown["email_match"] == 1.0
+    assert score >= 0.9
+
+
+def test_enumerating_a_pivot_email_is_not_a_disagreement():
+    """
+    Si se buscó por OTRO correo (uno descubierto al pivotar), que el hallazgo
+    lleve ese correo no contradice el del objetivo: no dice nada de él.
+    """
+    metadata = {"source_tool": "breach_checker", "email": "otro@gmail.com"}
+    _, breakdown = compute_identity_score(None, "otro@gmail.com", metadata, _jorge())
+
+    assert breakdown["email_match_applicable"] is False
+    assert breakdown["email_match_weight"] == 0.0
+
+
+def test_alias_used_as_name_is_not_a_name_assertion():
+    """
+    El escáner de GitHub rellenaba `name` con el login cuando el perfil no tiene
+    nombre, y "JorgeWueder" restaba −2.16 bits como si fuera un nombre distinto.
+    """
+    metadata = {
+        "source_tool": "github_deep_scanner",
+        "username": "JorgeWueder",
+        "name": "JorgeWueder",
+    }
+    _, breakdown = compute_identity_score(
+        "JorgeWueder (@JorgeWueder)", "https://github.com/JorgeWueder", metadata, _jorge()
+    )
+
+    assert breakdown["name_match_applicable"] is False
+    assert breakdown["name_match_weight"] == 0.0
+
+
+def _enumerated(target: Target, url: str) -> Tuple[float, Dict[str, Any]]:
+    metadata = {"source_tool": "username_finder", "username": target.username, "url": url}
+    return compute_identity_score(None, url, metadata, target)
+
+
+def test_specific_alias_reaches_probable_but_never_confirms():
+    """
+    Cuando el alias es el único vínculo, uno muy específico hace plausible la
+    atribución pero no la demuestra: debe quedar en "Probable" (0.40-0.70) y
+    nunca cruzar el umbral de decisión por sí solo.
+    """
+    score, breakdown = _enumerated(_jorge(), "https://kick.com/JorgeWueder")
+
+    assert breakdown["alias_specificity_applicable"] is True
+    assert breakdown["alias_specificity"] >= 0.9
+    assert 0.40 <= score < DECISION_THRESHOLD
+
+
+def test_common_or_generic_alias_does_not_help():
+    """Un alias que registra mucha gente no debe acercar la cuenta a nadie."""
+    comun = Target(full_name="Linus Torvalds", username="torvalds")
+    score_comun, _ = _enumerated(comun, "https://kick.com/torvalds")
+    assert score_comun < 0.15
+
+    generico = Target(username="admin")
+    score_generico, breakdown = _enumerated(generico, "https://kick.com/admin")
+    assert breakdown["alias_specificity"] == 0.0
+    assert score_generico < PRIOR_MATCH_PROBABILITY
+
+
+def test_alias_inside_a_search_url_is_not_a_profile():
+    """
+    Hay sitios del catálogo que responden 200 a cualquier búsqueda. Ahí el alias
+    no identifica ninguna cuenta y su especificidad no dice nada.
+    """
+    for url in (
+        "https://southklad.ru/forum/search.php?keywords=&terms=all&author=JorgeWueder",
+        "https://starsonice.borda.ru/?32-JorgeWueder",
+    ):
+        _, breakdown = _enumerated(_jorge(), url)
+        assert breakdown["alias_specificity_applicable"] is False, url
+
+
 def test_scores_are_not_trimodal():
     """
     La distribución debe ser continua.

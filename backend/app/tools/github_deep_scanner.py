@@ -1,4 +1,4 @@
-from typing import List, Set
+from typing import Dict, List, Set
 import httpx
 from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
@@ -18,6 +18,11 @@ class GitHubDeepScannerTool(BaseTool):
     )
     category = ToolCategory.SOCIAL
     required_inputs = ["username", "discovered_usernames"]
+
+    # Repositorios propios cuyos commits se leen para sacar el correo de autoría.
+    # Sin token la API permite 60 peticiones por hora: con 3 repos cada perfil
+    # cuesta 6 (usuario, eventos, repos y 3 listados de commits).
+    MAX_REPOS_FOR_EMAILS = 3
 
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
         usernames = context.all_usernames()
@@ -45,7 +50,10 @@ class GitHubDeepScannerTool(BaseTool):
 
             user_data = resp.json()
             bio = user_data.get("bio") or ""
-            name = user_data.get("name") or username
+            # Vacío si el perfil no declara nombre. Antes se rellenaba con el
+            # login, y el modelo de identidad lo leía como un nombre que no
+            # coincidía con el de la persona.
+            name = user_data.get("name") or ""
             public_repos = user_data.get("public_repos", 0)
             avatar_url = user_data.get("avatar_url")
             html_url = user_data.get("html_url")
@@ -57,7 +65,10 @@ class GitHubDeepScannerTool(BaseTool):
             if user_data.get("email"):
                 discovered_emails.add(user_data["email"].lower())
 
-            # Inspect public events / commits for author emails and schedule analysis
+            email_evidence = await self._commit_author_emails(client, username)
+            discovered_emails.update(email_evidence)
+
+            # Eventos públicos: horario de actividad y repositorios recientes.
             events_url = f"https://api.github.com/users/{username}/events/public"
             events_resp = await client.get(events_url)
             commit_hours = []
@@ -81,16 +92,6 @@ class GitHubDeepScannerTool(BaseTool):
                         repo_name = event.get("repo", {}).get("name")
                         if repo_name:
                             active_repos.add(repo_name)
-
-                        commits = event.get("payload", {}).get("commits", [])
-                        for commit in commits:
-                            author_email = commit.get("author", {}).get("email", "")
-                            if (
-                                author_email
-                                and "users.noreply.github.com" not in author_email
-                                and "@" in author_email
-                            ):
-                                discovered_emails.add(author_email.lower())
 
             emails_list = list(discovered_emails)
 
@@ -121,6 +122,9 @@ class GitHubDeepScannerTool(BaseTool):
                 "avatar_url": avatar_url,
                 "emails": emails_list,
                 "extracted_emails": emails_list,
+                # Un commit concreto por correo: es la prueba que se puede abrir
+                # delante de la persona si dice "esa cuenta no es mía".
+                "email_evidence": list(email_evidence.values()),
                 "profile_url": html_url,
                 "schedule_analysis": schedule_meta,
             }
@@ -129,10 +133,57 @@ class GitHubDeepScannerTool(BaseTool):
                 entity_type="social_account",
                 platform="github",
                 value=html_url,
-                display_name=f"{name} (@{username})",
+                display_name=f"{name} (@{username})" if name else f"@{username}",
                 metadata_info=metadata,
                 confidence=0.95,
-                evidence_urls=[html_url],
+                evidence_urls=[html_url, *(ev["commit_url"] for ev in email_evidence.values())],
             )
         except Exception:
             return None
+
+    async def _commit_author_emails(
+        self, client: httpx.AsyncClient, username: str
+    ) -> Dict[str, Dict[str, str]]:
+        """
+        Correos con los que la persona firma sus commits, cada uno con el primer
+        commit que lo muestra.
+
+        Antes se leían de `payload.commits` en los eventos públicos, pero GitHub
+        ya no incluye los commits en esa API: medido sobre un perfil real con 4
+        PushEvent, ninguno los traía y el escáner nunca encontraba un correo. Los
+        commits de sus propios repositorios, filtrados por autor, sí lo traen.
+        Es la evidencia más fuerte que da GitHub: el correo de autoría git lo
+        configura la propia persona.
+        """
+        evidence: Dict[str, Dict[str, str]] = {}
+        repos_resp = await client.get(
+            f"https://api.github.com/users/{username}/repos",
+            params={"per_page": 30, "sort": "pushed", "type": "owner"},
+        )
+        if repos_resp.status_code != 200:
+            return evidence
+
+        own_repos = [
+            repo["full_name"]
+            for repo in repos_resp.json()
+            if isinstance(repo, dict) and repo.get("full_name") and not repo.get("fork")
+        ]
+        for full_name in own_repos[: self.MAX_REPOS_FOR_EMAILS]:
+            resp = await client.get(
+                f"https://api.github.com/repos/{full_name}/commits",
+                params={"author": username, "per_page": 20},
+            )
+            # 409 = repositorio vacío; 403 = límite de peticiones agotado.
+            if resp.status_code != 200:
+                continue
+            for commit in resp.json():
+                author = (commit.get("commit") or {}).get("author") or {}
+                email = str(author.get("email") or "").lower()
+                if "@" not in email or "users.noreply.github.com" in email:
+                    continue
+                evidence.setdefault(email, {
+                    "email": email,
+                    "repo": full_name,
+                    "commit_url": str(commit.get("html_url") or f"https://github.com/{full_name}"),
+                })
+        return evidence

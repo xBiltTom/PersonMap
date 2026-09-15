@@ -99,7 +99,9 @@ def test_the_probe_list_matches_the_implemented_probes():
     tool = EmailEnumeratorTool()
     fuente = FUENTE.read_text(encoding="utf-8")
 
-    llamadas = set(re.findall(r"self\.(_check_\w+)\(client, clean_email\)", fuente))
+    # La lista de sondas se pasa como referencias (`self._check_x,`) para poder
+    # repetir cada una con el correo inventado del control negativo.
+    llamadas = set(re.findall(r"self\.(_check_\w+),", fuente))
 
     assert llamadas == set(_probe_names(tool))
 

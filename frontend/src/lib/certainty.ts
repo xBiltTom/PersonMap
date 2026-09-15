@@ -6,17 +6,19 @@
  * el expediente acabaría contradiciéndose a sí mismo — un hallazgo pintado como
  * seguro en el mapa y listado entre los descartados dos pestañas más allá.
  *
- * **Las seis bandas subdividen las tres categorías del resolutor, no las
- * cambian.** El backend agrupa en confirmado (≥0.70), probable (0.40-0.70) y
- * descartado (<0.40); aquí solo se afina la lectura dentro de esos tramos:
+ * **Las bandas subdividen las tres categorías del resolutor, no las cambian.**
+ * El backend agrupa en confirmado (≥0.70), probable (0.40-0.70) y descartado
+ * (<0.40); aquí solo se afina la lectura dentro de esos tramos:
  *
  *   Confirmado · Muy seguro · Seguro   ->  el cluster "confirmado" del resolutor
- *   Probable                            ->  el cluster "probable"
+ *   Probable · Por confirmar            ->  el cluster "probable"
  *   Poco probable · Sin datos           ->  el cluster "homónimos descartados"
  *
  * Mover un umbral de aquí sin moverlo en `app/identity/resolver.py` rompe esa
  * correspondencia.
  */
+
+import type { IdentityBreakdown } from "@/lib/types";
 
 export interface CertaintyBand {
   id: string;
@@ -30,6 +32,8 @@ export interface CertaintyBand {
   ring: string;
   /** Punto de color del filtro. */
   dot: string;
+  /** El mismo color en hexadecimal, para el SVG y el minimapa del grafo. */
+  hex: string;
   /** Clases del chip cuando está activo. */
   chipActive: string;
   /** Se atenúa en el mapa: es ruido que estorba para leer lo que importa. */
@@ -48,6 +52,7 @@ export const CERTAINTY_BANDS: CertaintyBand[] = [
     badge: "bg-emerald-500/25 text-emerald-200",
     ring: "ring-2 ring-emerald-400/60",
     dot: "bg-emerald-400",
+    hex: "#34d399",
     chipActive: "bg-emerald-500 text-white border-emerald-400",
     help: "Alguien revisó este hallazgo a mano y confirmó que es de la persona.",
     verdict: {
@@ -65,6 +70,7 @@ export const CERTAINTY_BANDS: CertaintyBand[] = [
     badge: "bg-emerald-500/20 text-emerald-300",
     ring: "ring-1 ring-emerald-500/50",
     dot: "bg-emerald-400",
+    hex: "#10b981",
     chipActive: "bg-emerald-600 text-white border-emerald-500",
     help: "Coinciden varias señales fuertes e independientes entre sí.",
     verdict: {
@@ -82,6 +88,7 @@ export const CERTAINTY_BANDS: CertaintyBand[] = [
     badge: "bg-teal-500/20 text-teal-300",
     ring: "ring-1 ring-teal-500/40",
     dot: "bg-teal-400",
+    hex: "#2dd4bf",
     chipActive: "bg-teal-600 text-white border-teal-500",
     help: "Hay evidencia suficiente para atribuirlo, aunque no sea concluyente.",
     verdict: {
@@ -99,6 +106,7 @@ export const CERTAINTY_BANDS: CertaintyBand[] = [
     badge: "bg-amber-500/15 text-amber-300",
     ring: "ring-1 ring-amber-500/30",
     dot: "bg-amber-400",
+    hex: "#fbbf24",
     chipActive: "bg-amber-600 text-white border-amber-500",
     help: "Indicios, pero no los suficientes. Conviene revisarlo a mano.",
     verdict: {
@@ -110,12 +118,39 @@ export const CERTAINTY_BANDS: CertaintyBand[] = [
     },
   },
   {
+    // Banda especial, como "Sin datos": no la decide la puntuación sino QUÉ la
+    // sostiene. Una cuenta con un alias poco común alcanza "Probable" (~49 %)
+    // sin ningún otro dato, y enseñarla como suya en una demostración es
+    // exponerse a un "esa no soy yo" que nada en el expediente puede rebatir.
+    id: "alias_only",
+    label: "Por confirmar",
+    min: Number.NEGATIVE_INFINITY,
+    badge: "bg-yellow-500/10 text-yellow-200/90",
+    ring: "",
+    dot: "bg-yellow-300/70",
+    hex: "#fde68a",
+    chipActive: "bg-yellow-700 text-white border-yellow-600",
+    dim: true,
+    help:
+      "Solo coincide el alias. Es poco común, pero ningún dato demuestra que la " +
+      "cuenta sea de la persona: no se muestra como suya hasta confirmarla.",
+    verdict: {
+      titulo: "Sin prueba: solo coincide el alias",
+      texto:
+        "Que el alias sea poco común hace plausible que la cuenta sea suya, pero " +
+        "ningún dato lo demuestra y podría ser otra persona con el mismo alias. " +
+        "No se da por suya hasta que alguien lo confirme.",
+      tone: "text-yellow-200",
+    },
+  },
+  {
     id: "unlikely",
     label: "Poco probable",
     min: 0,
     badge: "bg-orange-500/10 text-orange-300/90",
     ring: "",
     dot: "bg-orange-400/70",
+    hex: "#fb923c",
     chipActive: "bg-orange-700 text-white border-orange-600",
     dim: true,
     help:
@@ -138,6 +173,7 @@ export const CERTAINTY_BANDS: CertaintyBand[] = [
     badge: "bg-slate-700/60 text-slate-400",
     ring: "",
     dot: "bg-slate-500",
+    hex: "#64748b",
     chipActive: "bg-slate-600 text-white border-slate-500",
     dim: true,
     help:
@@ -175,18 +211,36 @@ export const DEFAULT_VISIBLE_BANDS = new Set(
 export function bandOf(
   score: number,
   verified = false,
-  signalsEvaluated?: number
+  breakdown?: IdentityBreakdown
 ): CertaintyBand {
-  if (verified) return CERTAINTY_BANDS[0];
+  if (verified) return BAND.verified;
 
-  if (signalsEvaluated === 0 && score < 0.4) {
-    return CERTAINTY_BANDS[CERTAINTY_BANDS.length - 1];
+  if (breakdown?.signals_evaluated === 0 && score < 0.4) {
+    return BAND.no_data;
   }
 
-  // Se salta la primera (solo por verificación manual) y la última (solo por
-  // ausencia de señales).
-  return (
-    CERTAINTY_BANDS.slice(1, -1).find((b) => score >= b.min) ??
-    CERTAINTY_BANDS[CERTAINTY_BANDS.length - 2]
+  // Solo donde habría salido "Probable": por debajo, un alias que apenas empuja
+  // ya se lee bien como "Poco probable" (otra persona con el mismo alias).
+  if (score >= 0.4 && score < 0.7 && onlyTheAliasSupports(breakdown)) {
+    return BAND.alias_only;
+  }
+
+  return SCORED_BANDS.find((b) => score >= b.min) ?? BAND.unlikely;
+}
+
+const BAND = Object.fromEntries(CERTAINTY_BANDS.map((b) => [b.id, b])) as Record<
+  string,
+  CertaintyBand
+>;
+
+/** Las que decide la puntuación, de mayor a menor. */
+const SCORED_BANDS = ["very_high", "high", "probable", "unlikely"].map((id) => BAND[id]);
+
+/** ¿La especificidad del alias es lo único que empuja hacia la persona? */
+function onlyTheAliasSupports(breakdown?: IdentityBreakdown): boolean {
+  if (!breakdown) return false;
+  const supporting = Object.entries(breakdown).filter(
+    ([key, value]) => key.endsWith("_weight") && typeof value === "number" && value > 0
   );
+  return supporting.length === 1 && supporting[0][0] === "alias_specificity_weight";
 }

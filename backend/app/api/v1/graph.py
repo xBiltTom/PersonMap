@@ -85,6 +85,10 @@ async def get_investigation_graph(
     #
     #    Antes el ángulo salía del índice en la lista y el radio era constante,
     #    así que la posición no decía nada y al filtrar quedaban huecos.
+    #
+    #    El mapa web NO usa estas posiciones: las recalcula con cada filtro,
+    #    agrupando por evidencia compartida (frontend/src/lib/graphLayout.ts).
+    #    Quedan para quien consuma la API directamente.
     def _attribution(ent) -> float:
         if ent.identity_score is not None:
             return float(ent.identity_score)

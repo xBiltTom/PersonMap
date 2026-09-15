@@ -1,119 +1,39 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { Terminal, Check, Loader2, Play, RotateCw, WifiOff } from "lucide-react";
-import { getInvestigationLogs, getInvestigationStreamUrl } from "@/lib/api";
 import type { StreamLog } from "@/lib/types";
-
-type ConnectionStatus = "connecting" | "live" | "reconnecting" | "closed";
-
-/**
- * Reintentos consecutivos de EventSource antes de rendirse y ofrecer reconexión
- * manual. EventSource reintenta solo cada ~3 s; sin un tope, un backend caído
- * genera peticiones indefinidamente en segundo plano.
- */
-const MAX_RECONNECT_ATTEMPTS = 8;
+import {
+  findLatestProgress,
+  type ConnectionStatus,
+  type InvestigationStream,
+  type ScanProgress,
+} from "@/lib/useInvestigationStream";
 
 /** Margen en píxeles para considerar que el usuario está "al final" del log. */
 const AUTOSCROLL_THRESHOLD_PX = 60;
 
+/**
+ * Consola de eventos de la investigación.
+ *
+ * El stream lo abre la página (`useInvestigationStream`) y lo comparte con la
+ * barra de progreso de la cabecera; esta vista solo lo pinta.
+ */
 export function LiveConsole({
-  investigationId,
+  stream,
   isFinished,
 }: {
-  investigationId: string;
+  stream: InvestigationStream;
   isFinished: boolean;
 }) {
-  const [logs, setLogs] = useState<StreamLog[]>([]);
-  const [status, setStatus] = useState<ConnectionStatus>("connecting");
-  const [loadingHistory, setLoadingHistory] = useState(true);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [reconnectKey, setReconnectKey] = useState(0);
+  const { logs, status, loadingHistory, historyError, reconnect } = stream;
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottomRef = useRef(true);
-  const retriesRef = useRef(0);
 
-  // 1. Historial de eventos ya emitidos (replay tras recargar la página)
-  const loadLogHistory = useCallback(async () => {
-    try {
-      const data = await getInvestigationLogs(investigationId);
-      if (Array.isArray(data) && data.length > 0) {
-        setLogs(data);
-      }
-      setHistoryError(null);
-    } catch (err) {
-      setHistoryError(
-        err instanceof Error ? err.message : "No se pudo recuperar el registro de eventos"
-      );
-    } finally {
-      setLoadingHistory(false);
-    }
-  }, [investigationId]);
-
-  useEffect(() => {
-    loadLogHistory();
-  }, [loadLogHistory]);
-
-  // 2. Stream SSE en tiempo real
-  useEffect(() => {
-    const eventSource = new EventSource(getInvestigationStreamUrl(investigationId));
-
-    eventSource.onopen = () => {
-      retriesRef.current = 0;
-      setStatus("live");
-    };
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data: StreamLog = JSON.parse(event.data);
-        if (data.message) {
-          setLogs((prev) => {
-            // El backend reproduce el historial al suscribirse, así que tras una
-            // reconexión llegan de nuevo eventos ya pintados. Se descartan por
-            // (mensaje, timestamp) exactos; antes se usaba una ventana de 1 s que
-            // además tragaba eventos legítimamente repetidos dentro del segundo.
-            const exists = prev.some(
-              (p) => p.message === data.message && p.timestamp === data.timestamp
-            );
-            return exists ? prev : [...prev, data];
-          });
-        }
-        if (data.type === "investigation_complete" || data.type === "investigation_error") {
-          eventSource.close();
-          setStatus("closed");
-        }
-      } catch {
-        // Comentario keep-alive o carga no JSON: se ignora.
-      }
-    };
-
-    eventSource.onerror = () => {
-      // No se llama a close() aquí. EventSource reintenta la conexión por su
-      // cuenta, y cerrarlo en onerror -- como se hacía antes -- cancelaba ese
-      // reintento nativo y dejaba la consola muerta tras el primer hipo de red.
-      if (eventSource.readyState === EventSource.CLOSED) {
-        setStatus("closed");
-        return;
-      }
-
-      retriesRef.current += 1;
-      if (retriesRef.current >= MAX_RECONNECT_ATTEMPTS) {
-        eventSource.close();
-        setStatus("closed");
-      } else {
-        setStatus("reconnecting");
-      }
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, [investigationId, reconnectKey]);
-
-  // 3. Autoscroll solo si el usuario ya estaba al final; si ha subido a leer
-  //    historial no se le arrastra la vista.
+  // Autoscroll solo si el usuario ya estaba al final; si ha subido a leer
+  // historial no se le arrastra la vista.
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -141,13 +61,6 @@ export function LiveConsole({
   // repeticiones de "Progreso: X/500" que dicen exactamente lo que la barra ya
   // muestra, y sepultan los eventos que sí importan (rondas, pivoteos, capas).
   const visibleLogs = progress ? logs.filter((l) => l.phase !== "progress") : logs;
-
-  const handleManualReconnect = () => {
-    retriesRef.current = 0;
-    setStatus("connecting");
-    loadLogHistory();
-    setReconnectKey((k) => k + 1);
-  };
 
   return (
     <div className="panel-card overflow-hidden flex flex-col h-[420px] sm:h-[540px] bg-[#070b12] border border-[#1b2537]">
@@ -183,7 +96,7 @@ export function LiveConsole({
           <ConnectionBadge
             status={status}
             isFinished={isFinished}
-            onReconnect={handleManualReconnect}
+            onReconnect={reconnect}
           />
         </div>
       </div>
@@ -231,41 +144,6 @@ export function LiveConsole({
   );
 }
 
-interface ScanProgress {
-  tool: string;
-  checked: number;
-  total: number;
-  pct: number;
-  subject?: string;
-}
-
-/**
- * Último evento de progreso que traiga cifras.
- *
- * Se recorre de atrás hacia delante porque solo interesa el más reciente, y los
- * eventos antiguos siguen en el historial tras una reconexión.
- */
-function findLatestProgress(logs: StreamLog[]): ScanProgress | null {
-  for (let i = logs.length - 1; i >= 0; i--) {
-    const log = logs[i];
-    if (
-      log.phase === "progress" &&
-      typeof log.checked === "number" &&
-      typeof log.total === "number" &&
-      log.total > 0
-    ) {
-      return {
-        tool: log.tool || "escaneo",
-        checked: log.checked,
-        total: log.total,
-        pct: typeof log.pct === "number" ? log.pct : (log.checked / log.total) * 100,
-        subject: log.subject,
-      };
-    }
-  }
-  return null;
-}
-
 /**
  * Barra de progreso del escaneo de plataformas.
  *
@@ -273,7 +151,7 @@ function findLatestProgress(logs: StreamLog[]): ScanProgress | null {
  * cientos de sitios tarda minutos, y sin esto la pantalla parece congelada
  * justo cuando hay un jurado mirando.
  */
-function ScanProgressBar({ progress }: { progress: ScanProgress }) {
+export function ScanProgressBar({ progress }: { progress: ScanProgress }) {
   const pct = Math.min(100, Math.max(0, progress.pct));
 
   return (
@@ -392,7 +270,13 @@ function logLineStyle(log: StreamLog): string {
   if (phase === "hybrid_start" || phase === "hybrid_layer1_complete") {
     return "text-slate-100 font-semibold";
   }
-  if (phase === "hybrid_degraded" || phase === "hybrid_refine_error") {
+  if (
+    phase === "hybrid_degraded" ||
+    phase === "hybrid_refine_error" ||
+    phase === "hybrid_refine_retry" ||
+    phase === "agent_retry" ||
+    phase === "agent_fallback"
+  ) {
     return "text-amber-300";
   }
   if (phase === "catalog_filter") {

@@ -44,6 +44,11 @@ const SIGNAL_LABELS: Record<string, { label: string; help: string }> = {
     label: "Prueba criptográfica",
     help: "Identidad demostrada mediante firma criptográfica (Keybase). Es prueba, no indicio.",
   },
+  alias_specificity: {
+    label: "Especificidad del alias",
+    help:
+      "Qué tan improbable es que otra persona tenga exactamente ese alias: cuenta su longitud y si se forma con el nombre real. Solo se evalúa cuando la cuenta se halló buscando el alias, y sola lleva como mucho a «Probable».",
+  },
   avatar_match: {
     label: "Avatar",
     help: "La foto de perfil coincide perceptualmente con la de otra cuenta ya atribuida.",
@@ -135,7 +140,9 @@ export function IdentityEvidence({
 
   const signals = parseSignals(breakdown);
   const evaluable = signals.filter((s) => s.applicable);
-  const supporting = evaluable.filter((s) => s.gamma > 0);
+  // Coincide lo que empuja hacia la persona, no cualquier acuerdo parcial: un
+  // alias poco específico tiene γ > 0 y aun así resta.
+  const supporting = evaluable.filter((s) => s.weight > 0);
   const llr = breakdown.log_likelihood_ratio;
 
   return (

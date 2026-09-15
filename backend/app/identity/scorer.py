@@ -25,8 +25,12 @@ es lo que corresponde: sin evidencia no hay actualización bayesiana.
 
 import math
 import re
+import unicodedata
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Tuple
+from urllib.parse import urlparse
 
 from thefuzz import fuzz
 
@@ -35,7 +39,7 @@ from app.models.target import Target
 # Identifica la versión del modelo en cada breakdown persistido. Sin esto, las
 # investigaciones anteriores y posteriores a un recalibrado no son comparables y
 # cualquier análisis agregado mezcla dos modelos distintos.
-SCORER_VERSION = "2.0.0"
+SCORER_VERSION = "2.1.0"
 
 # Probabilidad de coincidencia antes de observar ninguna señal.
 #
@@ -55,9 +59,13 @@ PRIOR_MATCH_PROBABILITY = 0.10
 MAX_ABS_LOG_LIKELIHOOD = 20.0
 
 # Herramientas que enumeran un identificador conocido a través de muchas
-# plataformas. Sus hallazgos coinciden con ese identificador POR CONSTRUCCIÓN,
-# así que la señal correspondiente no aporta información y debe declararse no
-# evaluable, igual que se hace con las aristas tautológicas del grafo.
+# plataformas. Sus hallazgos coinciden con ese identificador POR CONSTRUCCIÓN.
+#
+# Para el alias eso anula la señal: muchas personas distintas registran el mismo
+# alias, así que encontrarlo al buscarlo no dice de quién es la cuenta. Para el
+# correo es al revés: un correo tiene un único dueño, y una cuenta registrada con
+# el correo del objetivo es del objetivo. Ahí la enumeración solo sirve para
+# saber POR QUÉ correo se buscó (ver `_email_match_applicable`).
 ENUMERATION_TOOLS = {
     "username": {"username_finder", "infostealer_checker"},
     "email": {
@@ -175,6 +183,12 @@ def _digits(text: str) -> str:
     return "".join(ch for ch in text if ch.isdigit())
 
 
+def _normalize_alias(text: str) -> str:
+    """Minúsculas, sin tildes y solo alfanumérico: `Jorge.Wüeder` -> `jorgewueder`."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in decomposed if ch.isascii() and ch.isalnum()).lower()
+
+
 # Campos en los que una herramienta afirma explícitamente el nombre asociado a
 # un perfil. Su presencia es lo que hace evaluable la señal de nombre.
 ASSERTED_NAME_FIELDS = ("og_title", "name", "full_name", "google_display_name")
@@ -190,8 +204,22 @@ def _asserts_a_name(ctx: SignalContext) -> bool:
     fuertes como que ese mismo sitio enlace al GitHub del sujeto. `display_name`
     por sí solo no basta, porque muchas herramientas lo rellenan con el título
     de la página o con el propio alias.
+
+    Por la misma razón, un "nombre" que es el propio alias tampoco cuenta. El
+    escáner de GitHub rellenaba `name` con el login cuando el perfil no tiene
+    nombre, y el modelo leía "JorgeWueder" como un nombre que no coincidía con
+    "Jorge Wueder de la Cruz Ortiz": −2.16 bits por un dato que nadie declaró.
     """
-    return any(str(ctx.metadata.get(f) or "").strip() for f in ASSERTED_NAME_FIELDS)
+    aliases = {
+        _normalize_alias(u)
+        for u in [*ctx.usernames_found(), ctx.target.username or ""]
+        if u
+    }
+    for field in ASSERTED_NAME_FIELDS:
+        raw = str(ctx.metadata.get(field) or "").strip()
+        if raw and _normalize_alias(raw) not in aliases:
+            return True
+    return False
 
 
 def _name_corpus(ctx: SignalContext) -> str:
@@ -244,15 +272,8 @@ SIGNALS: Tuple[Signal, ...] = (
         m=0.98,
         u=0.0005,
         description="El perfil declara el correo del objetivo.",
-        applicable=lambda c: bool(
-            c.target.email
-            and not c.discovered_by_enumerating("email")
-            and (c.emails_found() or "@" in c.value)
-        ),
-        gamma=lambda c: 1.0
-        if (c.target.email or "").strip().lower() in c.emails_found()
-        or (c.target.email or "").strip().lower() in c.value.lower()
-        else 0.0,
+        applicable=lambda c: _email_match_applicable(c),
+        gamma=lambda c: 1.0 if _declares_target_email(c) else 0.0,
     ),
     Signal(
         name="university_match",
@@ -285,6 +306,31 @@ SIGNALS: Tuple[Signal, ...] = (
             and not c.discovered_by_enumerating("username")
         ),
         gamma=lambda c: _gamma_username(c),
+    ),
+    Signal(
+        name="alias_specificity",
+        # No mide si el alias coincide (al enumerarlo coincide siempre), sino lo
+        # improbable que es que OTRA persona tenga exactamente ese alias. Es la
+        # única información que queda cuando la cuenta se halló buscando el
+        # alias: "torvalds" o "admin" los registra mucha gente; "jorgewueder",
+        # formado con el nombre y un apellido poco comunes, casi nadie más.
+        #
+        # m y u están elegidos para que, sola, lleve como mucho a "Probable"
+        # (~0.49 con la previa de 0.10): un alias muy específico hace plausible
+        # la atribución, pero no la demuestra. Uno genérico o muy corto la rebaja
+        # por debajo de la previa.
+        m=0.80,
+        u=0.08,
+        description="El alias es tan específico que difícilmente lo tendrá otra persona.",
+        # Solo cuando el alias es el ÚNICO vínculo (si el perfil lo declaró por
+        # otra vía ya lo cuenta `username_match`) y la URL es el perfil del
+        # alias, no una búsqueda que lo lleva dentro.
+        applicable=lambda c: bool(
+            c.target.username
+            and c.discovered_by_enumerating("username")
+            and _alias_is_profile_path(c)
+        ),
+        gamma=lambda c: _gamma_alias_specificity(c),
     ),
     Signal(
         name="phone_match",
@@ -467,6 +513,126 @@ def _gamma_cross_link(ctx: SignalContext) -> float:
     if email and email in haystack:
         return 1.0
     return 0.0
+
+
+def _declares_target_email(ctx: SignalContext) -> bool:
+    email = (ctx.target.email or "").strip().lower()
+    return bool(email) and (email in ctx.emails_found() or email in ctx.value.lower())
+
+
+def _email_match_applicable(ctx: SignalContext) -> bool:
+    """
+    ¿Hay un correo en el hallazgo que se pueda comparar con el del objetivo?
+
+    Antes se declaraba no evaluable todo lo que saliera de enumerar un correo,
+    copiando la regla del alias. Pero esa regla existe porque muchas personas
+    registran el mismo alias; un correo tiene un único dueño. Una cuenta de X
+    registrada con el correo del objetivo es de quien controla ese correo, y se
+    quedaba en "sin datos" (10 %).
+
+    Lo que sí importa de la enumeración es POR QUÉ correo se buscó: si fue por
+    otro descubierto al pivotar, el hallazgo no dice nada del correo del
+    objetivo, y que ahí figure un correo distinto no es un desacuerdo.
+    """
+    if not (ctx.target.email or "").strip():
+        return False
+    if not (ctx.emails_found() or "@" in ctx.value):
+        return False
+    if ctx.discovered_by_enumerating("email"):
+        return _declares_target_email(ctx)
+    return True
+
+
+# Por debajo de esta longitud un alias lo comparte demasiada gente.
+ALIAS_MIN_LENGTH = 5
+GENERIC_ALIASES_FILE = (
+    Path(__file__).resolve().parents[1] / "tools" / "data" / "generic_usernames.txt"
+)
+
+
+@lru_cache(maxsize=1)
+def _generic_aliases() -> FrozenSet[str]:
+    try:
+        lines = GENERIC_ALIASES_FILE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return frozenset()
+    return frozenset(_normalize_alias(line) for line in lines if line.strip())
+
+
+def _alias_is_profile_path(ctx: SignalContext) -> bool:
+    """
+    ¿La URL es el perfil del alias, y no una búsqueda con el alias dentro?
+
+    Los catálogos de plataformas incluyen sitios que responden 200 a cualquier
+    búsqueda (`foro/search.php?author=<alias>`, `borda.ru/?32-<alias>`). Ahí el
+    alias no identifica ninguna cuenta, así que su especificidad no dice nada.
+    """
+    alias = _normalize_alias(ctx.target.username or "")
+    if not alias:
+        return False
+
+    url = str(ctx.metadata.get("url") or ctx.value or "")
+    parsed = urlparse(url if "://" in url else f"https://{url}")
+    path = parsed.path.lower()
+    if "search" in path:
+        return False
+
+    segments = [s.lstrip("@") for s in path.split("/") if s]
+    labels = (parsed.hostname or "").split(".")
+    return any(_normalize_alias(part) == alias for part in [*segments, *labels])
+
+
+def _name_tokens(full_name: Optional[str]) -> List[str]:
+    # Las partículas ("de", "la", "del") no identifican a nadie.
+    return [
+        token
+        for token in (_normalize_alias(word) for word in (full_name or "").split())
+        if len(token) >= 3
+    ]
+
+
+def _gamma_alias_specificity(ctx: SignalContext) -> float:
+    """
+    Especificidad del alias del objetivo, en [0, 1]. Suma dos rasgos observables:
+
+      - Longitud: hasta 0.5, saturando a los 12 caracteres.
+      - Composición con el nombre real: 0.5 si el alias se forma casi entero con
+        dos o más partes del nombre ("jorgewueder" = jorge + wueder); 0.35 si
+        las contiene pero con más relleno; 0.1 si solo contiene una.
+
+    Un alias genérico (`admin`, `support`...) o de menos de 5 caracteres vale 0.
+
+    Medido: "jorgewueder" para Jorge Wueder de la Cruz Ortiz da 0.96;
+    "torvalds" para Linus Torvalds, 0.43; "kirostudio" sin nombre conocido, 0.42.
+    """
+    alias = _normalize_alias(ctx.target.username or "")
+    if len(alias) < ALIAS_MIN_LENGTH or alias in _generic_aliases():
+        return 0.0
+
+    length_part = 0.5 * min(len(alias), 12) / 12
+
+    # Cada parte del nombre se consume al encontrarla, para no contar dos veces
+    # los mismos caracteres ("cruz" dentro de "delacruz" y otra vez suelta).
+    remaining = alias
+    matched_tokens = 0
+    matched_chars = 0
+    for token in sorted(_name_tokens(ctx.target.full_name), key=len, reverse=True):
+        if token in remaining:
+            remaining = remaining.replace(token, "#", 1)
+            matched_tokens += 1
+            matched_chars += len(token)
+
+    coverage = matched_chars / len(alias)
+    if matched_tokens >= 2 and coverage >= 0.7:
+        name_part = 0.5
+    elif matched_tokens >= 2:
+        name_part = 0.35
+    elif matched_tokens == 1:
+        name_part = 0.1
+    else:
+        name_part = 0.0
+
+    return round(min(1.0, length_part + name_part), 2)
 
 
 # --- Cálculo --------------------------------------------------------------

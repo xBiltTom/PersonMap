@@ -1,11 +1,12 @@
 import json
 import time
-from typing import Any, Dict, List
-import litellm
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.events import event_bus
-from app.agent.tool_dispatch import build_tool_schemas, dispatch_tool_call
+from app.agent.llm_client import complete_with_retries, describe_llm_error
+from app.agent.tool_dispatch import build_tool_schemas, dispatch_tool_call, resolve_tool_name
 from app.engine.persistence import build_relationships, persist_findings
 from app.models.entity import Entity
 from app.models.target import Target
@@ -16,6 +17,14 @@ from app.tools.base import ToolFinding
 # La construcción vive ahora en app.agent.tool_dispatch, compartida con la capa
 # de refinamiento del motor híbrido.
 AGENT_TOOLS = build_tool_schemas()
+
+
+@dataclass
+class AgentRun:
+    """Entidades persistidas y lo que pasó con el LLM, para las métricas."""
+
+    entities: List[Entity]
+    stats: Dict[str, Any] = field(default_factory=dict)
 
 
 class AutonomousOSINTAgent:
@@ -31,13 +40,17 @@ class AutonomousOSINTAgent:
         investigation_id: str,
         target: Target,
         db: AsyncSession,
-    ) -> List[Entity]:
+    ) -> AgentRun:
         if not settings.ai_enabled:
             # Fall back to rule engine if no LLM configured
             from app.engine.rule_engine import rule_engine
-            return await rule_engine.execute_investigation(investigation_id, target, db)
+            entities = await rule_engine.execute_investigation(investigation_id, target, db)
+            return AgentRun(entities, {"agent_fallback_to_rules": True, "agent_tools_executed": 0})
 
         all_findings: List[ToolFinding] = []
+        turns = 0
+        tools_executed = 0
+        llm_error: Optional[str] = None
         messages: List[Dict[str, Any]] = [
             {
                 "role": "system",
@@ -72,14 +85,27 @@ class AutonomousOSINTAgent:
             "timestamp": time.time(),
         })
 
+        async def announce_retry(attempt: int, delay: float, err: BaseException) -> None:
+            await event_bus.publish(investigation_id, {
+                "type": "log",
+                "phase": "agent_retry",
+                "message": (
+                    f"IA no disponible: {describe_llm_error(err)}. "
+                    f"Reintento {attempt} en {delay:.0f} s..."
+                ),
+                "timestamp": time.time(),
+            })
+
         for turn in range(1, self.MAX_TURNS + 1):
+            turns = turn
             try:
-                response = await litellm.acompletion(
+                response = await complete_with_retries(
                     model=settings.llm_model,
                     api_key=settings.llm_api_key,
                     messages=messages,
                     tools=AGENT_TOOLS,
                     temperature=0.2,
+                    on_retry=announce_retry,
                 )
                 msg = response.choices[0].message
                 tool_calls = getattr(msg, "tool_calls", None)
@@ -121,7 +147,10 @@ class AutonomousOSINTAgent:
                         "timestamp": time.time(),
                     })
 
-                    tool_findings = await self._execute_agent_tool(fn_name, args, target)
+                    tool_findings = await self._execute_agent_tool(
+                        investigation_id, fn_name, args, target
+                    )
+                    tools_executed += 1
                     all_findings.extend(tool_findings)
 
                     # Return result to LLM
@@ -136,13 +165,19 @@ class AutonomousOSINTAgent:
                     })
 
             except Exception as err:
+                llm_error = describe_llm_error(err)
                 await event_bus.publish(investigation_id, {
                     "type": "log",
                     "phase": "agent_error",
-                    "message": f"Aviso: Fallo en turno del agente ({err}). Aplicando motor heurístico complementario...",
+                    "message": f"El agente IA no puede continuar: {llm_error}.",
                     "timestamp": time.time(),
                 })
                 break
+
+        if llm_error is not None:
+            all_findings.extend(
+                await self._heuristic_fallback(investigation_id, target, tools_executed, llm_error)
+            )
 
         # Deduplicación, scoring y persistencia compartidos con el motor de reglas.
         # Antes esto estaba duplicado aquí en una versión degradada: sin
@@ -159,10 +194,53 @@ class AutonomousOSINTAgent:
         )
         await build_relationships(investigation_id, entities, db)
 
-        return entities
+        return AgentRun(
+            entities=entities,
+            stats={
+                "agent_turns": turns,
+                "agent_tools_executed": tools_executed,
+                "agent_llm_error": llm_error,
+                "agent_fallback_to_rules": llm_error is not None,
+            },
+        )
+
+    async def _heuristic_fallback(
+        self,
+        investigation_id: str,
+        target: Target,
+        tools_executed: int,
+        reason: str,
+    ) -> List[ToolFinding]:
+        """
+        Barrido heurístico completo cuando el LLM deja de responder.
+
+        Antes el aviso decía "Aplicando motor heurístico complementario..." pero
+        no aplicaba nada. Con un 503 de Gemini en el primer turno (investigación
+        c79b9d92, 2026-09-10) la búsqueda terminó sin ejecutar una sola
+        herramienta: 0 hallazgos, riesgo BAJO y la recomendación "Huella Digital
+        Controlada". Un informe que le dice a alguien que casi no tiene huella
+        solo porque el proveedor de IA estaba saturado.
+
+        Devuelve los hallazgos sin persistir, para que la deduplicación los vea
+        junto a los que el agente llegara a reunir antes del fallo.
+        """
+        from app.engine.rule_engine import rule_engine
+
+        await event_bus.publish(investigation_id, {
+            "type": "log",
+            "phase": "agent_fallback",
+            "message": (
+                f"IA no disponible ({reason}) tras {tools_executed} herramienta(s) del agente. "
+                "Se ejecuta el barrido heurístico completo para que la investigación no quede incompleta."
+            ),
+            "timestamp": time.time(),
+        })
+        sweep = await rule_engine.collect_findings(investigation_id, target)
+        return sweep.findings
 
     async def _execute_agent_tool(
         self,
+        investigation_id: str,
         name: str,
         args: Dict[str, Any],
         target: Target,
@@ -176,13 +254,38 @@ class AutonomousOSINTAgent:
         significa exactamente "cuál de las dos mitades del motor híbrido". Su
         procedencia ya la lleva el prefijo `agent:` del `source_tool`, que la
         interfaz muestra.
+
+        Publica el cierre de cada herramienta como hacen los otros dos motores:
+        sin `tool_complete` la interfaz no puede contar cuántas terminaron. Y un
+        fallo de UNA herramienta ya no tumba el turno entero del agente.
         """
-        return await dispatch_tool_call(
-            name,
-            args,
-            target,
-            source_prefix="agent",
-        )
+        tool_name = resolve_tool_name(name)
+        try:
+            findings = await dispatch_tool_call(
+                name,
+                args,
+                target,
+                source_prefix="agent",
+                investigation_id=investigation_id,
+            )
+        except Exception as err:
+            await event_bus.publish(investigation_id, {
+                "type": "tool_error",
+                "tool": tool_name,
+                "error": str(err),
+                "message": f"[{tool_name}] error: {err}",
+                "timestamp": time.time(),
+            })
+            return []
+
+        await event_bus.publish(investigation_id, {
+            "type": "tool_complete",
+            "tool": tool_name,
+            "findings_count": len(findings),
+            "message": f"[{tool_name}] completado: {len(findings)} hallazgos.",
+            "timestamp": time.time(),
+        })
+        return findings
 
 
 autonomous_agent = AutonomousOSINTAgent()

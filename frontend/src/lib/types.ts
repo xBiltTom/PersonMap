@@ -129,6 +129,15 @@ export interface InvestigationMetrics {
    */
   engine_used?: EngineId;
   hybrid_degraded?: boolean;
+  /**
+   * El LLM dejó de responder durante el agente autónomo y se ejecutó el
+   * barrido heurístico completo como respaldo. Si el agente no alcanzó a
+   * ejecutar ninguna herramienta, `engine_used` es `rules`.
+   */
+  agent_fallback_to_rules?: boolean;
+  agent_tools_executed?: number;
+  /** El fallo del proveedor, en una frase ("el modelo de IA está saturado (503)"). */
+  agent_llm_error?: string | null;
   /** Huella de la configuración con la que corrió (prefijo `config_`). */
   config_username_catalog_available?: number;
   config_username_catalog_scanned?: number;

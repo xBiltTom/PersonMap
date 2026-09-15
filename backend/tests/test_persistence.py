@@ -73,6 +73,39 @@ def test_dedupe_keeps_distinct_entity_types():
     assert len(dedupe_findings(findings)) == 2
 
 
+def test_dedupe_merges_a_profile_each_tool_names_differently():
+    """
+    Caso real: `github_deep_scanner` llama "github" al perfil y `username_finder`
+    "GitHub (User)". Con la plataforma en la clave salía dos veces (65 % y 10 %),
+    cada copia con la procedencia de una sola herramienta.
+    """
+    findings = [
+        ToolFinding(
+            entity_type="social_account",
+            platform="GitHub (User)",
+            value="https://github.com/JorgeWueder",
+            confidence=0.90,
+            metadata_info={"source_tool": "username_finder"},
+        ),
+        ToolFinding(
+            entity_type="social_account",
+            platform="github",
+            value="https://www.github.com/JorgeWueder/",
+            confidence=0.95,
+            metadata_info={"source_tool": "github_deep_scanner"},
+        ),
+    ]
+
+    result = dedupe_findings(findings)
+
+    assert len(result) == 1
+    assert result[0].platform == "github"
+    assert result[0].metadata_info["source_tools"] == [
+        "username_finder",
+        "github_deep_scanner",
+    ]
+
+
 # --- Detección de relaciones --------------------------------------------
 
 

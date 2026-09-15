@@ -77,9 +77,18 @@ class Orchestrator:
                     run = await hybrid_engine.execute_investigation(str_id, target, db)
                     entities, engine_stats = run.entities, run.stats
                 elif strategy in ("agentic", "auto") and settings.ai_enabled:
-                    engine_used = "agentic"
                     from app.agent.autonomous_agent import autonomous_agent
-                    entities = await autonomous_agent.run(str_id, target, db)
+                    run = await autonomous_agent.run(str_id, target, db)
+                    entities, engine_stats = run.entities, run.stats
+                    # Si el LLM cayó antes de que el agente ejecutara ninguna
+                    # herramienta, todo lo hizo el barrido heurístico de respaldo:
+                    # fue una corrida del motor de reglas y así se contabiliza. Si
+                    # llegó a ejecutar alguna, la corrida es mixta y queda marcada
+                    # con `agent_fallback_to_rules`.
+                    only_rules = run.stats.get("agent_fallback_to_rules") and not run.stats.get(
+                        "agent_tools_executed"
+                    )
+                    engine_used = "rules" if only_rules else "agentic"
                 else:
                     engine_used = "rules"
                     entities = await rule_engine.execute_investigation(str_id, target, db)

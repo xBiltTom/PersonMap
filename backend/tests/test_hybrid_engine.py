@@ -12,6 +12,7 @@ investigación se contabilice como lo que realmente fue (una corrida de reglas)
 y no como híbrida.
 """
 
+import importlib
 import json
 import uuid
 from types import SimpleNamespace
@@ -27,6 +28,9 @@ from app.models.entity import Entity
 from app.models.target import Target
 from app.tools.base import TargetContext, ToolFinding
 from app.tools.registry import tool_registry
+
+# El módulo, no la instancia homónima que exporta `app/agent/__init__.py`.
+llm_client_module = importlib.import_module("app.agent.llm_client")
 
 
 def _target(**kwargs) -> Target:
@@ -145,7 +149,7 @@ async def test_refinement_skips_calls_already_made_by_the_heuristic_sweep(monkey
         return next(replies)
 
     monkeypatch.setattr(hybrid_module, "dispatch_tool_call", fake_dispatch)
-    monkeypatch.setattr(hybrid_module.litellm, "acompletion", fake_acompletion)
+    monkeypatch.setattr(llm_client_module.litellm, "acompletion",fake_acompletion)
     monkeypatch.setattr(hybrid_module.settings, "llm_model", "test/model")
     monkeypatch.setattr(hybrid_module.settings, "llm_api_key", "k")
     monkeypatch.setattr(hybrid_module.settings, "hybrid_max_refinement_turns", 2)
@@ -172,7 +176,7 @@ async def test_refinement_stops_when_the_model_asks_for_nothing(monkeypatch):
         calls["n"] += 1
         return _llm_reply(content="El barrido heurístico ya es suficiente.")
 
-    monkeypatch.setattr(hybrid_module.litellm, "acompletion", fake_acompletion)
+    monkeypatch.setattr(llm_client_module.litellm, "acompletion",fake_acompletion)
     monkeypatch.setattr(hybrid_module.settings, "llm_model", "test/model")
     monkeypatch.setattr(hybrid_module.settings, "llm_api_key", "k")
     monkeypatch.setattr(hybrid_module.settings, "hybrid_max_refinement_turns", 3)
@@ -197,7 +201,7 @@ async def test_refinement_failure_never_loses_the_heuristic_result(monkeypatch):
     async def exploding_acompletion(**kwargs):
         raise RuntimeError("429 rate limit")
 
-    monkeypatch.setattr(hybrid_module.litellm, "acompletion", exploding_acompletion)
+    monkeypatch.setattr(llm_client_module.litellm, "acompletion",exploding_acompletion)
     monkeypatch.setattr(hybrid_module.settings, "llm_model", "test/model")
     monkeypatch.setattr(hybrid_module.settings, "llm_api_key", "k")
 
@@ -285,7 +289,7 @@ async def test_the_agentic_engine_does_not_claim_a_hybrid_layer(monkeypatch):
     monkeypatch.setattr(tool, "execute", fake_execute)
 
     findings = await autonomous_agent._execute_agent_tool(
-        "username_finder", {"username": "jperez"}, _target()
+        "inv-test", "username_finder", {"username": "jperez"}, _target()
     )
 
     assert findings[0].metadata_info["source_tool"] == "agent:username_finder"
