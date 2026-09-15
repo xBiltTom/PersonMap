@@ -145,6 +145,8 @@ function CustomEntityNode({ data, selected }: { data: any; selected?: boolean })
           </span>
         </div>
 
+        {/* PARCHE BORRADOR: Se ocultan los porcentajes numéricos para evitar asegurar identidades */}
+        {/*
         <span
           title={
             `${band.label}: ${band.help}
@@ -157,6 +159,13 @@ Detección (¿existe la cuenta?): ` +
           className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${band.badge}`}
         >
           {intPercent(attribution)}
+        </span>
+        */}
+        <span
+          title={`${band.label}: ${band.help}\n\nAgrupación por indicios correlacionados. Validación manual requerida.`}
+          className={`text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded ${band.badge}`}
+        >
+          {band.label}
         </span>
       </div>
 
@@ -174,8 +183,8 @@ Detección (¿existe la cuenta?): ` +
         <span className={`text-[9px] font-mono uppercase tracking-wide ${meta.accent}`}>
           {meta.label}
         </span>
-        <span className="text-[9px] font-mono text-slate-500" title={band.help}>
-          {band.label.toLowerCase()}
+        <span className="text-[9px] font-mono text-slate-500" title="La confirmación de pertenencia e ingeniería social es manual">
+          revisión manual
         </span>
       </div>
     </div>
@@ -379,7 +388,7 @@ function GroupBackdrop({ layout }: { layout: MapLayout }) {
             fontSize={10}
             fill="#64748b"
           >
-            ↑ cuanto más lejos, menos seguro
+            ↑ nivel de correlación de indicios (validación manual)
           </text>
         )}
       </g>
@@ -752,15 +761,10 @@ export function DigitalMapGraph({
         {!loading && !error && totalHallazgos > 0 && atribuibles === 0 && (
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 max-w-xl px-4 py-2.5 rounded-md bg-[#1a1408] border border-amber-500/40 shadow-lg">
             <p className="text-[11px] text-amber-200 font-semibold">
-              Se encontraron {totalHallazgos} hallazgos, pero ninguno se pudo
-              atribuir con seguridad.
+              Se detectaron {totalHallazgos} hallazgos organizados por correlación de datos.
             </p>
             <p className="text-[11px] text-slate-300 mt-1 leading-snug">
-              No es que no haya huella: es que no hay <strong>datos en común</strong>{" "}
-              suficientes para demostrar que esas cuentas son tuyas. Con solo un
-              nombre y un correo, la mayoría de perfiles no ofrecen nada que
-              comparar. Añadir tu alias habitual o tu universidad al buscar suele
-              cambiar el resultado por completo.
+              Los nodos se agrupan según indicios compartidos. La determinación de si pertenecen o no a la persona investigada debe realizarse de forma manual mediante análisis e ingeniería social.
             </p>
           </div>
         )}
@@ -791,14 +795,14 @@ export function DigitalMapGraph({
         </ReactFlow>
 
         {!loading && !error && view.layout.groups.length > 0 && (
-          <div className="absolute bottom-3 left-14 z-10 max-w-[260px] px-3 py-2 rounded-md bg-[#0d131f]/90 border border-[#212f45] text-[10px] leading-snug text-slate-400 pointer-events-none">
+          <div className="absolute bottom-3 left-14 z-10 max-w-[280px] px-3 py-2 rounded-md bg-[#0d131f]/90 border border-[#212f45] text-[10px] leading-snug text-slate-400 pointer-events-none">
             <p>
               <strong className="text-slate-200">Cada sector es un grupo:</strong>{" "}
-              hallazgos que comparten la misma evidencia hacia la persona.
+              nodos agrupados según indicios y evidencias compartidas.
             </p>
             <p className="mt-1">
-              <strong className="text-slate-200">La distancia es la certeza:</strong>{" "}
-              cuanto más lejos del centro, menos seguro.
+              <strong className="text-amber-300">Búsqueda e ingeniería social:</strong>{" "}
+              agrupación por correlación. La confirmación de pertenencia al objetivo es manual.
             </p>
           </div>
         )}
@@ -853,7 +857,7 @@ export function DigitalMapGraph({
 
             <div className="pt-3 border-t border-[#1e293b]">
               <span className="text-[10px] font-mono text-slate-400 uppercase block mb-2">
-                ¿Por qué este porcentaje?
+                Indicios y Correlación de Evidencias (Validación Manual)
               </span>
 
               {/* Primero la explicación en castellano llano, que es lo que

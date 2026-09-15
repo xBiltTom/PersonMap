@@ -74,7 +74,7 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
             <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Buscar en hallazgos..."
+              placeholder="Buscar por usuario o plataforma..."
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -119,7 +119,7 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
               <th className="py-3 px-4">Plataforma / Tipo</th>
               <th className="py-3 px-4">Identificador / Enlace</th>
               <th className="py-3 px-4">Herramienta Fuente</th>
-              <th className="py-3 px-4 text-center">Certeza</th>
+              <th className="py-3 px-4 text-center">Indicios / Correlación</th>
               <th className="py-3 px-4 text-right">Estado</th>
             </tr>
           </thead>
@@ -238,8 +238,8 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                       type="button"
                       onClick={() => toggleExpanded(item.id)}
                       aria-expanded={expanded.has(item.id)}
-                      title="Ver por qué se atribuye este hallazgo al objetivo"
-                      className={`inline-flex items-center gap-1 font-mono text-[11px] font-bold px-2 py-0.5 rounded cursor-pointer transition-colors ${
+                      title="Ver indicios y correlación de este hallazgo (validación manual)"
+                      className={`inline-flex items-center gap-1 font-mono text-[11px] font-medium px-2 py-0.5 rounded cursor-pointer transition-colors ${
                         item.confidence >= 0.70
                           ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
                           : item.confidence >= 0.40
@@ -247,7 +247,9 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                           : "bg-slate-800 text-slate-300 hover:bg-slate-700"
                       }`}
                     >
-                      {Math.round(item.confidence * 100)}%
+                      {/* PARCHE BORRADOR: Se comenta el porcentaje de certeza */}
+                      {/* {Math.round(item.confidence * 100)}% */}
+                      <span>Indicios</span>
                       <ChevronDown
                         className={`w-3 h-3 transition-transform ${
                           expanded.has(item.id) ? "rotate-180" : ""
