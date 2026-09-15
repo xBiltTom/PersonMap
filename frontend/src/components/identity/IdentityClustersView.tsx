@@ -57,10 +57,10 @@ export function IdentityClustersView({ investigationId, clusters, onEntityUpdate
         <div>
           <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-sky-400" />
-            Reconstrucción de Identidad y Desanonimización
+            Reconstrucción de Identidad y Correlación
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Agrupación de hallazgos que comparten correlación verificada vs homónimos descartados.
+            Agrupación de hallazgos por correlación de evidencias compartidas vs descartados.
           </p>
         </div>
 
@@ -74,7 +74,7 @@ export function IdentityClustersView({ investigationId, clusters, onEntityUpdate
                 : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            Clusters de Certeza
+            Grupos de Correlación
           </button>
           <button
             onClick={() => setViewMode("matrix")}
@@ -144,8 +144,10 @@ export function IdentityClustersView({ investigationId, clusters, onEntityUpdate
                           {isHighConf ? "FUERTE (DIRECTA)" : "PROBABLE"}
                         </span>
                       </td>
-                      <td className="p-2.5 text-slate-300 font-bold">
-                        {Math.round(e1.confidence * 100)}%
+                      {/* PARCHE BORRADOR: Se comenta porcentaje */}
+                      {/* <td className="p-2.5 text-slate-300 font-bold">{Math.round(e1.confidence * 100)}%</td> */}
+                      <td className="p-2.5 text-slate-400 text-xs font-mono">
+                        Validación manual
                       </td>
                     </tr>
                   );
@@ -188,6 +190,8 @@ export function IdentityClustersView({ investigationId, clusters, onEntityUpdate
                 </div>
 
                 <div className="text-right shrink-0">
+                  {/* PARCHE BORRADOR: Se comenta porcentaje de certeza */}
+                  {/*
                   <span
                     className={`text-base font-mono font-bold ${
                       isHigh ? "text-emerald-400" : isProbable ? "text-amber-400" : "text-slate-500"
@@ -197,6 +201,13 @@ export function IdentityClustersView({ investigationId, clusters, onEntityUpdate
                   </span>
                   <span className="text-[10px] font-mono text-slate-500 block uppercase">
                     Certeza
+                  </span>
+                  */}
+                  <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 block">
+                    Correlación
+                  </span>
+                  <span className="text-[9px] font-mono text-amber-300/80 block mt-0.5">
+                    Validación manual
                   </span>
                 </div>
               </div>
@@ -219,10 +230,13 @@ export function IdentityClustersView({ investigationId, clusters, onEntityUpdate
                             <span className="text-[10px] font-mono uppercase text-sky-400 font-semibold">
                               {entity.platform || entity.entity_type}
                             </span>
+                            {/* PARCHE BORRADOR: Se comenta porcentaje */}
+                            {/*
                             <span className="text-slate-500">•</span>
                             <span className="text-[10px] font-mono text-slate-400">
                               {Math.round(entity.confidence * 100)}%
                             </span>
+                            */}
                             {entity.verified && (
                               <span className="text-[9px] font-mono px-1 rounded bg-emerald-500/20 text-emerald-400">
                                 Verificado

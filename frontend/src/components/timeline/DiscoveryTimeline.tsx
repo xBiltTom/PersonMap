@@ -46,8 +46,12 @@ export function DiscoveryTimeline({ entities }: { entities: EntityData[] }) {
                 <span className="text-xs font-bold text-slate-200">
                   {item.platform || item.entity_type}
                 </span>
-                <span className="text-[10px] font-mono text-slate-400 ml-auto">
+                {/* PARCHE BORRADOR: Se comenta porcentaje */}
+                {/* <span className="text-[10px] font-mono text-slate-400 ml-auto">
                   Certeza: {Math.round(item.confidence * 100)}%
+                </span> */}
+                <span className="text-[10px] font-mono text-slate-400 ml-auto">
+                  Indicio registrado
                 </span>
               </div>
 

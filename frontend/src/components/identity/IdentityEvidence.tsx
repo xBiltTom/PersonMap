@@ -190,6 +190,8 @@ export function IdentityEvidence({
             help="Suma de los pesos de las señales evaluables. Positivo apoya que sea la misma persona; negativo, lo contrario. Las señales sin dato aportan 0."
           />
         )}
+        {/* PARCHE BORRADOR: Se ocultan los porcentajes de certeza para evitar asegurar identidades */}
+        {/*
         {typeof identityScore === "number" && (
           <Row
             label="Atribución (¿es del objetivo?)"
@@ -208,6 +210,12 @@ export function IdentityEvidence({
           label="Confianza mostrada"
           value={`${Math.round(finalConfidence * 100)}%`}
           help="El máximo de las dos anteriores; es el valor que ordena las vistas."
+        />
+        */}
+        <Row
+          label="Verificación de Identidad"
+          value="Manual (Ingeniería Social)"
+          help="No se emite porcentaje concluyente. La confirmación corresponde al análisis manual."
         />
         {typeof breakdown.scorer_version === "string" && (
           <Row
@@ -315,6 +323,8 @@ function ArbitrationNote({ arbitration }: { arbitration: LlmArbitration }) {
         <div className="min-w-0">
           <p className="font-semibold">
             Arbitraje por IA: {copy.label}
+            {/* PARCHE BORRADOR: Se omiten porcentajes numéricos */}
+            {/*
             {typeof arbitration.applied_score === "number" && (
               <span className="font-mono font-normal opacity-80">
                 {" "}
@@ -322,6 +332,7 @@ function ArbitrationNote({ arbitration }: { arbitration: LlmArbitration }) {
                 {Math.round(arbitration.applied_score * 100)}% efectivo para agrupar)
               </span>
             )}
+            */}
           </p>
           {arbitration.rationale && (
             <p className="opacity-90 mt-0.5 leading-snug">{arbitration.rationale}</p>
@@ -386,7 +397,8 @@ function SignalRow({ signal }: { signal: Signal }) {
           style={{ width: `${Math.max(pct, agrees ? 6 : 0)}%` }}
         />
       </div>
-      <span className="w-11 text-right font-mono text-slate-400 shrink-0">{pct}%</span>
+      {/* PARCHE BORRADOR: Se comenta el porcentaje */}
+      {/* <span className="w-11 text-right font-mono text-slate-400 shrink-0">{pct}%</span> */}
       <span
         className={`w-16 text-right font-mono shrink-0 ${
           weight > 0 ? "text-emerald-400" : "text-rose-400/70"

@@ -157,13 +157,18 @@ export function PlainExplanation({ breakdown, score, verified = false }: Props) 
   return (
     <div className="space-y-3 text-[11px]">
       <div className="p-2.5 rounded-md bg-[#0c111a] border border-[#1e293b]">
+        {/* PARCHE BORRADOR: Se omite el porcentaje numérico para evitar aseverar identidad */}
+        {/* <p className={`font-semibold ${v.tone}`}>{pct}% · {v.titulo}</p> */}
         <p className={`font-semibold ${v.tone}`}>
-          {pct}% · {v.titulo}
+          {v.titulo}
         </p>
         <p className="text-[10px] font-mono uppercase tracking-wider text-slate-500 mt-0.5">
           nivel: {band.label}
         </p>
         <p className="text-slate-400 mt-1 leading-snug">{v.texto}</p>
+        <p className="text-[10px] text-amber-300/85 font-mono mt-2 pt-1 border-t border-slate-800">
+          * Tarea manual: La búsqueda y validación definitiva debe realizarse mediante ingeniería social.
+        </p>
       </div>
 
       {encaja.length > 0 && (
