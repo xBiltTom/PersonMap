@@ -5,27 +5,26 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db
-from app.models.identity_cluster import IdentityCluster
 from app.models.investigation import Investigation
 from app.schemas.entity import EntityRead
-from app.schemas.identity import IdentityClusterRead
+from app.schemas.identity import CorrelationGroupRead
 
 router = APIRouter()
 
 
-@router.get("/investigations/{id}/identity", response_model=List[IdentityClusterRead])
-async def get_investigation_identity_clusters(
+@router.get("/investigations/{id}/correlation-groups", response_model=List[CorrelationGroupRead])
+async def get_investigation_correlation_groups(
     id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Returns resolved identity clusters with reconstructed profiles and confidence percentages.
+    Returns groups of observations connected by explicit evidence.
     """
     stmt = (
         select(Investigation)
         .where(Investigation.id == id)
         .options(
-            selectinload(Investigation.identity_clusters),
+            selectinload(Investigation.correlation_groups),
             selectinload(Investigation.entities),
         )
     )
@@ -35,24 +34,24 @@ async def get_investigation_identity_clusters(
         raise HTTPException(status_code=404, detail="Investigación no encontrada")
 
     entities_by_id = {str(e.id): e for e in inv.entities}
-    response_clusters: List[IdentityClusterRead] = []
+    response_groups: List[CorrelationGroupRead] = []
 
-    for cluster in inv.identity_clusters:
-        cluster_entities = [
+    for group in inv.correlation_groups:
+        group_entities = [
             EntityRead.model_validate(entities_by_id[eid])
-            for eid in cluster.entity_ids
+            for eid in group.entity_ids
             if eid in entities_by_id
         ]
-        cluster_read = IdentityClusterRead(
-            id=cluster.id,
-            investigation_id=cluster.investigation_id,
-            label=cluster.label,
-            confidence=cluster.confidence,
-            entity_ids=cluster.entity_ids,
-            reasoning=cluster.reasoning,
-            scoring_breakdown=cluster.scoring_breakdown or {},
-            entities=cluster_entities,
+        response_groups.append(
+            CorrelationGroupRead(
+                id=group.id,
+                investigation_id=group.investigation_id,
+                label=group.label,
+                entity_ids=group.entity_ids,
+                summary=group.summary,
+                evidence=group.evidence or {},
+                entities=group_entities,
+            )
         )
-        response_clusters.append(cluster_read)
 
-    return response_clusters
+    return response_groups

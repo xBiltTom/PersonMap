@@ -17,14 +17,12 @@ import type {
   MetricsComparison,
   SurveyStats,
 } from "@/lib/types";
-import { ScoreDistribution } from "@/components/evaluation/ScoreDistribution";
 
 const EMPTY_METRICS: EngineMetrics = {
   count: 0,
   avg_execution_time: 0,
   avg_entities: 0,
   avg_clusters: 0,
-  avg_risk_score: 0,
 };
 
 const METRIC_ROWS: Array<{
@@ -41,7 +39,7 @@ const METRIC_ROWS: Array<{
   {
     key: "avg_execution_time",
     label: "Latencia media",
-    hint: "Segundos de extremo a extremo, incluido el scoring",
+    hint: "Segundos de extremo a extremo.",
     suffix: "s",
   },
   {
@@ -51,14 +49,8 @@ const METRIC_ROWS: Array<{
   },
   {
     key: "avg_clusters",
-    label: "Clusters de identidad",
-    hint: "Media de agrupaciones resueltas por union-find",
-  },
-  {
-    key: "avg_risk_score",
-    label: "Exposición media",
-    hint: "Score de exposición 0-100 del scorecard",
-    suffix: "/100",
+    label: "Grupos de correlación",
+    hint: "Media de agrupaciones conectadas por evidencia explícita.",
   },
 ];
 
@@ -87,7 +79,8 @@ export function EvaluationView() {
   }, []);
 
   useEffect(() => {
-    loadMetrics();
+    const initialLoad = window.setTimeout(() => loadMetrics(), 0);
+    return () => clearTimeout(initialLoad);
   }, [loadMetrics]);
 
   const handleCopyLatex = () => {
@@ -102,12 +95,11 @@ export function EvaluationView() {
     // `engine_used` va en su propia columna, aparte de `strategy`: son cosas
     // distintas, y confundirlas es lo que hacía que la comparativa contase como
     // agéntica una investigación que había ejecutado el motor de reglas.
-    const headers =
-      "id,strategy,engine_used,execution_time_seconds,entities_count,risk_score,created_at\n";
+    const headers = "id,strategy,engine_used,execution_time_seconds,entities_count,created_at\n";
     const rows = data.investigations_sample
       .map(
         (s) =>
-          `${s.id},${s.strategy},${s.engine_used || ""},${s.execution_time},${s.entities_count},${s.risk_score},${s.created_at || ""}`
+          `${s.id},${s.strategy},${s.engine_used || ""},${s.execution_time},${s.entities_count},${s.created_at || ""}`
       )
       .join("\n");
     const blob = new Blob([headers + rows], { type: "text/csv" });
@@ -287,9 +279,6 @@ export function EvaluationView() {
       )}
 
       {/* LaTeX Preview Block */}
-      {data.identity_score_distribution && (
-        <ScoreDistribution data={data.identity_score_distribution} />
-      )}
 
       <div className="panel-card p-5">
         <div className="flex items-center justify-between mb-3">
@@ -404,13 +393,6 @@ function HybridContributionPanel({ contribution }: { contribution: HybridContrib
         </div>
       </div>
 
-      {contribution.arbitration_used > 0 && (
-        <p className="text-[11px] text-fuchsia-300 mt-3">
-          {contribution.arbitration_used} investigación(es) usaron además el arbitraje por LLM
-          de la franja ambigua. Es una condición opcional y no determinista: los resultados
-          arbitrados no son comparables con los que resolvió solo el modelo.
-        </p>
-      )}
     </div>
   );
 }
@@ -442,7 +424,8 @@ function SurveyStatsPanel() {
   }, []);
 
   useEffect(() => {
-    load();
+    const initialLoad = window.setTimeout(() => load(), 0);
+    return () => clearTimeout(initialLoad);
   }, [load]);
 
   if (loading) {

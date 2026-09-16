@@ -59,7 +59,7 @@ class ToolFinding(BaseModel):
     value: str                        # URL, email, handle, title
     display_name: Optional[str] = None
     metadata_info: Dict[str, Any] = Field(default_factory=dict)
-    confidence: float = 0.5           # 0.0 to 1.0 (refined later by Identity Scorer)
+    confidence: float = 0.5           # Priorización interna de detecciones al deduplicar fuentes.
     evidence_urls: List[str] = Field(default_factory=list)
 
 

@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from app.agent.agent import osint_agent
 from app.core.config import settings
 from app.core.database import async_session_maker
 from app.core.fingerprint import run_fingerprint
@@ -12,10 +11,7 @@ from app.core.events import event_bus
 from app.engine.hybrid_engine import hybrid_engine
 from app.engine.rule_engine import rule_engine
 from app.identity import enrichment as identity_enrichment
-from app.identity import arbitration as identity_arbitration
-from app.identity.resolver import identity_resolver
-from app.identity.scorer import SCORER_VERSION
-from app.identity.risk import calculate_risk_score
+from app.identity.resolver import correlation_resolver
 from app.models.investigation import Investigation
 from app.models.relationship import Relationship
 
@@ -93,65 +89,39 @@ class Orchestrator:
                     engine_used = "rules"
                     entities = await rule_engine.execute_investigation(str_id, target, db)
 
-                # 3. Segunda pasada de puntuación: señales que necesitan red
-                #    (hashing de avatares y embeddings semánticos), calculadas en
-                #    lote y aplicadas solo a las entidades que afectan.
-                enrichment = await identity_enrichment.enrich_and_rescore(entities, target)
-
-                # 3.b Arbitraje por LLM de la franja ambigua. Apagado por defecto
-                #     (HYBRID_LLM_ARBITRATION) por ser no determinista, y limitado
-                #     al motor híbrido. No toca `identity_score`: anota su
-                #     veredicto aparte y el resolutor lo usa como puntuación
-                #     efectiva, de modo que las métricas del artículo siguen
-                #     midiendo Fellegi-Sunter puro.
-                arbitration_stats = None
-                if engine_used == "hybrid":
-                    arbitration_stats = await identity_arbitration.arbitrate_ambiguous(
-                        str_id, entities, target
-                    )
-                if arbitration_stats:
-                    engine_stats = {**engine_stats, **arbitration_stats}
+                # 3. Enriquecimiento: convierte coincidencias visuales en
+                #    evidencia visible, sin inferir la identidad de nadie.
+                enrichment = await identity_enrichment.enrich_correlations(entities, db)
 
                 await db.flush()
 
-                # 4. Resolver clusters de identidad.
-                #    Se le pasan las relaciones para que pueda agrupar por
-                #    union-find sobre la evidencia directa (correo compartido,
-                #    enlace explícito, avatar idéntico) en lugar de limitarse a
-                #    clasificar cada entidad por su puntuación aislada.
+                # 4. Materializar grupos de observaciones conectadas por
+                #    evidencia explícita. Ningún grupo se atribuye al objetivo.
                 rel_stmt = select(Relationship).where(
                     Relationship.investigation_id == investigation.id
                 )
                 relationships = list((await db.execute(rel_stmt)).scalars().all())
 
-                clusters = await identity_resolver.resolve_clusters(
-                    investigation.id, entities, target, relationships
+                groups = await correlation_resolver.resolve_groups(
+                    investigation.id, entities, relationships
                 )
-                for cluster in clusters:
-                    db.add(cluster)
+                for group in groups:
+                    db.add(group)
                 await db.flush()
 
-                # 5. Calculate Risk & Exposure Score
-                risk_score, risk_level, recommendations = calculate_risk_score(entities, target)
-                investigation.risk_score = risk_score
-
-                # 6. Generate Intelligence Narrative (AI or Template)
-                narrative = await osint_agent.generate_intelligence_narrative(
-                    target=target,
-                    entities=entities,
-                    risk_score=risk_score,
-                    risk_level=risk_level,
+                # 5. El expediente ya no convierte cuentas correlacionadas en un
+                #    riesgo atribuido al objetivo. Solo resume observaciones.
+                investigation.summary = (
+                    f"Se registraron {len(entities)} observaciones y {len(groups)} grupos visuales. "
+                    "Las conexiones representan evidencia técnica, no pertenencia a una persona."
                 )
-                investigation.summary = narrative
 
                 # 7. Record Metrics for Academic Research
                 elapsed = round(time.time() - start_time, 2)
                 investigation.metrics = {
                     "execution_time_seconds": elapsed,
                     "entities_discovered": len(entities),
-                    "clusters_formed": len(clusters),
-                    "risk_level": risk_level,
-                    "recommendations": recommendations,
+                    "correlation_groups": len(groups),
                     "ai_enhanced": bool(settings.ai_enabled),
                     "strategy_used": investigation.strategy,
                     # El motor que realmente ejecutó la investigación. Puede
@@ -159,15 +129,7 @@ class Orchestrator:
                     # campo, la comparativa del artículo atribuiría al agente
                     # resultados producidos por el motor de reglas.
                     "engine_used": engine_used,
-                    "llm_arbitration_enabled": bool(
-                        settings.hybrid_llm_arbitration and settings.ai_enabled
-                    ),
                     **engine_stats,
-                    # Trazabilidad del modelo de identidad: sin la versión del
-                    # scorer, las investigaciones anteriores y posteriores a un
-                    # recalibrado no son comparables en un análisis agregado.
-                    "scorer_version": SCORER_VERSION,
-                    "semantic_matching": bool(settings.semantic_matching_enabled),
                     # Huella de la configuración: sin ella, las investigaciones
                     # medidas antes y después de ampliar el catálogo de sitios
                     # quedan mezcladas en la misma tabla sin que nada permita
@@ -184,8 +146,6 @@ class Orchestrator:
                 await event_bus.publish(str_id, {
                     "type": "investigation_complete",
                     "status": "completed",
-                    "risk_score": risk_score,
-                    "risk_level": risk_level,
                     "entities_count": len(entities),
                     "elapsed_seconds": elapsed,
                     "message": "Investigación y mapa digital finalizados con éxito.",

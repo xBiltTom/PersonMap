@@ -77,8 +77,7 @@ class AvatarHasher:
     """
     Perceptual Image Hashing Engine for Avatar Correlation.
     Uses Difference Hashing (dHash) and Hamming Distance to identify
-    when an individual reuses the same profile photo across disparate platforms
-    (e.g., Gravatar, GitHub, Twitter, Keybase), boosting correlation confidence to 99%.
+    when observations reuse a profile photo across disparate platforms.
     """
 
     HAMMING_MATCH_THRESHOLD = 6  # <= 6 indicates near-identical or resized image
@@ -172,15 +171,12 @@ class AvatarHasher:
 
                 is_match, dist = self.compare_hashes(a["hash"], b["hash"])
                 if is_match:
-                    # Confidence scales inversely with Hamming distance: distance 0 => 0.99, distance 6 => 0.85
-                    confidence = round(max(0.85, 0.99 - (dist * 0.02)), 2)
                     correlations.append({
                         "entity_a_id": a["entity_id"],
                         "entity_b_id": b["entity_id"],
                         "platform_a": a["platform"],
                         "platform_b": b["platform"],
                         "hamming_distance": dist,
-                        "confidence": confidence,
                         "match_type": "exact_avatar" if dist == 0 else "visually_similar_avatar",
                         "avatar_a": a["avatar_url"],
                         "avatar_b": b["avatar_url"],

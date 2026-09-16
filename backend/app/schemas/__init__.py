@@ -1,6 +1,6 @@
 from app.schemas.target import TargetCreate, TargetRead
-from app.schemas.entity import EntityRead, EntityVerifyRequest
-from app.schemas.identity import IdentityClusterRead
+from app.schemas.entity import EntityRead
+from app.schemas.identity import CorrelationGroupRead
 from app.schemas.investigation import (
     InvestigationCreate,
     InvestigationRead,
@@ -18,8 +18,7 @@ __all__ = [
     "TargetCreate",
     "TargetRead",
     "EntityRead",
-    "EntityVerifyRequest",
-    "IdentityClusterRead",
+    "CorrelationGroupRead",
     "InvestigationCreate",
     "InvestigationRead",
     "InvestigationDetail",

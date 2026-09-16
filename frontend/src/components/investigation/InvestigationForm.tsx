@@ -131,8 +131,8 @@ export function InvestigationForm() {
       });
 
       router.push(`/investigation/${inv.id}`);
-    } catch (err: any) {
-      setError(err.message || "Error al despachar la investigación.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error al despachar la investigación.");
       setLoading(false);
     }
   };

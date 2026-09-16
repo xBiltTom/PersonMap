@@ -62,7 +62,7 @@ const FALLBACK: EntityTypeMeta = {
 
 /**
  * Registro de tipos. El orden define el de los filtros.
- * `person` es el nodo raíz del objetivo y no aparece como filtro.
+ * `query` es el nodo raíz de la consulta y no aparece como filtro.
  */
 export const ENTITY_TYPES: Record<string, EntityTypeMeta> = {
   social_account: {
@@ -75,7 +75,7 @@ export const ENTITY_TYPES: Record<string, EntityTypeMeta> = {
   },
   email: {
     label: "Correos",
-    description: "Dirección de correo descubierta o confirmada.",
+    description: "Dirección de correo observada en una fuente.",
     Icon: Mail,
     accent: "text-amber-400",
     node: "border-amber-500/40 bg-[#1c1710]",
@@ -92,7 +92,7 @@ export const ENTITY_TYPES: Record<string, EntityTypeMeta> = {
   sensitive_account: {
     label: "Contenido Sensible",
     description:
-      "Cuenta en una plataforma de contenido adulto registrada con un alias que también se usa en perfiles públicos. El riesgo no es la cuenta: es que sea vinculable a la identidad profesional, que es el material con el que se hace extorsión.",
+      "Cuenta observada en una plataforma de contenido adulto. Revise la fuente y sus conexiones antes de extraer conclusiones.",
     Icon: EyeOff,
     accent: "text-fuchsia-400",
     node: "border-fuchsia-500/70 bg-[#1e0d1e] ring-1 ring-fuchsia-500/25",
@@ -134,7 +134,7 @@ export const ENTITY_TYPES: Record<string, EntityTypeMeta> = {
   google_account: {
     label: "Cuenta Google",
     description:
-      "Cuenta del ecosistema Google confirmada. Suele ser el eje que conecta correo, YouTube y producción académica.",
+      "Cuenta del ecosistema Google observada. Puede contener enlaces públicos hacia otros servicios.",
     Icon: KeyRound,
     accent: "text-orange-300",
     node: "border-orange-500/50 bg-[#201509]",
@@ -143,7 +143,7 @@ export const ENTITY_TYPES: Record<string, EntityTypeMeta> = {
   image_match: {
     label: "Coincidencia Visual",
     description:
-      "Otra página de la web abierta que reutiliza la misma imagen de perfil. Es un pivote fuerte, no una identidad verificada.",
+      "Otra página de la web abierta que reutiliza una imagen de perfil. Es una conexión visual a revisar.",
     Icon: Camera,
     accent: "text-fuchsia-400",
     node: "border-fuchsia-500/50 bg-[#1c0f21]",
@@ -167,7 +167,7 @@ export const ENTITY_TYPES: Record<string, EntityTypeMeta> = {
   },
   domain: {
     label: "Infraestructura",
-    description: "Dominio o subdominio personal atribuible al objetivo.",
+    description: "Dominio o subdominio observado durante la consulta.",
     Icon: Server,
     accent: "text-lime-300",
     node: "border-lime-500/40 bg-[#141a0d]",

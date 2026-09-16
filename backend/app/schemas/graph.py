@@ -13,13 +13,9 @@ class GraphNodeData(BaseModel):
     platform: Optional[str] = None
     value: str
     display_name: Optional[str] = None
-    confidence: float
-    # Las dos métricas que `confidence` resume: detección y atribución.
-    existence_confidence: Optional[float] = None
-    identity_score: Optional[float] = None
-    verified: bool
     metadata_info: Dict[str, Any] = {}
     is_root: bool = False
+    group_id: Optional[str] = None
 
 
 class GraphNode(BaseModel):
@@ -35,9 +31,10 @@ class GraphEdge(BaseModel):
     target: str
     label: Optional[str] = None
     relation_type: str = "linked_to"
-    strength: float = 0.5
     animated: bool = False
     style: Dict[str, Any] = {}
+    evidence: Dict[str, Any] = {}
+    supports_group: bool = False
 
 
 class GraphResponse(BaseModel):

@@ -47,7 +47,7 @@ async def test_end_to_end_investigation_rule_based():
         inv = await db.get(Investigation, inv_id)
         assert inv is not None
         assert inv.status == "completed"
-        assert inv.risk_score > 0
         assert inv.metrics is not None
         assert "execution_time_seconds" in inv.metrics
-        print(f"\n[E2E Success] Completed in {inv.metrics['execution_time_seconds']}s with score {inv.risk_score}/100")
+        assert "correlation_groups" in inv.metrics
+        print(f"\n[E2E Success] Completed in {inv.metrics['execution_time_seconds']}s")

@@ -1,33 +1,39 @@
-import math
-from typing import Any, Dict, List
+from typing import Dict
 from uuid import UUID
+from xml.sax.saxutils import escape
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
 from app.core.database import get_db
 from app.models.investigation import Investigation
-from app.models.relationship import Relationship
-from app.schemas.graph import (
-    GraphEdge,
-    GraphNode,
-    GraphNodeData,
-    GraphNodePosition,
-    GraphResponse,
-)
+from app.schemas.graph import GraphEdge, GraphNode, GraphNodeData, GraphNodePosition, GraphResponse
 
 router = APIRouter()
 
+EDGE_STYLES = {
+    "discovered_from": {"stroke": "#3b82f6", "strokeDasharray": "2,7", "strokeWidth": 1},
+    "shares_declared_email": {"stroke": "#34d399", "strokeWidth": 2.5},
+    "explicit_profile_link": {"stroke": "#a855f7", "strokeWidth": 2.5},
+    "same_username": {"stroke": "#f59e0b", "strokeDasharray": "5,5", "strokeWidth": 1.5},
+    "similar_avatar": {"stroke": "#f97316", "strokeDasharray": "3,3", "strokeWidth": 1.5},
+}
+
+
+def _group_membership(investigation: Investigation) -> Dict[str, str]:
+    return {
+        entity_id: str(group.id)
+        for group in investigation.correlation_groups
+        for entity_id in group.entity_ids
+    }
+
 
 @router.get("/investigations/{id}/graph", response_model=GraphResponse)
-async def get_investigation_graph(
-    id: UUID,
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Computes and returns the interactive React Flow graph for an investigation.
-    Includes the target root node, discovered entities, and semantic relationships.
-    """
+async def get_investigation_graph(id: UUID, db: AsyncSession = Depends(get_db)):
+    """Devuelve observaciones y evidencia, no atribuciones de identidad."""
     stmt = (
         select(Investigation)
         .where(Investigation.id == id)
@@ -35,35 +41,27 @@ async def get_investigation_graph(
             selectinload(Investigation.target),
             selectinload(Investigation.entities),
             selectinload(Investigation.relationships),
+            selectinload(Investigation.correlation_groups),
         )
     )
-    result = await db.execute(stmt)
-    inv = result.scalar_one_or_none()
-    if not inv:
+    investigation = (await db.execute(stmt)).scalar_one_or_none()
+    if not investigation:
         raise HTTPException(status_code=404, detail="Investigación no encontrada")
 
-    target = inv.target
-    entities = inv.entities
-    relationships = inv.relationships
-
-    nodes: list[GraphNode] = []
-    edges: list[GraphEdge] = []
-
-    # 1. Root Node (The Target Person)
+    target = investigation.target
     root_id = f"target-{target.id}"
-    root_label = target.full_name or target.username or target.email or "Objetivo"
-    nodes.append(
+    root_label = target.full_name or target.username or target.email or "Identidad Objetivo"
+    membership = _group_membership(investigation)
+    nodes = [
         GraphNode(
             id=root_id,
             type="personRoot",
-            position=GraphNodePosition(x=400.0, y=300.0),
+            position=GraphNodePosition(x=0, y=0),
             data=GraphNodeData(
                 label=root_label,
-                entity_type="person",
+                entity_type="target",
                 value=root_label,
-                display_name=root_label,
-                confidence=1.0,
-                verified=True,
+                display_name=target.full_name or target.username or "Identidad Objetivo",
                 is_root=True,
                 metadata_info={
                     "full_name": target.full_name,
@@ -74,207 +72,88 @@ async def get_investigation_graph(
                 },
             ),
         )
-    )
-
-    # 2. Nodos de entidad, en anillos concéntricos POR CERTEZA DE ATRIBUCIÓN.
-    #
-    #    El radio deja de ser decorativo y pasa a significar algo: cuanto más
-    #    cerca de la persona está un nodo, más probable es que sea suyo. Con
-    #    cientos de resultados es lo que permite leer el mapa de un vistazo, en
-    #    vez de tener que inspeccionar nodo a nodo.
-    #
-    #    Antes el ángulo salía del índice en la lista y el radio era constante,
-    #    así que la posición no decía nada y al filtrar quedaban huecos.
-    #
-    #    El mapa web NO usa estas posiciones: las recalcula con cada filtro,
-    #    agrupando por evidencia compartida (frontend/src/lib/graphLayout.ts).
-    #    Quedan para quien consuma la API directamente.
-    def _attribution(ent) -> float:
-        if ent.identity_score is not None:
-            return float(ent.identity_score)
-        return float(ent.confidence or 0.0)
-
-    def _ring(ent) -> int:
-        if ent.verified or _attribution(ent) >= 0.70:
-            return 0
-        return 1 if _attribution(ent) >= 0.40 else 2
-
-    RING_RADIUS = {0: 260.0, 1: 430.0, 2: 620.0}
-
-    rings: Dict[int, List[Any]] = {0: [], 1: [], 2: []}
-    for ent in entities:
-        rings[_ring(ent)].append(ent)
-
-    positions: Dict[Any, tuple] = {}
-    for ring_index, members in rings.items():
-        radius = RING_RADIUS[ring_index]
-        # Los anillos exteriores tienen más nodos: se reparten en toda la
-        # circunferencia para que no se amontonen.
-        for j, ent in enumerate(members):
-            angle = (2 * math.pi * j) / max(len(members), 1)
-            positions[ent.id] = (
-                round(400.0 + radius * math.cos(angle), 1),
-                round(300.0 + radius * math.sin(angle), 1),
-            )
-
-    for i, ent in enumerate(entities):
-        x_pos, y_pos = positions[ent.id]
-
-        ent_id = f"ent-{ent.id}"
+    ]
+    edges = []
+    for index, entity in enumerate(investigation.entities):
+        entity_id = f"ent-{entity.id}"
         nodes.append(
             GraphNode(
-                id=ent_id,
+                id=entity_id,
                 type="customEntity",
-                position=GraphNodePosition(x=x_pos, y=y_pos),
+                position=GraphNodePosition(x=float(250 + index * 20), y=0),
                 data=GraphNodeData(
-                    label=ent.display_name or ent.value,
-                    entity_type=ent.entity_type,
-                    platform=ent.platform,
-                    value=ent.value,
-                    display_name=ent.display_name,
-                    confidence=ent.confidence,
-                    existence_confidence=ent.existence_confidence,
-                    identity_score=ent.identity_score,
-                    verified=ent.verified,
-                    metadata_info=ent.metadata_info or {},
-                    is_root=False,
+                    label=entity.display_name or entity.value,
+                    entity_type=entity.entity_type,
+                    platform=entity.platform,
+                    value=entity.value,
+                    display_name=entity.display_name,
+                    metadata_info=entity.metadata_info or {},
+                    group_id=membership.get(str(entity.id)),
                 ),
             )
         )
-
-        # Primary Edge from Root to Entity
-        edge_id = f"edge-root-{ent.id}"
-        # La arista raíz→entidad expresa ATRIBUCIÓN, no detección: es la que
-        # responde "¿esto es suyo?". Antes usaba `confidence`, que es el máximo
-        # con la certeza de detección de la herramienta, y pintaba como fuertes
-        # cientos de aristas hacia homónimos descartados.
-        attribution = _attribution(ent)
-        is_high_conf = ent.verified or attribution >= 0.70
         edges.append(
             GraphEdge(
-                id=edge_id,
+                id=f"source-{entity.id}",
                 source=root_id,
-                target=ent_id,
-                label=f"{int(attribution * 100)}%",
-                relation_type="identified_profile",
-                strength=attribution,
-                animated=is_high_conf,
-                style={
-                    "stroke": (
-                        "#34d399" if is_high_conf
-                        else "#fbbf24" if attribution >= 0.40
-                        else "#475569"
-                    ),
-                    "strokeWidth": 2 if is_high_conf else 1,
-                },
+                target=entity_id,
+                relation_type="discovered_from",
+                label=None,
+                style=EDGE_STYLES["discovered_from"],
+                evidence={"source_tool": entity.source_tool},
             )
         )
 
-    # 3. Inter-entity Relationship Edges
-    for rel in relationships:
-        src_id = f"ent-{rel.source_entity_id}"
-        tgt_id = f"ent-{rel.target_entity_id}"
+    for relationship in investigation.relationships:
+        relation_type = relationship.relation_type
         edges.append(
             GraphEdge(
-                id=f"rel-{rel.id}",
-                source=src_id,
-                target=tgt_id,
-                label=rel.relation_type.replace("_", " "),
-                relation_type=rel.relation_type,
-                strength=rel.strength,
-                animated=False,
-                style={"stroke": "#a855f7", "strokeDasharray": "5,5", "strokeWidth": 1.5},
+                id=f"rel-{relationship.id}",
+                source=f"ent-{relationship.source_entity_id}",
+                target=f"ent-{relationship.target_entity_id}",
+                relation_type=relation_type,
+                label=relation_type.replace("_", " "),
+                style=EDGE_STYLES.get(relation_type, {"stroke": "#64748b", "strokeWidth": 1.5}),
+                evidence=relationship.evidence or {},
+                supports_group=relationship.supports_group,
             )
         )
 
-    return GraphResponse(
-        investigation_id=str(id),
-        nodes=nodes,
-        edges=edges,
-    )
+    return GraphResponse(investigation_id=str(id), nodes=nodes, edges=edges)
 
 
 @router.get("/investigations/{id}/graphml")
-async def export_graphml(
-    id: UUID,
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Exports the investigation digital map in GraphML format for direct import
-    into Gephi, Cytoscape, or NetworkX for academic publication graphics.
-    """
-    stmt = (
-        select(Investigation)
-        .where(Investigation.id == id)
-        .options(
-            selectinload(Investigation.target),
-            selectinload(Investigation.entities),
-            selectinload(Investigation.relationships),
-        )
-    )
-    result = await db.execute(stmt)
-    inv = result.scalar_one_or_none()
-    if not inv:
-        raise HTTPException(status_code=404, detail="Investigación no encontrada")
-
-    target = inv.target
-    entities = inv.entities
-    relationships = inv.relationships
-
-    xml_lines = [
+async def export_graphml(id: UUID, db: AsyncSession = Depends(get_db)):
+    """Exporta el mismo grafo factual para Gephi, Cytoscape o NetworkX."""
+    graph = await get_investigation_graph(id, db)
+    lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
-        '<graphml xmlns="http://graphml.graphdrawing.org/xmlns"',
-        '         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
-        '         xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">',
+        '<graphml xmlns="http://graphml.graphdrawing.org/xmlns">',
         '  <key id="label" for="node" attr.name="label" attr.type="string"/>',
         '  <key id="type" for="node" attr.name="type" attr.type="string"/>',
-        '  <key id="platform" for="node" attr.name="platform" attr.type="string"/>',
-        '  <key id="confidence" for="node" attr.name="confidence" attr.type="double"/>',
-        '  <key id="weight" for="edge" attr.name="weight" attr.type="double"/>',
         '  <key id="relation" for="edge" attr.name="relation" attr.type="string"/>',
         '  <graph id="G" edgedefault="undirected">',
     ]
-
-    # Root Target node
-    root_id = f"target_{target.id}"
-    root_label = target.full_name or target.username or "Target"
-    xml_lines.append(f'    <node id="{root_id}">')
-    xml_lines.append(f'      <data key="label">{root_label}</data>')
-    xml_lines.append('      <data key="type">target</data>')
-    xml_lines.append('      <data key="platform">identity</data>')
-    xml_lines.append('      <data key="confidence">1.0</data>')
-    xml_lines.append('    </node>')
-
-    # Entity nodes
-    for ent in entities:
-        ent_id = f"ent_{ent.id}"
-        ent_label = (ent.display_name or ent.value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        xml_lines.append(f'    <node id="{ent_id}">')
-        xml_lines.append(f'      <data key="label">{ent_label}</data>')
-        xml_lines.append(f'      <data key="type">{ent.entity_type}</data>')
-        xml_lines.append(f'      <data key="platform">{ent.platform or "web"}</data>')
-        xml_lines.append(f'      <data key="confidence">{ent.confidence}</data>')
-        xml_lines.append('    </node>')
-
-        # Edge from target to entity
-        xml_lines.append(f'    <edge source="{root_id}" target="{ent_id}">')
-        xml_lines.append(f'      <data key="weight">{ent.confidence}</data>')
-        xml_lines.append('      <data key="relation">identified</data>')
-        xml_lines.append('    </edge>')
-
-    # Semantic relationships
-    for rel in relationships:
-        xml_lines.append(f'    <edge source="ent_{rel.source_entity_id}" target="ent_{rel.target_entity_id}">')
-        xml_lines.append(f'      <data key="weight">{rel.strength}</data>')
-        xml_lines.append(f'      <data key="relation">{rel.relation_type}</data>')
-        xml_lines.append('    </edge>')
-
-    xml_lines.append('  </graph>')
-    xml_lines.append('</graphml>')
-
-    from fastapi.responses import Response
+    for node in graph.nodes:
+        lines.extend(
+            [
+                f'    <node id="{escape(node.id)}">',
+                f'      <data key="label">{escape(node.data.label)}</data>',
+                f'      <data key="type">{escape(node.data.entity_type)}</data>',
+                "    </node>",
+            ]
+        )
+    for edge in graph.edges:
+        lines.extend(
+            [
+                f'    <edge source="{escape(edge.source)}" target="{escape(edge.target)}">',
+                f'      <data key="relation">{escape(edge.relation_type)}</data>',
+                "    </edge>",
+            ]
+        )
+    lines.extend(["  </graph>", "</graphml>"])
     return Response(
-        content="\n".join(xml_lines),
+        content="\n".join(lines),
         media_type="application/xml",
         headers={"Content-Disposition": f'attachment; filename="person_map_{id}.graphml"'},
     )

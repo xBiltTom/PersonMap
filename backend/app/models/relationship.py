@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, Float, ForeignKey, String
+from sqlalchemy import Boolean, Column, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import relationship
@@ -15,9 +15,12 @@ class Relationship(Base):
     source_entity_id = Column(UUID(as_uuid=True), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
     target_entity_id = Column(UUID(as_uuid=True), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
 
-    # Relationship type: 'owns', 'linked_to', 'same_person', 'uses_email', 'mentioned_in'
+    # Una arista describe un hecho observado entre dos nodos; nunca atribuye
+    # propiedad o identidad a una persona.
     relation_type = Column(String(50), default="linked_to", nullable=False)
-    strength = Column(Float, default=0.5, nullable=False)
+    # Solo las relaciones deterministas forman grupos visuales. Las demás se
+    # muestran como contexto para que el analista las valore por su cuenta.
+    supports_group = Column(Boolean, default=False, nullable=False)
     evidence = Column(MutableDict.as_mutable(JSONB), default=dict)
 
     investigation = relationship("Investigation", back_populates="relationships")

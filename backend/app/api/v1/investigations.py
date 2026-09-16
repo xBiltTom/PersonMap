@@ -9,10 +9,8 @@ from app.core.database import get_db
 from app.core.events import event_bus
 from app.engine.orchestrator import orchestrator
 from app.models.entity import Entity
-from app.models.identity_cluster import IdentityCluster
 from app.models.investigation import Investigation
 from app.models.target import Target
-from app.schemas.entity import EntityVerifyRequest
 from app.schemas.investigation import (
     InvestigationCreate,
     InvestigationDetail,
@@ -99,7 +97,7 @@ async def get_investigation(
         .options(
             selectinload(Investigation.target),
             selectinload(Investigation.entities),
-            selectinload(Investigation.identity_clusters),
+            selectinload(Investigation.correlation_groups),
         )
     )
     result = await db.execute(stmt)
@@ -107,31 +105,6 @@ async def get_investigation(
     if not inv:
         raise HTTPException(status_code=404, detail="Investigación no encontrada")
     return inv
-
-
-@router.post("/investigations/{id}/verify-entity/{entity_id}")
-async def verify_entity(
-    id: UUID,
-    entity_id: UUID,
-    payload: EntityVerifyRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    """Allows manual confirmation or rejection of a discovered entity."""
-    stmt = select(Entity).where(Entity.id == entity_id, Entity.investigation_id == id)
-    result = await db.execute(stmt)
-    entity = result.scalar_one_or_none()
-    if not entity:
-        raise HTTPException(status_code=404, detail="Entidad no encontrada")
-
-    entity.verified = payload.verified
-    if payload.verification_notes:
-        entity.verification_notes = payload.verification_notes
-    if payload.verified:
-        entity.confidence = 1.0
-
-    await db.commit()
-    return {"status": "success", "entity_id": str(entity_id), "verified": entity.verified}
-
 
 @router.delete("/investigations/{id}")
 async def delete_investigation(

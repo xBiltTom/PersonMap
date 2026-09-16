@@ -2,15 +2,13 @@
 
 import { Fragment, useState, useMemo } from "react";
 import { EntityData } from "@/lib/types";
-import { Search, ExternalLink, CheckCircle, ChevronDown, Clock } from "lucide-react";
+import { Search, ExternalLink, ChevronDown, Clock } from "lucide-react";
 import {
   buildEntityFilters,
   getEntityTypeMeta,
   getFindingIcon,
 } from "@/lib/entityTypes";
-import { IdentityEvidence } from "@/components/identity/IdentityEvidence";
 import { AvatarThumb } from "@/components/identity/AvatarThumb";
-import { PlainExplanation } from "@/components/identity/PlainExplanation";
 import { LAYER_META } from "@/lib/engines";
 
 /** Filas por página. Suficiente para desplazarse sin ahogar al navegador. */
@@ -238,18 +236,10 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                       type="button"
                       onClick={() => toggleExpanded(item.id)}
                       aria-expanded={expanded.has(item.id)}
-                      title="Ver indicios y correlación de este hallazgo (validación manual)"
-                      className={`inline-flex items-center gap-1 font-mono text-[11px] font-medium px-2 py-0.5 rounded cursor-pointer transition-colors ${
-                        item.confidence >= 0.70
-                          ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
-                          : item.confidence >= 0.40
-                          ? "bg-sky-500/10 text-sky-400 hover:bg-sky-500/20"
-                          : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                      }`}
+                      title="Ver detalles observados de este hallazgo"
+                      className="inline-flex items-center gap-1 font-mono text-[11px] font-medium px-2 py-0.5 rounded cursor-pointer transition-colors bg-sky-500/10 text-sky-400 hover:bg-sky-500/20"
                     >
-                      {/* PARCHE BORRADOR: Se comenta el porcentaje de certeza */}
-                      {/* {Math.round(item.confidence * 100)}% */}
-                      <span>Indicios</span>
+                      <span>Detalles</span>
                       <ChevronDown
                         className={`w-3 h-3 transition-transform ${
                           expanded.has(item.id) ? "rotate-180" : ""
@@ -260,15 +250,9 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                   </td>
 
                   <td className="py-3 px-4 whitespace-nowrap text-right">
-                    {item.verified ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-400">
-                        <CheckCircle className="w-3 h-3" aria-hidden="true" /> Verificado
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-mono text-slate-400">
-                        <Clock className="w-3 h-3" aria-hidden="true" /> Pendiente
-                      </span>
-                    )}
+                    <span className="inline-flex items-center gap-1 text-[10px] font-mono text-slate-400">
+                      <Clock className="w-3 h-3" aria-hidden="true" /> Observado
+                    </span>
                   </td>
                 </tr>
                 {expanded.has(item.id) && (
@@ -276,44 +260,12 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
                     <td colSpan={5} className="px-4 py-4">
                       <div className="max-w-2xl">
                         <div className="text-[10px] font-mono text-slate-400 uppercase mb-2">
-                          ¿Por qué este porcentaje?
+                          Registro observado
                         </div>
-
-                        <PlainExplanation
-                          breakdown={item.metadata_info?.identity_breakdown}
-                          score={
-                            typeof item.identity_score === "number"
-                              ? item.identity_score
-                              : item.confidence
-                          }
-                          verified={item.verified}
-                        />
-
-                        <details className="mt-3">
-                          <summary className="text-[10px] font-mono text-slate-500 hover:text-slate-300 cursor-pointer select-none">
-                            Ver el desglose técnico del modelo
-                          </summary>
-                          <div className="mt-2">
-                        <IdentityEvidence
-                          breakdown={item.metadata_info?.identity_breakdown}
-                          identityScore={item.identity_score}
-                          existenceConfidence={item.existence_confidence}
-                          finalConfidence={item.confidence}
-                          arbitration={item.metadata_info?.llm_arbitration}
-                          avatar={
-                            item.metadata_info?.avatar_url
-                              ? {
-                                  url: item.metadata_info.avatar_url,
-                                  source: item.metadata_info.avatar_source,
-                                  harvested: item.metadata_info.avatar_harvested,
-                                  distance: item.metadata_info.avatar_hamming_distance,
-                                  similarity: item.metadata_info.avatar_similarity,
-                                }
-                              : undefined
-                          }
-                        />
-                          </div>
-                        </details>
+                        <p className="text-[11px] text-slate-300 leading-snug">
+                          Encontrado por <span className="font-mono text-sky-300">{item.source_tool}</span>.
+                          Consulta el mapa para ver las conexiones documentadas con otras observaciones.
+                        </p>
                       </div>
                     </td>
                   </tr>

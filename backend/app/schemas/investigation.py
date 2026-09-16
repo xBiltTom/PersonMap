@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 from app.schemas.target import TargetCreate, TargetRead
 from app.schemas.entity import EntityRead
-from app.schemas.identity import IdentityClusterRead
+from app.schemas.identity import CorrelationGroupRead
 
 
 # Estrategias de orquestación seleccionables. `hybrid` se añadió en la Fase 3
@@ -40,7 +40,6 @@ class InvestigationRead(BaseModel):
     target_id: UUID
     strategy: str
     status: str
-    risk_score: int
     summary: Optional[str] = None
     metrics: Dict[str, Any] = {}
     created_at: datetime
@@ -52,4 +51,4 @@ class InvestigationRead(BaseModel):
 
 class InvestigationDetail(InvestigationRead):
     entities: List[EntityRead] = []
-    identity_clusters: List[IdentityClusterRead] = []
+    correlation_groups: List[CorrelationGroupRead] = []

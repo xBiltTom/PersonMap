@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import relationship
@@ -19,10 +19,7 @@ class Investigation(Base):
     # Status: "pending", "running", "completed", "failed"
     status = Column(String(50), default="pending", nullable=False, index=True)
 
-    # Risk Score: 0 - 100
-    risk_score = Column(Integer, default=0, nullable=False)
-
-    # Auto-generated intelligence summary / awareness narrative
+    # Summary of the observed evidence graph.
     summary = Column(Text, nullable=True)
 
     # Metrics for academic paper: execution_time, tool_calls, entities_count, etc.
@@ -34,4 +31,12 @@ class Investigation(Base):
     target = relationship("Target", back_populates="investigations")
     entities = relationship("Entity", back_populates="investigation", cascade="all, delete-orphan")
     relationships = relationship("Relationship", back_populates="investigation", cascade="all, delete-orphan")
-    identity_clusters = relationship("IdentityCluster", back_populates="investigation", cascade="all, delete-orphan")
+    correlation_groups = relationship("CorrelationGroup", back_populates="investigation", cascade="all, delete-orphan")
+
+
+# Registra los modelos relacionados incluso cuando un endpoint importa solamente
+# `Investigation`; SQLAlchemy necesita conocerlos antes de configurar los mappers.
+from app.models.correlation_group import CorrelationGroup  # noqa: E402, F401
+from app.models.entity import Entity  # noqa: E402, F401
+from app.models.relationship import Relationship  # noqa: E402, F401
+from app.models.target import Target  # noqa: E402, F401

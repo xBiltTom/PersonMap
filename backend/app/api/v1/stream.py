@@ -45,7 +45,6 @@ async def get_investigation_logs(id: UUID):
                 {
                     "type": "investigation_complete",
                     "status": inv.status,
-                    "risk_score": inv.risk_score,
                     "message": "Investigación y mapa digital finalizados con éxito.",
                     "timestamp": inv.completed_at.timestamp() if inv.completed_at else 0,
                 },
@@ -66,14 +65,12 @@ async def stream_investigation_events(id: UUID):
     # Check if investigation is already finished in DB
     is_already_finished = False
     status_in_db = "pending"
-    risk_score_in_db = 0
 
     async with async_session_maker() as db:
         inv = await db.get(Investigation, id)
         if inv and inv.status in ["completed", "failed"]:
             is_already_finished = True
             status_in_db = inv.status
-            risk_score_in_db = inv.risk_score
 
     async def event_generator():
         try:
@@ -89,7 +86,7 @@ async def stream_investigation_events(id: UUID):
 
             if is_already_finished:
                 # If investigation was already done and completion event wasn't in history
-                yield f"data: {json.dumps({'type': 'investigation_complete', 'status': status_in_db, 'risk_score': risk_score_in_db, 'message': 'Investigación ya completada.'})}\n\n"
+                yield f"data: {json.dumps({'type': 'investigation_complete', 'status': status_in_db, 'message': 'Investigación ya completada.'})}\n\n"
                 return
 
             # Wait for future events
@@ -106,7 +103,7 @@ async def stream_investigation_events(id: UUID):
                     async with async_session_maker() as db:
                         check_inv = await db.get(Investigation, id)
                         if check_inv and check_inv.status in ["completed", "failed"]:
-                            yield f"data: {json.dumps({'type': 'investigation_complete', 'status': check_inv.status, 'risk_score': check_inv.risk_score, 'message': 'Investigación finalizada.'})}\n\n"
+                            yield f"data: {json.dumps({'type': 'investigation_complete', 'status': check_inv.status, 'message': 'Investigación finalizada.'})}\n\n"
                             break
                     # Keep-alive ping
                     yield f": keep-alive\n\n"

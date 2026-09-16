@@ -40,7 +40,8 @@ export function InvestigationHistory() {
   };
 
   useEffect(() => {
-    loadData();
+    const initialLoad = window.setTimeout(loadData, 0);
+    return () => clearTimeout(initialLoad);
   }, []);
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
@@ -186,24 +187,9 @@ export function InvestigationHistory() {
 
               <div className="flex items-center gap-3 shrink-0 ml-4">
                 {isCompleted && (
-                  <div className="text-right">
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <span
-                        className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
-                          inv.risk_score >= 75
-                            ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
-                            : inv.risk_score >= 50
-                            ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                            : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                        }`}
-                      >
-                        {inv.risk_score}/100
-                      </span>
-                    </div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase">
-                      {inv.metrics?.risk_level || "Riesgo"}
-                    </span>
-                  </div>
+                  <span className="text-[10px] font-mono text-emerald-400 uppercase">
+                    completada
+                  </span>
                 )}
 
                 <button

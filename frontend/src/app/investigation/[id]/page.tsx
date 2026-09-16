@@ -6,7 +6,6 @@ import { InvestigationData } from "@/lib/types";
 import { getInvestigation } from "@/lib/api";
 import { ENGINE_META, resolveEngine } from "@/lib/engines";
 import { DigitalMapGraph } from "@/components/graph/DigitalMapGraph";
-import { IdentityClustersView } from "@/components/identity/IdentityClustersView";
 import { FindingsTable } from "@/components/findings/FindingsTable";
 import { DiscoveryTimeline } from "@/components/timeline/DiscoveryTimeline";
 import { LiveConsole } from "@/components/console/LiveConsole";
@@ -16,7 +15,6 @@ import { ReportView } from "@/components/report/ReportView";
 import {
   ArrowLeft,
   Network,
-  ShieldCheck,
   Table,
   Clock,
   Terminal,
@@ -38,7 +36,7 @@ export default function InvestigationDetailPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<
-    "graph" | "identity" | "findings" | "timeline" | "console" | "report"
+    "graph" | "findings" | "timeline" | "console" | "report"
   >("graph");
 
   const loadData = useCallback(async () => {
@@ -46,15 +44,17 @@ export default function InvestigationDetailPage({
       const data = await getInvestigation(id);
       setInvestigation(data);
       setError(null);
-    } catch (err: any) {
-      setError(err.message || "No se pudo cargar la investigación");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "No se pudo cargar la investigación");
     } finally {
       setLoading(false);
     }
   }, [id]);
 
   useEffect(() => {
-    loadData();
+    const initialLoad = window.setTimeout(() => {
+      void loadData();
+    }, 0);
     // Poll every 4 seconds if still running
     const interval = setInterval(() => {
       if (investigation?.status === "running" || investigation?.status === "pending") {
@@ -62,7 +62,10 @@ export default function InvestigationDetailPage({
       }
     }, 4000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(initialLoad);
+      clearInterval(interval);
+    };
   }, [id, loadData, investigation?.status]);
 
   // Un único stream para toda la página: lo comparten la consola y la barra de
@@ -124,7 +127,6 @@ export default function InvestigationDetailPage({
 
   const tabs = [
     { id: "graph", label: "Mapa Digital", icon: Network },
-    { id: "identity", label: "Reconstrucción de Identidad", icon: ShieldCheck },
     { id: "findings", label: `Hallazgos (${investigation.entities?.length || 0})`, icon: Table },
     { id: "timeline", label: "Línea de Tiempo", icon: Clock },
     { id: "console", label: "Consola en Vivo", icon: Terminal },
@@ -209,22 +211,11 @@ export default function InvestigationDetailPage({
                   </span>
                 )}
 
-              {investigation.metrics?.arbitration_answered ? (
-                <span
-                  title="Arbitraje por LLM de la franja ambigua: es una condición opcional y no determinista, y queda registrada por hallazgo."
-                  className="text-[10px] font-mono px-2 py-0.5 rounded border bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30"
-                >
-                  Arbitraje IA: {investigation.metrics.arbitration_answered} hallazgo(s)
-                </span>
-              ) : null}
             </div>
           </div>
 
           <div className="flex items-center gap-3 shrink-0 print:hidden">
             <div className="text-right">
-              <div className="text-xs font-mono font-bold text-slate-200">
-                Score: {investigation.risk_score}/100
-              </div>
               <span
                 className={`text-[10px] font-mono px-1.5 py-0.5 rounded uppercase font-semibold ${
                   isRunning
@@ -272,7 +263,7 @@ export default function InvestigationDetailPage({
                 type="button"
                 role="tab"
                 aria-selected={isActive}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => setActiveTab(tab.id as typeof activeTab)}
                 className={`flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-mono transition-all whitespace-nowrap cursor-pointer border ${
                   isActive
                     ? "bg-sky-500/20 text-sky-300 border-sky-500/30 font-semibold"
@@ -301,14 +292,6 @@ export default function InvestigationDetailPage({
           <DigitalMapGraph
             investigationId={investigation.id}
             refreshKey={`${investigation.status}:${investigation.completed_at ?? ""}`}
-          />
-        )}
-
-        {activeTab === "identity" && (
-          <IdentityClustersView
-            investigationId={investigation.id}
-            clusters={investigation.identity_clusters || []}
-            onEntityUpdated={loadData}
           />
         )}
 

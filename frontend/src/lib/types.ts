@@ -17,45 +17,12 @@ export interface TargetData {
 }
 
 /**
- * Desglose del modelo Fellegi-Sunter que persiste `app/engine/persistence.py`.
- *
- * Por cada señal hay dos claves: `<señal>` con el grado de acuerdo γ ∈ [0,1] y
- * `<señal>_weight` con su peso en bits de log-verosimilitud (positivo si la
- * señal apoya la atribución, negativo si la contradice). `log_likelihood_ratio`
- * es la suma.
- */
-export interface IdentityBreakdown {
-  log_likelihood_ratio?: number;
-  /** Cuántas señales pudieron evaluarse para este par (objetivo, hallazgo). */
-  signals_evaluated?: number;
-  scorer_version?: string;
-  /** `<señal>`: γ ∈ [0,1] · `<señal>_weight`: bits · `<señal>_applicable`: evaluable. */
-  [signal: string]: number | string | boolean | undefined;
-}
-
-/**
  * Capa del motor híbrido de la que procede un hallazgo.
  *
  * `heuristic` es el barrido determinista; `refinement`, lo que añadió el LLM al
  * cubrir los huecos. Un hallazgo puede llevar las dos si ambas capas lo vieron.
  */
 export type EngineLayer = "heuristic" | "refinement";
-
-/**
- * Veredicto del arbitraje por LLM sobre un hallazgo de la franja ambigua.
- *
- * `model_score` es lo que dijo Fellegi-Sunter y `applied_score` la puntuación
- * efectiva que usa el resolutor para agrupar. El score del modelo NUNCA se
- * sobrescribe: se muestran los dos, para que el usuario vea exactamente qué
- * decidió el modelo y qué decidió la IA.
- */
-export interface LlmArbitration {
-  verdict: "match" | "no_match" | "uncertain";
-  rationale: string;
-  model: string;
-  model_score: number;
-  applied_score: number | null;
-}
 
 export interface EntityData {
   id: string;
@@ -68,8 +35,6 @@ export interface EntityData {
     bio?: string;
     university?: string;
     extracted_emails?: string[];
-    identity_breakdown?: IdentityBreakdown;
-    identity_score?: number;
     snippet?: string;
     rationale?: string;
     engine?: string;
@@ -87,22 +52,9 @@ export interface EntityData {
     avatar_source?: string;
     /** `true` si la URL la construyó la cosecha activa, no un hallazgo pasivo. */
     avatar_harvested?: boolean;
-    /** Grado de acuerdo visual [0,1] que entra en el modelo de identidad. */
-    avatar_similarity?: number;
     /** Bits de diferencia entre los dos hashes perceptuales. 0 = idénticos. */
     avatar_hamming_distance?: number;
-    /** Veredicto del arbitraje opcional por LLM (apagado por defecto). */
-    llm_arbitration?: LlmArbitration;
   };
-  /** Valor mostrado: el máximo de las dos métricas siguientes. */
-  confidence: number;
-  /** Certeza de DETECCIÓN de la herramienta: "esta cuenta existe". */
-  existence_confidence?: number | null;
-  /** Probabilidad de ATRIBUCIÓN del modelo: "es del objetivo". */
-  identity_score?: number | null;
-  scorer_version?: string | null;
-  verified: boolean;
-  verification_notes?: string | null;
   source_tool: string;
   discovered_at: string;
 }
@@ -116,8 +68,6 @@ export interface RecommendationData {
 
 export interface InvestigationMetrics {
   entities_discovered?: number;
-  risk_level?: string;
-  recommendations?: RecommendationData[];
   execution_time_seconds?: number;
   ai_enhanced?: boolean;
   /** Estrategia pedida al crear la investigación. */
@@ -152,26 +102,21 @@ export interface InvestigationMetrics {
   config_catalog_with_regex_check?: number;
   config_maigret_commit?: string | null;
   enrichment_avatars_harvested?: number;
-  enrichment_avatar_correlations?: number;
   hybrid_heuristic_findings?: number;
   hybrid_refinement_findings?: number;
   hybrid_refinement_calls?: number;
   hybrid_refinement_calls_skipped?: number;
   hybrid_entities_only_from_llm?: number;
-  llm_arbitration_enabled?: boolean;
-  arbitration_candidates?: number;
-  arbitration_answered?: number;
   [key: string]: unknown;
 }
 
-export interface IdentityClusterData {
+export interface CorrelationGroupData {
   id: string;
   investigation_id: string;
   label: string;
-  confidence: number;
   entity_ids: string[];
-  reasoning?: string | null;
-  scoring_breakdown?: Record<string, unknown>;
+  summary?: string | null;
+  evidence?: Record<string, unknown>;
   entities: EntityData[];
 }
 
@@ -180,14 +125,13 @@ export interface InvestigationData {
   target_id: string;
   strategy: string;
   status: string;
-  risk_score: number;
   summary?: string | null;
   metrics: InvestigationMetrics;
   created_at: string;
   completed_at?: string | null;
   target?: TargetData | null;
   entities?: EntityData[];
-  identity_clusters?: IdentityClusterData[];
+  correlation_groups?: CorrelationGroupData[];
 }
 
 // ---------------------------------------------------------------------
@@ -205,10 +149,9 @@ export interface GraphNodeData {
   platform?: string | null;
   value: string;
   display_name?: string | null;
-  confidence: number;
-  verified: boolean;
   metadata_info?: Record<string, unknown>;
   is_root?: boolean;
+  group_id?: string | null;
   [key: string]: unknown;
 }
 
@@ -225,9 +168,11 @@ export interface GraphEdge {
   target: string;
   label?: string | null;
   relation_type: string;
-  strength: number;
   animated: boolean;
   style: Record<string, unknown>;
+  evidence: unknown;
+  supports_group: boolean;
+  [key: string]: unknown;
 }
 
 export interface GraphResponse {
@@ -287,23 +232,6 @@ export interface EngineMetrics {
   avg_execution_time: number;
   avg_entities: number;
   avg_clusters: number;
-  avg_risk_score: number;
-}
-
-/**
- * Histograma de las probabilidades de atribución.
- *
- * Sirve de diagnóstico del modelo: una distribución concentrada en pocos
- * valores delata la patología que tenía el scorer anterior, que contaba las
- * señales sin dato como desacuerdo y colapsaba todo en {0.05, 0.45, 0.95}.
- */
-export interface IdentityScoreDistribution {
-  total_scored_entities: number;
-  buckets: Array<{ from: number; to: number; count: number }>;
-  attributed_count: number;
-  attributed_pct: number;
-  distinct_values: number;
-  scorer_versions: Record<string, number>;
 }
 
 /**
@@ -320,7 +248,6 @@ export interface HybridContribution {
   avg_refinement_findings: number;
   avg_entities_only_from_llm: number;
   refinement_calls_skipped: number;
-  arbitration_used: number;
 }
 
 export interface MetricsComparison {
@@ -332,7 +259,6 @@ export interface MetricsComparison {
   };
   engine_labels?: Record<EngineId, string>;
   hybrid_contribution?: HybridContribution;
-  identity_score_distribution?: IdentityScoreDistribution;
   latex_table: string;
   investigations_sample: Array<{
     id: string;
@@ -340,7 +266,6 @@ export interface MetricsComparison {
     engine_used?: EngineId;
     execution_time: number;
     entities_count: number;
-    risk_score: number;
     created_at: string;
   }>;
 }

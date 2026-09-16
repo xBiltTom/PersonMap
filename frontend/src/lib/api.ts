@@ -105,24 +105,6 @@ export function deleteInvestigation(id: string): Promise<void> {
   return request<void>(`/investigations/${id}`, { method: "DELETE" });
 }
 
-export function verifyEntity(
-  investigationId: string,
-  entityId: string,
-  verified: boolean,
-  verificationNotes?: string
-): Promise<void> {
-  return request<void>(
-    `/investigations/${investigationId}/verify-entity/${entityId}`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        verified,
-        verification_notes: verificationNotes ?? null,
-      }),
-    }
-  );
-}
-
 // ---------------------------------------------------------------------
 // Grafo / mapa digital
 // ---------------------------------------------------------------------

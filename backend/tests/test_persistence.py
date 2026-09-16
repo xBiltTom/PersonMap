@@ -10,7 +10,7 @@ import uuid
 from app.engine.persistence import (
     MAX_EDGES_PER_ENTITY,
     dedupe_findings,
-    detect_relationship,
+    detect_relationships,
 )
 from app.models.entity import Entity
 from app.tools.base import ToolFinding
@@ -32,8 +32,6 @@ def _entity(
         value=value,
         display_name=value,
         metadata_info=metadata or {},
-        confidence=0.8,
-        verified=False,
         source_tool=source_tool,
     )
 
@@ -117,21 +115,20 @@ def test_same_platform_no_longer_creates_edges():
     """
     a = _entity(platform="twitter", value="https://x.com/ana")
     b = _entity(platform="twitter", value="https://x.com/beto")
-    assert detect_relationship(a, b) == (None, 0.0)
+    assert detect_relationships(a, b) == []
 
     sin_plataforma_a = _entity(platform=None, value="dato-a")
     sin_plataforma_b = _entity(platform=None, value="dato-b")
-    assert detect_relationship(sin_plataforma_a, sin_plataforma_b) == (None, 0.0)
+    assert detect_relationships(sin_plataforma_a, sin_plataforma_b) == []
 
 
 def test_same_username_between_independent_findings_is_an_edge():
     a = _entity(platform="github", metadata={"username": "jperez"}, source_tool="social_verifier")
     b = _entity(platform="keybase", metadata={"username": "JPerez"}, source_tool="keybase_resolver")
 
-    rel_type, strength = detect_relationship(a, b)
-
-    assert rel_type == "same_username"
-    assert strength == 0.85
+    assert detect_relationships(a, b) == [
+        ("same_username", False, {"username": "jperez"})
+    ]
 
 
 def test_same_username_between_enumeration_siblings_is_not_an_edge():
@@ -144,7 +141,7 @@ def test_same_username_between_enumeration_siblings_is_not_an_edge():
     a = _entity(platform="reddit", metadata={"username": "jperez"}, source_tool="username_finder")
     b = _entity(platform="steam", metadata={"username": "jperez"}, source_tool="username_finder")
 
-    assert detect_relationship(a, b) == (None, 0.0)
+    assert detect_relationships(a, b) == []
 
 
 def test_enumeration_sibling_check_handles_agent_prefix():
@@ -152,7 +149,7 @@ def test_enumeration_sibling_check_handles_agent_prefix():
     a = _entity(platform="reddit", metadata={"username": "jperez"}, source_tool="agent:username_finder")
     b = _entity(platform="steam", metadata={"username": "jperez"}, source_tool="agent:username_finder")
 
-    assert detect_relationship(a, b) == (None, 0.0)
+    assert detect_relationships(a, b) == []
 
 
 def test_uses_email_is_detected_in_both_directions():
@@ -163,8 +160,12 @@ def test_uses_email_is_detected_in_both_directions():
     email = _entity(entity_type="email", platform=None, value="jperez@uni.edu.pe")
     profile = _entity(metadata={"emails": ["JPerez@uni.edu.pe"]})
 
-    assert detect_relationship(email, profile) == ("uses_email", 0.95)
-    assert detect_relationship(profile, email) == ("uses_email", 0.95)
+    assert detect_relationships(email, profile) == [
+        ("shares_declared_email", True, {"email": "jperez@uni.edu.pe"})
+    ]
+    assert detect_relationships(profile, email) == [
+        ("shares_declared_email", True, {"email": "jperez@uni.edu.pe"})
+    ]
 
 
 def test_linked_to_is_detected_in_both_directions():
@@ -175,8 +176,12 @@ def test_linked_to_is_detected_in_both_directions():
         metadata={"linked_profiles": ["https://instagram.com/jperez"]},
     )
 
-    assert detect_relationship(profile, target) == ("linked_to", 0.90)
-    assert detect_relationship(target, profile) == ("linked_to", 0.90)
+    assert detect_relationships(profile, target) == [
+        ("explicit_profile_link", True, {"linked_profile": "https://instagram.com/jperez"})
+    ]
+    assert detect_relationships(target, profile) == [
+        ("explicit_profile_link", True, {"linked_profile": "https://instagram.com/jperez"})
+    ]
 
 
 def test_malformed_metadata_does_not_raise():
@@ -184,7 +189,7 @@ def test_malformed_metadata_does_not_raise():
     a = _entity(entity_type="email", platform=None, value="x@y.com")
     b = _entity(metadata={"emails": "no-es-una-lista", "linked_profiles": None})
 
-    assert detect_relationship(a, b) == (None, 0.0)
+    assert detect_relationships(a, b) == []
 
 
 def test_edge_budget_constant_is_sane():

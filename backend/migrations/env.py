@@ -12,7 +12,7 @@ from app.core.database import Base
 
 # Importar los modelos registra sus tablas en Base.metadata, que es lo que
 # `alembic revision --autogenerate` compara contra la base de datos real.
-from app.models import entity, identity_cluster, investigation, relationship, survey, target  # noqa: F401
+from app.models import correlation_group, entity, investigation, relationship, survey, target  # noqa: F401
 
 config = context.config
 

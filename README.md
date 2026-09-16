@@ -1,4 +1,4 @@
-# PERSON-MAP 🔍 // Plataforma OSINT de Reconstrucción de Identidad y Huella Digital
+# PERSON-MAP 🔍 // Plataforma OSINT de Mapa de Evidencia y Huella Digital
 
 Plataforma forense de inteligencia de fuentes abiertas (OSINT) diseñada para el análisis de exposición digital y concientización sobre ingeniería social en estudiantes universitarios.
 
@@ -6,15 +6,14 @@ Plataforma forense de inteligencia de fuentes abiertas (OSINT) diseñada para el
 
 ## Características Principales
 
-- **Mínimo 1 dato de entrada**: Puedes iniciar un reconocimiento con un solo identificador (nombre completo, correo, nombre de usuario / alias, teléfono o DNI). El motor pivotea y reconstruye la identidad a partir de lo que encuentre.
+- **Mínimo 1 dato de entrada**: Puedes iniciar una consulta con un solo identificador (nombre completo, correo, nombre de usuario / alias, teléfono o DNI). El motor pivotea desde esos datos y registra las fuentes de cada observación.
 - **Funciona 100% sin IA**: Cuenta con un **orquestador heurístico por código** (`rule_engine.py`) con detección automática de pivotes (nuevos correos descubiertos, alias en biografías, perfiles candidatos) y resolución multivariable.
 - **Potenciado por IA (Agnóstico vía LiteLLM)**: Puedes conectar cualquier modelo compatible con function calling (`Gemini`, `Groq`, `OpenAI`, `Ollama`, etc.) configurando `LLM_MODEL` y `LLM_API_KEY` en `.env`.
-- **Comprobación Profunda (OpenGraph & Fuzzy Matching)**: Extrae metadatos reales de perfiles públicos (`og:title`, `og:description`, `og:image`) y calcula un índice de certeza contra homónimos.
-- **Reconstrucción de Identidad**: Agrupa hallazgos en clusters de certeza (*Identidad Principal Confirmada* vs *Posibles Homónimos Descartados*) con posibilidad de verificación manual.
+- **Comprobación Profunda (OpenGraph & extracción de metadatos)**: Extrae datos públicos de perfiles (`og:title`, `og:description`, `og:image`) y conserva su procedencia.
+- **Mapa de Evidencia**: Agrupa visualmente observaciones conectadas por correos declarados, enlaces explícitos y otros hechos inspeccionables, sin atribuirlas a una persona.
 - **Visualizaciones Forenses**:
-  - **Mapa Digital Interactivo (React Flow)** con nodos por categoría y aristas de confianza animadas.
+  - **Mapa Digital Interactivo (React Flow)** con nodos por categoría y aristas de evidencia inspeccionable.
   - **Línea de Tiempo Cronológica** de descubrimientos.
-  - **Scorecard de Exposición Digital (0-100)** y recomendaciones pedagógicas de mitigación.
   - **Consola en Tiempo Real (SSE)** para observar el flujo de trabajo en vivo.
   - **Tabla de Hallazgos** con filtros por categoría y enlaces de evidencia directa.
 

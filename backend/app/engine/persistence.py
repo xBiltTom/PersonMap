@@ -17,7 +17,6 @@ from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.identity.scorer import compute_identity_score
 from app.models.entity import Entity
 from app.models.relationship import Relationship
 from app.models.target import Target
@@ -29,11 +28,8 @@ from app.tools.base import ToolFinding
 # Sin tope, el mapa digital se vuelve una maraña ilegible y el flush de
 # relaciones domina el tiempo total.
 #
-# El límite se aplica por nodo, tras ordenar las aristas candidatas de mayor a
-# menor fuerza, de modo que las relaciones con evidencia real (`uses_email` 0.95,
-# `linked_to` 0.90) sobreviven al recorte antes que las débiles (`same_username`
-# 0.85). Medido sobre una investigación real de 94 entidades: sin tope el grafo
-# tenía 3.835 aristas; con este valor baja a ~280 y sigue siendo navegable.
+# El límite conserva un mapa navegable. Se priorizan las relaciones que forman
+# grupos porque tienen una prueba explícita, no una puntuación de identidad.
 MAX_EDGES_PER_ENTITY = 6
 
 
@@ -107,7 +103,7 @@ async def persist_findings(
     default_source_tool: str = "osint_engine",
 ) -> List[Entity]:
     """
-    Deduplica, puntúa y persiste los hallazgos como entidades.
+    Deduplica y persiste observaciones como entidades.
 
     Deja las entidades en la sesión con `flush` (no `commit`): el commit es
     responsabilidad del orquestador, que necesita la transacción abierta para
@@ -116,27 +112,7 @@ async def persist_findings(
     entities: List[Entity] = []
 
     for f in dedupe_findings(findings):
-        identity_score, breakdown = compute_identity_score(
-            display_name=f.display_name,
-            value=f.value,
-            metadata=f.metadata_info,
-            target=target,
-        )
-
-        # El breakdown es el dato más rico del modelo y ambos motores lo
-        # descartaban. Se guarda en metadata_info para que la interfaz pueda
-        # explicar señal a señal por qué se atribuye el hallazgo al objetivo.
         metadata = dict(f.metadata_info or {})
-        metadata["identity_breakdown"] = breakdown
-        metadata["identity_score"] = identity_score
-
-        # Dos preguntas distintas, dos columnas. `f.confidence` es la certeza de
-        # DETECCIÓN que reporta la herramienta ("esta cuenta existe");
-        # `identity_score` es la de ATRIBUCIÓN ("es del objetivo"). `confidence`
-        # se mantiene como el valor mostrado y ordenable, pero ya no oculta el
-        # modelo: antes el `max()` lo tapaba siempre, porque las herramientas
-        # emiten constantes de 0.85-1.0 y el modelo saturaba en 0.05 o 0.45.
-        existence_confidence = round(f.confidence, 3)
 
         entity = Entity(
             investigation_id=investigation_id,
@@ -145,11 +121,6 @@ async def persist_findings(
             value=f.value,
             display_name=(f.display_name or f.value)[:255],
             metadata_info=metadata,
-            existence_confidence=existence_confidence,
-            identity_score=identity_score,
-            scorer_version=breakdown.get("scorer_version"),
-            confidence=round(max(existence_confidence, identity_score), 3),
-            verified=False,
             source_tool=metadata.get("source_tool", default_source_tool),
         )
         db.add(entity)
@@ -172,9 +143,9 @@ ENUMERATION_TOOLS = {
 }
 
 
-def detect_relationship(a: Entity, b: Entity) -> Tuple[Optional[str], float]:
+def detect_relationships(a: Entity, b: Entity) -> List[Tuple[str, bool, dict]]:
     """
-    Deduce el tipo de relación entre dos entidades. Primer criterio que casa gana.
+    Devuelve todas las relaciones observables entre dos entidades.
 
     A diferencia de la versión anterior, ya no existe el caso de reserva
     `a.platform == b.platform -> ("same_platform", 0.50)`. Aquel criterio no
@@ -186,28 +157,31 @@ def detect_relationship(a: Entity, b: Entity) -> Tuple[Optional[str], float]:
     meta_a = a.metadata_info or {}
     meta_b = b.metadata_info or {}
 
-    # 1. Mismo alias en ambos perfiles: la señal de correlación más directa...
-    #    salvo entre hermanos de enumeración. Si `username_finder` busca "jperez"
+    relationships: List[Tuple[str, bool, dict]] = []
+
+    # 1. Mismo alias en ambos perfiles. Es contexto útil, pero no une un grupo:
+    # la coincidencia puede estar inducida por la consulta. Se omite entre
+    # hermanos de enumeración: si `username_finder` busca "jperez"
     #    en 500 plataformas y lo encuentra en 90, esas 90 comparten el alias por
     #    definición: la arista sería tautológica y generaría 90*89/2 = 4005
-    #    conexiones que no dicen nada. La pertenencia común ya la expresa la
-    #    arista de cada nodo con la raíz del objetivo.
+    #    conexiones que no dicen nada sobre la relación entre observaciones.
     user_a = (meta_a.get("username") or "").lower()
     user_b = (meta_b.get("username") or "").lower()
     if user_a and user_b and user_a == user_b and not _are_enumeration_siblings(a, b):
-        return "same_username", 0.85
+        relationships.append(("same_username", False, {"username": user_a}))
 
     # 2. Un perfil declara el correo que la otra entidad representa. Se comprueba
     #    en ambos sentidos porque el emparejamiento solo visita cada par una vez
     #    y el orden de las entidades en la lista es arbitrario.
     if _declares_email(a, meta_b) or _declares_email(b, meta_a):
-        return "uses_email", 0.95
+        email = a.value if a.entity_type == "email" else b.value
+        relationships.append(("shares_declared_email", True, {"email": email.lower()}))
 
     # 3. Un perfil enlaza explícitamente al otro.
     if _links_to(meta_a, b) or _links_to(meta_b, a):
-        return "linked_to", 0.90
+        relationships.append(("explicit_profile_link", True, {"linked_profile": b.value if _links_to(meta_a, b) else a.value}))
 
-    return None, 0.0
+    return relationships
 
 
 def normalize_source_tool(source_tool: Optional[str]) -> str:
@@ -260,20 +234,17 @@ async def build_relationships(
     porque necesita los UUID asignados.
     """
     degree: Dict[str, int] = {}
-    candidates: List[Tuple[float, Entity, Entity, str]] = []
+    candidates: List[Tuple[bool, Entity, Entity, str, dict]] = []
 
     for i, ent_a in enumerate(entities):
         for ent_b in entities[i + 1:]:
-            rel_type, strength = detect_relationship(ent_a, ent_b)
-            if rel_type:
-                candidates.append((strength, ent_a, ent_b, rel_type))
+            for rel_type, supports_group, evidence in detect_relationships(ent_a, ent_b):
+                candidates.append((supports_group, ent_a, ent_b, rel_type, evidence))
 
-    # Las aristas más fuertes se colocan primero, de modo que si un nodo alcanza
-    # su tope conserve sus vínculos más significativos.
     candidates.sort(key=lambda c: c[0], reverse=True)
 
     created: List[Relationship] = []
-    for strength, ent_a, ent_b, rel_type in candidates:
+    for supports_group, ent_a, ent_b, rel_type, evidence in candidates:
         key_a, key_b = str(ent_a.id), str(ent_b.id)
         if degree.get(key_a, 0) >= MAX_EDGES_PER_ENTITY:
             continue
@@ -285,7 +256,8 @@ async def build_relationships(
             source_entity_id=ent_a.id,
             target_entity_id=ent_b.id,
             relation_type=rel_type,
-            strength=strength,
+            supports_group=supports_group,
+            evidence=evidence,
         )
         db.add(rel)
         created.append(rel)

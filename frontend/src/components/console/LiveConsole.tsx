@@ -288,9 +288,6 @@ function logLineStyle(log: StreamLog): string {
     // pero conviene que se distinga de una que sí se ejecutó.
     return "text-slate-400 italic";
   }
-  if (phase === "hybrid_arbitration_verdict" || phase === "hybrid_arbitration") {
-    return "text-fuchsia-300";
-  }
   if (phase === "agent_reasoning" || phase === "hybrid_refine_reasoning") {
     return "text-purple-300 italic";
   }
