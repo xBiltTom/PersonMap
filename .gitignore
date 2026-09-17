@@ -47,3 +47,5 @@ pnpm-debug.log*
 *.db
 .DS_Store
 Thumbs.db
+
+img-referencia-mapa.png

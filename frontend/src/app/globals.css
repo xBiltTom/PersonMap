@@ -111,6 +111,55 @@ body {
   animation: progress-indeterminate 1.4s ease-in-out infinite;
 }
 
+/* Controles del mapa: cromo discreto para no competir con la topología. */
+.digital-map-canvas .react-flow__controls {
+  overflow: hidden;
+  border: 1px solid rgba(51, 65, 85, 0.75);
+  border-radius: 8px;
+  background: rgba(8, 13, 21, 0.9);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.digital-map-canvas .react-flow__controls-button {
+  width: 27px;
+  height: 27px;
+  border: 0;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.55);
+  background: transparent;
+  color: #94a3b8;
+}
+
+.digital-map-canvas .react-flow__controls-button:hover {
+  background: rgba(30, 41, 59, 0.9);
+  color: #e2e8f0;
+}
+
+.digital-map-canvas .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.digital-map-canvas .react-flow__minimap {
+  width: 170px;
+  height: 112px;
+  overflow: hidden;
+  border: 1px solid rgba(51, 65, 85, 0.65);
+  border-radius: 8px;
+  background: #080d15;
+}
+
+.digital-map-canvas .react-flow__attribution {
+  background: rgba(8, 13, 21, 0.72);
+  color: #475569;
+  font-size: 8px;
+}
+
+@media (max-width: 640px) {
+  .digital-map-canvas .react-flow__minimap {
+    width: 126px;
+    height: 84px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in,
   .animate-pulse-subtle {

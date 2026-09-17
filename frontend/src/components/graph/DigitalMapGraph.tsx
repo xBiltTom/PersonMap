@@ -3,241 +3,309 @@
 import { createElement, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Background,
+  BackgroundVariant,
   Controls,
   Handle,
   MiniMap,
   Position,
   ReactFlow,
-  getViewportForBounds,
-  useEdgesState,
-  useNodesState,
   useReactFlow,
-  useStore,
-  useStoreApi,
   type Edge,
   type Node,
+  type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  User,
-  ExternalLink,
-  Filter,
-  Link2,
   AlertTriangle,
-  Network,
+  Braces,
+  ExternalLink,
   Eye,
   EyeOff,
-  Sparkles,
+  FileDown,
+  Filter,
+  Network,
+  User,
+  X,
 } from "lucide-react";
 import { getGraphmlUrl, getInvestigationGraph } from "@/lib/api";
-import { getEntityTypeMeta, getFindingIcon, buildEntityFilters } from "@/lib/entityTypes";
-import { layoutDigitalMap, type LayoutCluster, type MapLayout } from "@/lib/graphLayout";
+import { buildEntityFilters, getEntityTypeMeta, getFindingIcon } from "@/lib/entityTypes";
+import { layoutDigitalMap } from "@/lib/graphLayout";
 import type { GraphEdge, GraphNode, GraphNodeData, GraphResponse } from "@/lib/types";
 
-// Tipos para React Flow
-type DisplayNode = Node<Record<string, any>>;
-type DisplayEdge = Edge<Record<string, any>>;
+type InteractionState = "idle" | "focused" | "dimmed";
+
+interface DisplayNodeData extends GraphNodeData {
+  interaction: InteractionState;
+  isCorrelated: boolean;
+  labelSide: "left" | "right";
+}
+
+type DisplayNode = Node<DisplayNodeData>;
+type DisplayEdge = Edge<GraphEdge>;
 
 const RELATION_LABELS: Record<string, string> = {
-  discovered_from: "Origen",
-  shares_declared_email: "Mismo correo declarado",
-  explicit_profile_link: "Enlace explícito de perfil",
-  same_username: "Mismo nombre de usuario",
+  discovered_from: "Procedencia",
+  shares_declared_email: "Correo declarado compartido",
+  explicit_profile_link: "Enlace explícito",
+  same_username: "Alias coincidente",
   similar_avatar: "Avatar coincidente",
+  same_platform: "Misma plataforma",
 };
+
+const RELATION_COLORS: Record<string, string> = {
+  discovered_from: "#38bdf8",
+  shares_declared_email: "#34d399",
+  explicit_profile_link: "#a78bfa",
+  same_username: "#22d3ee",
+  similar_avatar: "#fb923c",
+  same_platform: "#818cf8",
+};
+
+const HANDLE_POSITIONS = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 
 function relationLabel(relationType: string): string {
   return (
     RELATION_LABELS[relationType] ??
-    relationType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+    relationType.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase())
   );
 }
 
-// 1. Nodo Central: Identidad Objetivo (Estilo SpiderFoot + Nuestra Esencia)
-function PersonRootNode({ data }: { data: any }) {
-  const meta = (data.metadata_info || {}) as Record<string, any>;
+function textValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function NodeHandles() {
   return (
-    <div className="px-4 py-3.5 rounded-xl bg-[#131d2e] border-2 border-sky-400 shadow-2xl shadow-sky-950/80 min-w-[210px] text-center select-none transition-all hover:border-sky-300">
-      <Handle type="source" position={Position.Top} id="top" className="!bg-sky-400 !w-2 !h-2" />
-      <Handle type="source" position={Position.Right} id="right" className="!bg-sky-400 !w-2 !h-2" />
-      <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-sky-400 !w-2 !h-2" />
-      <Handle type="source" position={Position.Left} id="left" className="!bg-sky-400 !w-2 !h-2" />
+    <>
+      {HANDLE_POSITIONS.map((position) => (
+        <Handle
+          key={`source-${position}`}
+          id={`source-${position}`}
+          type="source"
+          position={position}
+          className="!h-1 !w-1 !border-0 !bg-transparent !opacity-0"
+        />
+      ))}
+      {HANDLE_POSITIONS.map((position) => (
+        <Handle
+          key={`target-${position}`}
+          id={`target-${position}`}
+          type="target"
+          position={position}
+          className="!h-1 !w-1 !border-0 !bg-transparent !opacity-0"
+        />
+      ))}
+    </>
+  );
+}
 
-      <div className="w-11 h-11 rounded-full bg-sky-500/20 border border-sky-400/50 flex items-center justify-center mx-auto mb-2 text-sky-300 shadow-md shadow-sky-900/40">
-        <User className="w-5 h-5" />
+function PersonRootNode({ data, selected }: NodeProps<DisplayNode>) {
+  const metadata = data.metadata_info ?? {};
+  const username = textValue(metadata.username);
+
+  return (
+    <div className="relative flex h-[112px] w-[208px] select-none flex-col items-center justify-center">
+      <NodeHandles />
+      <div
+        className={`absolute top-0 h-[72px] w-[72px] rounded-full border transition-all duration-200 ${
+          selected
+            ? "border-cyan-200/90 bg-cyan-400/20 shadow-[0_0_40px_rgba(34,211,238,0.35)]"
+            : "border-cyan-300/65 bg-[#0b1c28] shadow-[0_0_28px_rgba(34,211,238,0.2)]"
+        }`}
+      >
+        <span className="absolute inset-[-8px] rounded-full border border-cyan-400/15" />
+        <span className="absolute inset-[-17px] rounded-full border border-dashed border-cyan-400/10" />
+        <span className="absolute inset-0 flex items-center justify-center text-cyan-100">
+          <User className="h-7 w-7" strokeWidth={1.45} aria-hidden="true" />
+        </span>
       </div>
-
-      <div className="text-xs font-bold text-slate-100 font-mono tracking-tight truncate px-1">
-        {String(data.label || "Identidad Objetivo")}
-      </div>
-
-      {meta.username && (
-        <div className="text-[11px] text-sky-300/90 font-mono truncate mt-0.5">
-          @{String(meta.username)}
-        </div>
-      )}
-
-      {meta.university && (
-        <div className="text-[10px] text-slate-300/80 font-mono truncate mt-0.5">
-          {String(meta.university)}
-        </div>
-      )}
-
-      <div className="inline-flex items-center gap-1 text-[9px] font-mono uppercase tracking-widest text-sky-400 mt-2 px-2 py-0.5 rounded-full bg-sky-950/60 border border-sky-500/30 font-semibold">
-        <Sparkles className="w-2.5 h-2.5" />
-        <span>Identidad Objetivo</span>
+      <div className="absolute bottom-0 max-w-[208px] text-center">
+        <p className="truncate font-mono text-[12px] font-semibold tracking-tight text-slate-50">
+          {String(data.label || "Objetivo")}
+        </p>
+        <p className="mt-0.5 font-mono text-[8px] uppercase tracking-[0.22em] text-cyan-300/70">
+          {username ? `@${username}` : "punto de partida"}
+        </p>
       </div>
     </div>
   );
 }
 
-// 2. Nodo de Entidad Satélite
-function CustomEntityNode({ data, selected }: { data: any; selected?: boolean }) {
+function EntityNode({ data, selected }: NodeProps<DisplayNode>) {
   const meta = getEntityTypeMeta(data.entity_type);
-  const icon = getFindingIcon(data.platform, data.entity_type);
-  const source = data.platform || meta.label || "Hallazgo";
-
-  const nodeClass = selected
-    ? "border-sky-400 ring-2 ring-sky-500/40 bg-[#172233] shadow-sky-950/70"
-    : `${meta.node} hover:border-slate-400/50`;
+  const Icon = getFindingIcon(data.platform, data.entity_type);
+  const source = data.platform || meta.label;
+  const labelOnLeft = data.labelSide === "left";
 
   return (
     <div
-      className={`px-3 py-2.5 rounded-lg border transition-all min-w-[190px] max-w-[220px] shadow-lg ${nodeClass} select-none`}
+      className={`relative flex h-[58px] w-[176px] select-none items-center gap-2.5 ${
+        labelOnLeft ? "flex-row-reverse text-right" : "text-left"
+      }`}
       title={meta.description}
     >
-      <Handle type="target" position={Position.Top} className="!bg-slate-500 !w-1.5 !h-1.5" />
-      <Handle type="source" position={Position.Bottom} className="!bg-slate-500 !w-1.5 !h-1.5" />
-      <Handle type="target" position={Position.Left} className="!bg-slate-500 !w-1.5 !h-1.5" />
-      <Handle type="source" position={Position.Right} className="!bg-slate-500 !w-1.5 !h-1.5" />
-
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-1.5 truncate">
-          {createElement(icon, {
-            className: `w-3.5 h-3.5 shrink-0 ${meta.accent}`,
-            "aria-hidden": true,
-          })}
-          <span className="text-[10px] font-mono text-slate-300 uppercase tracking-wider truncate">
-            {source}
-          </span>
-        </div>
-
+      <NodeHandles />
+      <div
+        className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-[#0c1420] transition-all duration-150 ${
+          selected || data.interaction === "focused"
+            ? "border-cyan-300/90 text-cyan-100 shadow-[0_0_22px_rgba(34,211,238,0.28)]"
+            : "border-slate-500/45 text-slate-300 shadow-[0_0_14px_rgba(15,23,42,0.7)]"
+        }`}
+      >
+        {createElement(Icon, { className: `h-4 w-4 ${meta.accent}`, "aria-hidden": true })}
         {data.isCorrelated && (
           <span
-            title="Cuenta vinculada con otras del grupo"
-            className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40"
-          >
-            Enlazada
-          </span>
+            className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#070b12] bg-violet-400"
+            title="Tiene vínculos de evidencia con otros hallazgos"
+          />
         )}
       </div>
-
-      <div className="text-xs font-semibold text-slate-200 truncate" title={String(data.label || "")}>
-        {String(data.label || "")}
-      </div>
-
-      {data.display_name && data.display_name !== data.label && (
-        <div className="text-[10px] text-slate-400 truncate mt-0.5">
-          {String(data.display_name)}
-        </div>
-      )}
-
-      <div className="flex items-center justify-between gap-2 mt-1.5 pt-1 border-t border-white/5">
-        <span className={`text-[9px] font-mono uppercase tracking-wide ${meta.accent}`}>
-          {meta.label}
-        </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-mono text-[11px] font-medium leading-tight text-slate-200" title={data.label}>
+          {data.label}
+        </p>
+        <p className={`mt-1 truncate font-mono text-[8px] uppercase tracking-[0.16em] ${meta.accent}`}>
+          {source}
+        </p>
       </div>
     </div>
   );
 }
 
-// 3. Contenedor de Grupo / Cluster (Acelerado por hardware, sin lag)
-function ClusterBackdropNode({ data }: { data: any }) {
-  const isCorrelated = data.isCorrelated;
-  const color = data.color || (isCorrelated ? "#a855f7" : "#64748b");
-
-  return (
-    <div
-      className="rounded-2xl border transition-all pointer-events-none select-none"
-      style={{
-        width: data.width,
-        height: data.height,
-        borderColor: isCorrelated ? "rgba(168, 85, 247, 0.45)" : "rgba(100, 116, 139, 0.25)",
-        backgroundColor: isCorrelated ? "rgba(168, 85, 247, 0.04)" : "rgba(30, 41, 59, 0.12)",
-        borderStyle: isCorrelated ? "dashed" : "solid",
-        borderWidth: 1.5,
-      }}
-    >
-      <div className="px-3.5 py-2 flex items-center justify-between border-b border-white/5 bg-[#0b0f17]/60 rounded-t-2xl">
-        <div className="flex items-center gap-2">
-          <span
-            className="w-2.5 h-2.5 rounded-full"
-            style={{ backgroundColor: color }}
-            aria-hidden="true"
-          />
-          <span
-            className="text-[11px] font-mono font-bold tracking-wide uppercase"
-            style={{ color: isCorrelated ? "#e9d5ff" : "#cbd5e1" }}
-          >
-            {data.label}
-          </span>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-slate-300 font-bold">
-            {data.size}
-          </span>
-        </div>
-        <span className="text-[10px] font-mono text-slate-400">
-          {data.hint}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-// Encuadre automático suave
-function FitToLayout({ bounds }: { bounds: MapLayout["bounds"] }) {
-  const store = useStoreApi();
-  const { setViewport } = useReactFlow();
-  const ready = useStore((state) => state.width > 0 && state.height > 0 && Boolean(state.panZoom));
+function FitToLayout({ layoutKey }: { layoutKey: string }) {
+  const { fitView } = useReactFlow();
 
   useEffect(() => {
-    if (!ready) return;
-    const { width, height, minZoom, maxZoom } = store.getState();
-    setViewport(
-      getViewportForBounds(bounds, width, height, minZoom, maxZoom, { x: "120px", y: "60px" }),
-      { duration: 400 }
-    );
-  }, [bounds, ready, setViewport, store]);
+    const fitTimer = window.setTimeout(() => {
+      void fitView({ padding: 0.14, duration: 450, maxZoom: 1.05 });
+    }, 50);
+    return () => window.clearTimeout(fitTimer);
+  }, [fitView, layoutKey]);
 
   return null;
 }
 
-// Estilos de aristas
-function edgeStyle(edge: GraphEdge) {
-  if (edge.relation_type === "discovered_from") {
-    return {
-      stroke: "#38bdf8",
-      strokeOpacity: 0.25,
-      strokeWidth: 1,
-      strokeDasharray: "4 6",
-    };
+function edgeHandles(
+  source: { x: number; y: number },
+  target: { x: number; y: number }
+): { sourceHandle: string; targetHandle: string } {
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx >= 0
+      ? { sourceHandle: `source-${Position.Right}`, targetHandle: `target-${Position.Left}` }
+      : { sourceHandle: `source-${Position.Left}`, targetHandle: `target-${Position.Right}` };
   }
-  if (edge.relation_type === "shares_declared_email") {
-    return { stroke: "#10b981", strokeWidth: 2.5, strokeOpacity: 0.95 };
-  }
-  if (edge.relation_type === "explicit_profile_link") {
-    return { stroke: "#a855f7", strokeWidth: 2.5, strokeOpacity: 0.95 };
-  }
-  if (edge.relation_type === "same_username") {
-    return { stroke: "#f59e0b", strokeWidth: 2, strokeDasharray: "5 5", strokeOpacity: 0.9 };
-  }
-  if (edge.relation_type === "similar_avatar") {
-    return { stroke: "#f97316", strokeWidth: 2, strokeDasharray: "3 3", strokeOpacity: 0.9 };
-  }
+  return dy >= 0
+    ? { sourceHandle: `source-${Position.Bottom}`, targetHandle: `target-${Position.Top}` }
+    : { sourceHandle: `source-${Position.Top}`, targetHandle: `target-${Position.Bottom}` };
+}
+
+function edgeAppearance(
+  edge: GraphEdge,
+  evidenceEdgeCount: number,
+  state: "idle" | "focused" | "dimmed"
+) {
+  const isDiscovery = edge.relation_type === "discovered_from";
+  const color = RELATION_COLORS[edge.relation_type] ?? (edge.supports_group ? "#a78bfa" : "#64748b");
+  const baseOpacity = isDiscovery
+    ? 0.12
+    : evidenceEdgeCount > 180
+      ? 0.08
+      : evidenceEdgeCount > 60
+        ? 0.16
+        : 0.48;
+
   return {
-    stroke: edge.supports_group ? "#a855f7" : "#38bdf8",
-    strokeWidth: 2,
-    strokeOpacity: 0.85,
+    stroke: color,
+    strokeWidth: state === "focused" ? 1.9 : isDiscovery ? 0.7 : evidenceEdgeCount > 180 ? 0.65 : 1.05,
+    strokeOpacity: state === "dimmed" ? 0.025 : state === "focused" ? 0.9 : baseOpacity,
+    strokeDasharray: isDiscovery ? "3 8" : edge.relation_type === "similar_avatar" ? "3 5" : undefined,
+    transition: "stroke-opacity 140ms ease, stroke-width 140ms ease",
   };
+}
+
+function DetailPanel({
+  node,
+  edge,
+  onClose,
+}: {
+  node: GraphNode | null;
+  edge: GraphEdge | null;
+  onClose: () => void;
+}) {
+  if (!node && !edge) return null;
+
+  if (edge) {
+    return (
+      <aside className="absolute bottom-4 right-4 top-20 z-30 w-[min(320px,calc(100%-2rem))] overflow-y-auto rounded-xl border border-slate-700/70 bg-[#0a101a]/95 p-4 shadow-2xl backdrop-blur-md">
+        <div className="mb-4 flex items-center justify-between border-b border-slate-800 pb-3">
+          <div>
+            <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-violet-300">Relación observada</p>
+            <h4 className="mt-1 text-sm font-semibold text-slate-100">{relationLabel(edge.relation_type)}</h4>
+          </div>
+          <button type="button" onClick={onClose} className="rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-white" aria-label="Cerrar detalle">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="mb-1 font-mono text-[9px] uppercase tracking-wider text-slate-500">Evidencia registrada</p>
+        <pre className="whitespace-pre-wrap break-words rounded-lg border border-slate-800 bg-[#070b12] p-3 font-mono text-[10px] leading-relaxed text-slate-300">
+          {edge.evidence && typeof edge.evidence === "object"
+            ? JSON.stringify(edge.evidence, null, 2)
+            : String(edge.evidence || "Sin detalle adicional")}
+        </pre>
+      </aside>
+    );
+  }
+
+  if (!node) return null;
+  const metadata = node.data.metadata_info ?? {};
+  const bio = textValue(metadata.bio);
+  const isRoot = node.type === "personRoot" || node.data.is_root;
+  const meta = getEntityTypeMeta(node.data.entity_type);
+
+  return (
+    <aside className="absolute bottom-4 right-4 top-20 z-30 w-[min(320px,calc(100%-2rem))] overflow-y-auto rounded-xl border border-slate-700/70 bg-[#0a101a]/95 p-4 shadow-2xl backdrop-blur-md">
+      <div className="mb-4 flex items-start justify-between border-b border-slate-800 pb-3">
+        <div className="min-w-0">
+          <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-300">
+            {isRoot ? "Punto de partida" : meta.label}
+          </p>
+          <h4 className="mt-1 break-words font-mono text-sm font-semibold text-slate-100">{node.data.label}</h4>
+        </div>
+        <button type="button" onClick={onClose} className="ml-2 rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-white" aria-label="Cerrar detalle">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <dl className="space-y-3 text-xs">
+        {node.data.platform && (
+          <div>
+            <dt className="font-mono text-[9px] uppercase tracking-wider text-slate-500">Fuente</dt>
+            <dd className="mt-0.5 text-slate-200">{node.data.platform}</dd>
+          </div>
+        )}
+        <div>
+          <dt className="font-mono text-[9px] uppercase tracking-wider text-slate-500">Valor observado</dt>
+          <dd className="mt-0.5 break-all font-mono text-[11px] text-slate-300">
+            {node.data.value.startsWith("http") ? (
+              <a href={node.data.value} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-300 hover:underline">
+                {node.data.value}
+                <ExternalLink className="h-3 w-3 shrink-0" />
+              </a>
+            ) : (
+              node.data.value
+            )}
+          </dd>
+        </div>
+        {bio && (
+          <div>
+            <dt className="font-mono text-[9px] uppercase tracking-wider text-slate-500">Contexto público</dt>
+            <dd className="mt-1 rounded-lg border border-slate-800 bg-[#070b12] p-2.5 text-[11px] leading-relaxed text-slate-300">{bio}</dd>
+          </div>
+        )}
+      </dl>
+    </aside>
+  );
 }
 
 export function DigitalMapGraph({
@@ -249,14 +317,13 @@ export function DigitalMapGraph({
 }) {
   const [allNodes, setAllNodes] = useState<GraphNode[]>([]);
   const [allEdges, setAllEdges] = useState<GraphEdge[]>([]);
-  const [nodes, setNodes, onNodesChange] = useNodesState<DisplayNode>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<DisplayEdge>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedNode, setSelectedNode] = useState<DisplayNode | null>(null);
-  const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
   const [activeCategory, setActiveCategory] = useState("all");
-  const [showDiscoveryLines, setShowDiscoveryLines] = useState(true);
+  const [showDiscoveryLines, setShowDiscoveryLines] = useState(false);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
   const loadGraph = useCallback(async () => {
     try {
@@ -265,163 +332,214 @@ export function DigitalMapGraph({
       setAllNodes(data.nodes || []);
       setAllEdges(data.edges || []);
       setError(null);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "No se pudo cargar el mapa digital");
+    } catch (loadError: unknown) {
+      setError(loadError instanceof Error ? loadError.message : "No se pudo cargar el mapa digital");
     } finally {
       setLoading(false);
     }
   }, [investigationId]);
 
   useEffect(() => {
-    loadGraph();
+    const initialLoad = window.setTimeout(() => void loadGraph(), 0);
+    return () => window.clearTimeout(initialLoad);
   }, [loadGraph, refreshKey]);
 
-  // Filtros de categorías
   const categories = useMemo(
     () =>
       buildEntityFilters(
-        allNodes.filter((n) => n.type !== "personRoot").map((n) => n.data?.entity_type)
+        allNodes.filter((node) => node.type !== "personRoot").map((node) => node.data.entity_type)
       ),
     [allNodes]
   );
 
-  // Tipos de relación presentes
-  const relationTypes = useMemo(
-    () => [
-      ...new Set(
-        allEdges
-          .filter((e) => e.relation_type !== "discovered_from")
-          .map((e) => e.relation_type)
-      ),
-    ],
-    [allEdges]
-  );
-
-  const view = useMemo(() => {
-    const isRoot = (n: GraphNode) => n.type === "personRoot" || n.data?.is_root;
+  const baseView = useMemo(() => {
+    const isRoot = (node: GraphNode) => node.type === "personRoot" || node.data.is_root;
     const root = allNodes.find(isRoot);
-
-    const visibleEntities = allNodes.filter(
-      (n) => !isRoot(n) && (activeCategory === "all" || n.data?.entity_type === activeCategory)
+    const entities = allNodes.filter(
+      (node) => !isRoot(node) && (activeCategory === "all" || node.data.entity_type === activeCategory)
     );
-
-    const visibleIds = new Set(visibleEntities.map((n) => n.id));
+    const visibleIds = new Set(entities.map((node) => node.id));
     if (root) visibleIds.add(root.id);
 
-    // Aristas visibles
-    const visibleEdges = allEdges.filter((edge) => {
-      if (!visibleIds.has(edge.source) || !visibleIds.has(edge.target)) return false;
-      if (edge.relation_type === "discovered_from" && !showDiscoveryLines) return false;
-      return true;
-    });
+    const candidateEdges = allEdges.filter(
+      (edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target)
+    );
+    const visibleEdges = candidateEdges.filter(
+      (edge) => showDiscoveryLines || edge.relation_type !== "discovered_from"
+    );
+    const evidenceEdges = candidateEdges.filter(
+      (edge) => edge.relation_type !== "discovered_from"
+    );
+    const degree = new Map<string, number>();
+    for (const edge of evidenceEdges) {
+      degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1);
+      degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1);
+    }
 
-    // Calcular layout SpiderFoot radial
     const layout = layoutDigitalMap(
       root?.id ?? "",
-      visibleEntities.map((n) => ({
-        id: n.id,
-        label: n.data?.label,
-        entityType: n.data?.entity_type,
-        platform: n.data?.platform,
-        groupId: n.data?.group_id,
-        metadata: n.data?.metadata_info,
-      })),
-      allEdges.map((e) => ({
-        source: e.source,
-        target: e.target,
-        relationType: e.relation_type,
-        supportsGroup: e.supports_group,
+      entities.map((node) => ({ id: node.id, groupId: node.data.group_id })),
+      candidateEdges.map((edge) => ({
+        source: edge.source,
+        target: edge.target,
+        relationType: edge.relation_type,
       }))
     );
 
-    // Nodos de React Flow
-    const displayNodes: DisplayNode[] = [];
-
-    // 1. Agregar cajas de fondo de clusters (renderizadas como nodos zIndex: -1 para aceleración GPU)
-    layout.clusters.forEach((cluster) => {
-      displayNodes.push({
-        id: `cluster-bg-${cluster.id}`,
-        type: "clusterBackdrop",
-        position: { x: cluster.bounds.x, y: cluster.bounds.y },
-        data: {
-          width: cluster.bounds.width,
-          height: cluster.bounds.height,
-          label: cluster.label,
-          hint: cluster.hint,
-          size: cluster.size,
-          isCorrelated: cluster.isCorrelated,
-          color: cluster.color,
-        },
-        selectable: false,
-        draggable: false,
-        deletable: false,
-        zIndex: -1,
-      });
-    });
-
-    // 2. Nodo raíz Identidad Objetivo
+    const nodes: DisplayNode[] = [];
     if (root) {
-      displayNodes.push({
+      nodes.push({
         ...root,
         type: "personRoot",
         position: layout.positions.get(root.id) ?? { x: 0, y: 0 },
+        width: 208,
+        height: 112,
+        draggable: false,
         zIndex: 10,
+        data: {
+          ...root.data,
+          interaction: "idle",
+          isCorrelated: false,
+          labelSide: "right",
+        },
       });
     }
 
-    // 3. Nodos de entidades con posiciones calculadas
-    const correlatedIdSet = new Set(
-      allEdges
-        .filter((e) => e.relation_type !== "discovered_from")
-        .flatMap((e) => [e.source, e.target])
-    );
-
-    visibleEntities.forEach((entity) => {
-      displayNodes.push({
+    for (const entity of entities) {
+      const position = layout.positions.get(entity.id) ?? { x: 0, y: 0 };
+      nodes.push({
         ...entity,
         type: "customEntity",
-        position: layout.positions.get(entity.id) ?? { x: 0, y: 0 },
+        position,
+        width: 176,
+        height: 58,
+        draggable: false,
+        zIndex: 5,
         data: {
           ...entity.data,
-          isCorrelated: correlatedIdSet.has(entity.id) || Boolean(entity.data?.group_id),
+          interaction: "idle",
+          isCorrelated: (degree.get(entity.id) ?? 0) > 0 || Boolean(entity.data.group_id),
+          labelSide: position.x < -80 ? "left" : "right",
         },
-        zIndex: 5,
       });
-    });
+    }
 
-    // 4. Aristas con estilos específicos
-    const displayEdges: DisplayEdge[] = visibleEdges.map((edge) => {
+    const persistentLabels = evidenceEdges.length <= 12;
+    const edges: DisplayEdge[] = visibleEdges.map((edge) => {
+      const source = layout.positions.get(edge.source) ?? { x: 0, y: 0 };
+      const target = layout.positions.get(edge.target) ?? { x: 0, y: 0 };
       const isDiscovery = edge.relation_type === "discovered_from";
       return {
         ...edge,
+        ...edgeHandles(source, target),
+        type: "default",
         data: edge,
-        label: isDiscovery ? undefined : relationLabel(edge.relation_type),
-        animated: edge.relation_type === "shares_declared_email" || edge.relation_type === "explicit_profile_link",
-        style: edgeStyle(edge),
-        labelStyle: { fill: "#e2e8f0", fontSize: 10, fontFamily: "ui-monospace, monospace", fontWeight: 600 },
-        labelBgStyle: { fill: "#0f172a", fillOpacity: 0.95, stroke: "#334155", strokeWidth: 1 },
-        labelBgPadding: [6, 3],
-        labelBgBorderRadius: 4,
-        zIndex: isDiscovery ? 1 : 2,
+        label: !isDiscovery && persistentLabels ? relationLabel(edge.relation_type) : undefined,
+        animated: false,
+        interactionWidth: 18,
+        style: edgeAppearance(edge, evidenceEdges.length, "idle"),
+        labelStyle: {
+          fill: "#cbd5e1",
+          fontSize: 9,
+          fontFamily: "ui-monospace, monospace",
+          fontWeight: 500,
+        },
+        labelBgStyle: { fill: "#080d15", fillOpacity: 0.94, stroke: "#263449", strokeWidth: 0.5 },
+        labelBgPadding: [5, 2],
+        labelBgBorderRadius: 8,
+        zIndex: isDiscovery ? 0 : 1,
       };
     });
 
-    return { nodes: displayNodes, edges: displayEdges, layout };
-  }, [allNodes, allEdges, activeCategory, showDiscoveryLines]);
+    const layoutKey = `${activeCategory}:${entities.map((node) => node.id).join(",")}:${evidenceEdges
+      .map((edge) => edge.id)
+      .join(",")}`;
 
-  useEffect(() => {
-    setNodes(view.nodes);
-    setEdges(view.edges);
-  }, [setEdges, setNodes, view]);
+    return {
+      nodes,
+      edges,
+      visibleEdges,
+      evidenceEdgeCount: evidenceEdges.length,
+      persistentLabels,
+      layoutKey,
+    };
+  }, [activeCategory, allEdges, allNodes, showDiscoveryLines]);
+
+  const view = useMemo(() => {
+    const activeNodeId = hoveredNodeId ?? selectedNodeId;
+    const focusedNodeIds = new Set<string>();
+    if (activeNodeId) {
+      focusedNodeIds.add(activeNodeId);
+      for (const edge of baseView.visibleEdges) {
+        if (edge.source === activeNodeId) focusedNodeIds.add(edge.target);
+        if (edge.target === activeNodeId) focusedNodeIds.add(edge.source);
+      }
+    } else if (selectedEdgeId) {
+      const selectedEdge = baseView.visibleEdges.find((edge) => edge.id === selectedEdgeId);
+      if (selectedEdge) {
+        focusedNodeIds.add(selectedEdge.source);
+        focusedNodeIds.add(selectedEdge.target);
+      }
+    }
+    const hasFocus = focusedNodeIds.size > 0;
+
+    const nodes = baseView.nodes.map((node) => {
+      const interaction: InteractionState = !hasFocus
+        ? "idle"
+        : focusedNodeIds.has(node.id)
+          ? "focused"
+          : "dimmed";
+      return {
+        ...node,
+        selected: node.id === selectedNodeId,
+        style: {
+          opacity: interaction === "dimmed" ? 0.16 : 1,
+          transition: "opacity 140ms ease",
+        },
+        data: { ...node.data, interaction },
+      };
+    });
+
+    const edges = baseView.edges.map((edge) => {
+      const rawEdge = edge.data as GraphEdge;
+      const isFocused =
+        edge.id === selectedEdgeId ||
+        Boolean(activeNodeId && (edge.source === activeNodeId || edge.target === activeNodeId));
+      const state = hasFocus ? (isFocused ? "focused" : "dimmed") : "idle";
+      return {
+        ...edge,
+        selected: edge.id === selectedEdgeId,
+        label:
+          rawEdge.relation_type !== "discovered_from" &&
+          (baseView.persistentLabels || edge.id === selectedEdgeId)
+            ? relationLabel(rawEdge.relation_type)
+            : undefined,
+        style: edgeAppearance(rawEdge, baseView.evidenceEdgeCount, state),
+        zIndex: isFocused ? 4 : edge.zIndex,
+      };
+    });
+
+    return { nodes, edges };
+  }, [baseView, hoveredNodeId, selectedEdgeId, selectedNodeId]);
 
   const nodeTypes = useMemo(
-    () => ({
-      personRoot: PersonRootNode,
-      customEntity: CustomEntityNode,
-      clusterBackdrop: ClusterBackdropNode,
-    }),
+    () => ({ personRoot: PersonRootNode, customEntity: EntityNode }),
     []
   );
+
+  const selectedNode = allNodes.find((node) => node.id === selectedNodeId) ?? null;
+  const selectedEdge = allEdges.find((edge) => edge.id === selectedEdgeId) ?? null;
+  const entityCount = allNodes.filter(
+    (node) => node.type !== "personRoot" && !node.data.is_root
+  ).length;
+  const evidenceCount = allEdges.filter((edge) => edge.relation_type !== "discovered_from").length;
+  const relationTypes = [
+    ...new Set(
+      allEdges
+        .filter((edge) => edge.relation_type !== "discovered_from")
+        .map((edge) => edge.relation_type)
+    ),
+  ];
 
   const exportGraphJson = () => {
     const blob = new Blob([JSON.stringify({ nodes: allNodes, edges: allEdges }, null, 2)], {
@@ -435,348 +553,154 @@ export function DigitalMapGraph({
     URL.revokeObjectURL(url);
   };
 
-  const entityCount = allNodes.filter((n) => n.type !== "personRoot" && !n.data?.is_root).length;
-  const correlatedCount = view.layout.clusters.filter((c) => c.isCorrelated).length;
-
   return (
-    <div className="h-[680px] w-full panel-card relative flex flex-col overflow-hidden border border-[#1e293b]">
-      {/* Top Filter Bar */}
-      <div className="px-4 py-3 bg-[#0d131f] border-b border-[#212f45] flex flex-wrap items-center justify-between gap-3 z-10">
-        <div className="flex items-center gap-2 overflow-x-auto">
-          <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-sky-400 bg-sky-950/40 px-2.5 py-1 rounded border border-sky-500/30 shrink-0">
-            <Filter className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>CAPAS:</span>
-          </div>
-          {categories.map((category) => {
-            const meta = getEntityTypeMeta(category.id);
-            const Icon = category.id === "all" ? null : meta.Icon;
-            return (
-              <button
-                key={category.id}
-                type="button"
-                onClick={() => setActiveCategory(category.id)}
-                title={category.description}
-                aria-pressed={activeCategory === category.id}
-                className={`flex items-center gap-1.5 text-xs font-mono px-3 py-1 rounded-md transition-all whitespace-nowrap cursor-pointer border ${
-                  activeCategory === category.id
-                    ? "bg-sky-500 text-white font-bold shadow-md shadow-sky-950 border-sky-400"
-                    : "bg-[#151e2c] text-slate-300 hover:text-white hover:bg-[#1e2b3e] border-[#2b3a52]"
-                }`}
-              >
-                {Icon && (
-                  <Icon
-                    className={`w-3.5 h-3.5 ${
-                      activeCategory === category.id ? "text-white" : meta.accent
-                    }`}
-                    aria-hidden="true"
-                  />
-                )}
-                <span>{category.label}</span>
-                <span className="opacity-70">{category.count}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Toggle para líneas de origen (discovered_from) */}
-          <button
-            type="button"
-            onClick={() => setShowDiscoveryLines((prev) => !prev)}
-            title={
-              showDiscoveryLines
-                ? "Ocultar líneas tenues desde el objetivo para ver solo correlaciones"
-                : "Mostrar ramas desde el objetivo central"
-            }
-            className={`flex items-center gap-1.5 text-xs font-mono px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${
-              showDiscoveryLines
-                ? "bg-sky-950/60 text-sky-300 border-sky-500/40"
-                : "bg-[#151e2c] text-slate-400 border-[#2b3a52] hover:text-slate-200"
-            }`}
-          >
-            {showDiscoveryLines ? (
-              <Eye className="w-3.5 h-3.5 text-sky-400" />
-            ) : (
-              <EyeOff className="w-3.5 h-3.5 text-slate-400" />
-            )}
-            <span>Ramas objetivo</span>
-          </button>
-
-          {correlatedCount > 0 && (
-            <span className="text-xs font-mono font-bold text-purple-300 bg-purple-950/50 px-2.5 py-1 rounded border border-purple-500/30">
-              {correlatedCount} grupo(s) correlacionado(s)
+    <div className="digital-map-canvas relative h-[680px] w-full overflow-hidden rounded-xl border border-[#1a2636] bg-[#070b12] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] sm:h-[720px]">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-[#070b12] via-[#070b12]/95 to-transparent px-3 pb-8 pt-3 sm:px-4">
+        <div className="pointer-events-auto flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <span className="mr-1 flex shrink-0 items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.2em] text-slate-500">
+              <Filter className="h-3 w-3" /> Capas
             </span>
-          )}
+            {categories.map((category) => {
+              const meta = getEntityTypeMeta(category.id);
+              const Icon = category.id === "all" ? Network : meta.Icon;
+              const active = activeCategory === category.id;
+              return (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => setActiveCategory(category.id)}
+                  title={category.description}
+                  aria-pressed={active}
+                  className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[9px] transition-colors ${
+                    active
+                      ? "border-cyan-400/55 bg-cyan-400/12 text-cyan-100"
+                      : "border-slate-700/70 bg-[#0d1420]/85 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                  }`}
+                >
+                  <Icon className={`h-3 w-3 ${active ? "text-cyan-300" : meta.accent}`} />
+                  {category.label}
+                  <span className="text-slate-500">{category.count}</span>
+                </button>
+              );
+            })}
+          </div>
 
-          <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950/40 px-2.5 py-1 rounded border border-emerald-500/30">
-            {entityCount} entidades
-          </span>
-
-          <button
-            type="button"
-            onClick={exportGraphJson}
-            title="Exportar topología de grafo en JSON"
-            className="text-xs font-mono px-3 py-1 rounded-md bg-[#182334] hover:bg-[#223148] text-slate-200 border border-[#2b3a52] transition-colors cursor-pointer"
-          >
-            Grafo (JSON)
-          </button>
-          <button
-            type="button"
-            onClick={() => window.open(getGraphmlUrl(investigationId), "_blank")}
-            title="Descargar archivo .graphml para Gephi / Cytoscape"
-            className="text-xs font-mono px-3 py-1 rounded-md bg-purple-950/60 hover:bg-purple-900/70 text-purple-200 border border-purple-500/40 transition-colors cursor-pointer"
-          >
-            Gephi (.graphml)
-          </button>
-        </div>
-      </div>
-
-      {/* Canvas y Panel Lateral */}
-      <div className="flex-1 flex min-h-0">
-        <div className="flex-1 h-full relative min-w-0">
-          {loading && (
-            <div
-              role="status"
-              className="absolute inset-0 flex items-center justify-center bg-[#0b0f17]/80 z-20 text-xs font-mono text-slate-300"
+          <div className="flex shrink-0 items-center gap-1.5">
+            <span className="hidden font-mono text-[9px] text-slate-500 lg:inline">
+              {entityCount} nodos · {evidenceCount} vínculos
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowDiscoveryLines((visible) => !visible)}
+              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[9px] transition-colors ${
+                showDiscoveryLines
+                  ? "border-cyan-400/45 bg-cyan-400/10 text-cyan-200"
+                  : "border-slate-700/70 bg-[#0d1420]/85 text-slate-400 hover:text-slate-200"
+              }`}
+              title="Mostrar u ocultar la procedencia técnica de cada hallazgo"
+              aria-pressed={showDiscoveryLines}
             >
-              <span
-                className="w-4 h-4 border-2 border-sky-400/30 border-t-sky-400 rounded-full animate-spin mr-2"
-                aria-hidden="true"
-              />
-              Construyendo mapa radial SpiderFoot...
-            </div>
-          )}
-
-          {!loading && error && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0b0f17]/90 z-20 px-6 text-center">
-              <AlertTriangle className="w-8 h-8 text-rose-400 mb-2" aria-hidden="true" />
-              <p className="text-xs font-mono text-slate-200 font-semibold">
-                No se pudo cargar el mapa digital
-              </p>
-              <p className="text-[11px] text-slate-400 mt-1 max-w-sm">{error}</p>
-              <button
-                type="button"
-                onClick={loadGraph}
-                className="mt-3 px-3 py-1.5 rounded-md bg-[#182334] hover:bg-[#223148] text-slate-200 text-xs font-mono border border-[#2b3a52] transition-colors cursor-pointer"
-              >
-                Reintentar
-              </button>
-            </div>
-          )}
-
-          {!loading && !error && nodes.length === 0 && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0b0f17]/90 z-20 px-6 text-center">
-              <p className="text-xs font-mono text-slate-300">
-                No hay nodos para los filtros actuales.
-              </p>
-            </div>
-          )}
-
-          <ReactFlow<DisplayNode, DisplayEdge>
-            nodes={nodes}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onNodeClick={(_, node) => {
-              if (node.type !== "clusterBackdrop") {
-                setSelectedNode(node);
-                setSelectedEdge(null);
-              }
-            }}
-            onEdgeClick={(_, edge) => {
-              setSelectedEdge(edge.data as GraphEdge ?? null);
-              setSelectedNode(null);
-            }}
-            nodeOrigin={[0.5, 0.5]}
-            minZoom={0.05}
-            maxZoom={1.5}
-            onlyRenderVisibleElements={true}
-            elevateEdgesOnSelect={false}
-          >
-            <Background color="#1e293b" gap={20} size={1} />
-            <FitToLayout bounds={view.layout.bounds} />
-            <Controls className="!bg-[#121824] !border-[#212d40] !text-slate-200" />
-            <MiniMap
-              className="!bg-[#0d121c] !border-[#1e293b] rounded-md"
-              nodeColor={(node) =>
-                node.type === "personRoot"
-                  ? "#38bdf8"
-                  : node.data?.isCorrelated
-                  ? "#a855f7"
-                  : "#64748b"
-              }
-            />
-          </ReactFlow>
-
-          {/* Leyenda SpiderFoot en esquina inferior */}
-          {!loading && !error && view.layout.clusters.length > 0 && (
-            <div className="absolute bottom-3 left-14 z-10 max-w-[310px] px-3 py-2.5 rounded-lg bg-[#0d131f]/95 border border-[#212f45] text-[10px] leading-snug text-slate-400 pointer-events-none shadow-xl">
-              <div className="flex items-center gap-1.5 font-bold text-slate-200 mb-1">
-                <Network className="w-3 h-3 text-sky-400" />
-                <span>Mapa de Correlación Radial</span>
-              </div>
-              <p>
-                <strong className="text-purple-300">Constelaciones púrpuras:</strong> Cuentas
-                que correlacionan entre sí por correo, alias o enlaces directos.
-              </p>
-              <p className="mt-1">
-                <strong className="text-sky-300">Ramas desde objetivo:</strong> Desprenden del
-                nodo central hacia los grupos de evidencias.
-              </p>
-            </div>
-          )}
+              {showDiscoveryLines ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+              Procedencia
+            </button>
+            <button type="button" onClick={exportGraphJson} className="rounded-full border border-slate-700/70 bg-[#0d1420]/85 p-1.5 text-slate-400 hover:border-slate-500 hover:text-cyan-200" title="Exportar grafo JSON" aria-label="Exportar grafo JSON">
+              <Braces className="h-3.5 w-3.5" />
+            </button>
+            <button type="button" onClick={() => window.open(getGraphmlUrl(investigationId), "_blank")} className="rounded-full border border-slate-700/70 bg-[#0d1420]/85 p-1.5 text-slate-400 hover:border-slate-500 hover:text-violet-200" title="Descargar GraphML" aria-label="Descargar GraphML">
+              <FileDown className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
-
-        {/* Panel lateral: Detalle de entidad seleccionada */}
-        {selectedNode && (
-          <aside
-            aria-label="Detalle de la entidad seleccionada"
-            className="w-72 lg:w-80 border-l border-[#1e293b] bg-[#0e131d] p-4 overflow-y-auto shrink-0 shadow-2xl"
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-[#1e293b] mb-4">
-              <h4 className="text-xs font-mono font-bold text-slate-200 uppercase tracking-wider">
-                {selectedNode.type === "personRoot" ? "Identidad Objetivo" : "Detalle de Entidad"}
-              </h4>
-              <button
-                type="button"
-                onClick={() => setSelectedNode(null)}
-                className="text-xs font-mono text-slate-500 hover:text-slate-300"
-              >
-                Cerrar ✕
-              </button>
-            </div>
-
-            <div className="space-y-3.5 text-xs">
-              <div>
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">Etiqueta</span>
-                <span className="font-semibold text-slate-200 font-mono text-sm break-all">
-                  {selectedNode.data?.label || selectedNode.data?.value}
-                </span>
-              </div>
-
-              <div>
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">Tipo</span>
-                <span className="text-slate-300">
-                  {selectedNode.type === "personRoot"
-                    ? "Identidad Objetivo"
-                    : getEntityTypeMeta(selectedNode.data?.entity_type).label}
-                </span>
-              </div>
-
-              {selectedNode.data?.platform && (
-                <div>
-                  <span className="text-[10px] font-mono text-slate-500 uppercase block">Plataforma</span>
-                  <span className="font-semibold text-sky-300">
-                    {selectedNode.data.platform}
-                  </span>
-                </div>
-              )}
-
-              <div>
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">Valor / Enlace</span>
-                {selectedNode.data?.value?.startsWith("http") ? (
-                  <a
-                    href={selectedNode.data.value}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sky-400 hover:underline flex items-center gap-1 break-all mt-0.5"
-                  >
-                    <span className="truncate">{selectedNode.data.value}</span>
-                    <ExternalLink className="w-3 h-3 shrink-0" aria-hidden="true" />
-                  </a>
-                ) : (
-                  <span className="font-mono text-slate-300 break-all">
-                    {selectedNode.data?.value}
-                  </span>
-                )}
-              </div>
-
-              {selectedNode.data?.isCorrelated && (
-                <div className="p-2.5 rounded-md bg-purple-950/30 border border-purple-500/30 text-purple-200 text-[11px]">
-                  <span className="font-bold flex items-center gap-1 mb-0.5">
-                    <Link2 className="w-3.5 h-3.5 text-purple-400" />
-                    Cuenta Correlacionada
-                  </span>
-                  Esta cuenta comparte evidencias (mismo correo, alias o enlace cruzado) con otras cuentas del grupo.
-                </div>
-              )}
-
-              {typeof selectedNode.data?.metadata_info?.bio === "string" && (
-                <div>
-                  <span className="text-[10px] font-mono text-slate-500 uppercase block">
-                    Biografía / Snippet
-                  </span>
-                  <p className="text-slate-300 text-[11px] mt-0.5 bg-[#141b28] p-2 rounded border border-[#1e293b]">
-                    {selectedNode.data.metadata_info.bio}
-                  </p>
-                </div>
-              )}
-
-              {Array.isArray(selectedNode.data?.metadata_info?.extracted_emails) &&
-                selectedNode.data.metadata_info.extracted_emails.length > 0 && (
-                  <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase block">
-                      Correos Extraídos
-                    </span>
-                    <ul className="list-disc list-inside text-sky-400 text-[11px] mt-0.5 font-mono">
-                      {selectedNode.data.metadata_info.extracted_emails.map((em: string) => (
-                        <li key={em}>{em}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-            </div>
-          </aside>
-        )}
-
-        {/* Panel lateral: Detalle de arista seleccionada */}
-        {selectedEdge && (
-          <aside
-            aria-label="Evidencia de la arista seleccionada"
-            className="w-72 lg:w-80 border-l border-[#1e293b] bg-[#0e131d] p-4 overflow-y-auto shrink-0 shadow-2xl"
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-[#1e293b] mb-4">
-              <h4 className="text-xs font-mono font-bold text-slate-200 uppercase tracking-wider">
-                Detalle de Relación
-              </h4>
-              <button
-                type="button"
-                onClick={() => setSelectedEdge(null)}
-                className="text-xs font-mono text-slate-500 hover:text-slate-300"
-              >
-                Cerrar ✕
-              </button>
-            </div>
-
-            <div className="space-y-3.5 text-xs">
-              <div>
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">
-                  Tipo de Relación
-                </span>
-                <span className="font-semibold text-slate-200 text-sm">
-                  {relationLabel(selectedEdge.relation_type)}
-                </span>
-              </div>
-
-              <div>
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">
-                  Evidencia Vinculante
-                </span>
-                <div className="mt-1 bg-[#141b28] p-2.5 rounded border border-[#1e293b] text-slate-300 break-words font-mono text-[11px]">
-                  {selectedEdge.evidence && typeof selectedEdge.evidence === "object" ? (
-                    <pre className="whitespace-pre-wrap">
-                      {JSON.stringify(selectedEdge.evidence, null, 2)}
-                    </pre>
-                  ) : (
-                    <span>{String(selectedEdge.evidence || "Relación estructural")}</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </aside>
-        )}
       </div>
+
+      {loading && (
+        <div role="status" className="absolute inset-0 z-40 flex items-center justify-center bg-[#070b12]/90 font-mono text-xs text-slate-400">
+          <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-cyan-400/20 border-t-cyan-300" />
+          Trazando evidencia...
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-[#070b12]/95 px-6 text-center">
+          <AlertTriangle className="mb-2 h-7 w-7 text-rose-400" />
+          <p className="font-mono text-xs font-semibold text-slate-200">No se pudo cargar el mapa</p>
+          <p className="mt-1 max-w-sm text-[11px] text-slate-500">{error}</p>
+          <button type="button" onClick={() => void loadGraph()} className="mt-3 rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 font-mono text-[10px] text-slate-200 hover:border-cyan-500/50">
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && view.nodes.length === 0 && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#070b12]/90 font-mono text-xs text-slate-400">
+          No hay nodos para esta capa.
+        </div>
+      )}
+
+      <ReactFlow<DisplayNode, DisplayEdge>
+        nodes={view.nodes}
+        edges={view.edges}
+        nodeTypes={nodeTypes}
+        nodeOrigin={[0.5, 0.5]}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        minZoom={0.08}
+        maxZoom={2.2}
+        elevateEdgesOnSelect={false}
+        onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
+        onNodeMouseLeave={() => setHoveredNodeId(null)}
+        onNodeClick={(_, node) => {
+          setSelectedNodeId(node.id);
+          setSelectedEdgeId(null);
+        }}
+        onEdgeClick={(_, edge) => {
+          setSelectedEdgeId(edge.id);
+          setSelectedNodeId(null);
+        }}
+        onPaneClick={() => {
+          setSelectedNodeId(null);
+          setSelectedEdgeId(null);
+        }}
+      >
+        <Background variant={BackgroundVariant.Lines} color="#101a29" gap={36} size={0.45} />
+        <FitToLayout layoutKey={baseView.layoutKey} />
+        <Controls showInteractive={false} position="bottom-left" />
+        <MiniMap
+          position="bottom-right"
+          pannable
+          zoomable
+          maskColor="rgba(3, 7, 13, 0.76)"
+          nodeStrokeWidth={2}
+          nodeColor={(node) =>
+            node.type === "personRoot"
+              ? "#22d3ee"
+              : node.data?.isCorrelated
+                ? "#8b5cf6"
+                : "#475569"
+          }
+        />
+      </ReactFlow>
+
+      {!loading && !error && relationTypes.length > 0 && (
+        <div className="pointer-events-none absolute bottom-3 left-14 z-10 hidden max-w-[55%] flex-wrap items-center gap-x-3 gap-y-1 rounded-full border border-slate-800/80 bg-[#080d15]/85 px-3 py-1.5 backdrop-blur sm:flex">
+          {relationTypes.slice(0, 4).map((relationType) => (
+            <span key={relationType} className="flex items-center gap-1.5 font-mono text-[8px] text-slate-500">
+              <span className="h-px w-4" style={{ backgroundColor: RELATION_COLORS[relationType] ?? "#64748b" }} />
+              {relationLabel(relationType)}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <DetailPanel
+        node={selectedNode}
+        edge={selectedEdge}
+        onClose={() => {
+          setSelectedNodeId(null);
+          setSelectedEdgeId(null);
+        }}
+      />
     </div>
   );
 }
