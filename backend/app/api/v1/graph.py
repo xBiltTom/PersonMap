@@ -15,11 +15,17 @@ from app.schemas.graph import GraphEdge, GraphNode, GraphNodeData, GraphNodePosi
 router = APIRouter()
 
 EDGE_STYLES = {
-    "discovered_from": {"stroke": "#3b82f6", "strokeDasharray": "2,7", "strokeWidth": 1},
-    "shares_declared_email": {"stroke": "#34d399", "strokeWidth": 2.5},
-    "explicit_profile_link": {"stroke": "#a855f7", "strokeWidth": 2.5},
-    "same_username": {"stroke": "#f59e0b", "strokeDasharray": "5,5", "strokeWidth": 1.5},
-    "similar_avatar": {"stroke": "#f97316", "strokeDasharray": "3,3", "strokeWidth": 1.5},
+    "discovered_from": {"stroke": "#38bdf8", "strokeDasharray": "2,7", "strokeWidth": 1},
+    "observed_email": {"stroke": "#38bdf8", "strokeWidth": 2},
+    "shares_declared_email": {"stroke": "#38bdf8", "strokeWidth": 2},
+    "explicit_profile_link": {"stroke": "#a855f7", "strokeWidth": 2},
+    "same_username": {"stroke": "#38bdf8", "strokeWidth": 2},
+    "similar_avatar": {"stroke": "#38bdf8", "strokeWidth": 2},
+    "same_name": {"stroke": "#3b82f6", "strokeWidth": 2},
+    "mentions": {"stroke": "#06b6d4", "strokeWidth": 2},
+    "same_owner": {"stroke": "#10b981", "strokeWidth": 2},
+    "affiliation": {"stroke": "#cbd5e1", "strokeWidth": 1.5},
+    "possible_location": {"stroke": "#f43f5e", "strokeWidth": 1.5},
 }
 
 
@@ -92,14 +98,39 @@ async def get_investigation_graph(id: UUID, db: AsyncSession = Depends(get_db)):
                 ),
             )
         )
+        rel_type = "discovered_from"
+        rel_label = None
+        p_lower = (entity.platform or "").lower()
+        v_lower = (entity.value or "").lower()
+        t_lower = (entity.entity_type or "").lower()
+
+        if t_lower == "email" or (target.email and target.email.lower() in v_lower):
+            rel_type = "observed_email"
+            rel_label = "correo observado"
+        elif "gravatar" in p_lower or "avatar" in t_lower or (entity.metadata_info and entity.metadata_info.get("avatar_url")):
+            rel_type = "similar_avatar"
+            rel_label = "avatar relacionado"
+        elif target.full_name and (target.full_name.lower() in (entity.display_name or "").lower()):
+            rel_type = "same_name"
+            rel_label = "mismo nombre"
+        elif t_lower in ("document", "academic") or "pdf" in v_lower:
+            rel_type = "mentions"
+            rel_label = "menciona"
+        elif t_lower == "domain" or "http" in v_lower:
+            rel_type = "mentions"
+            rel_label = "menciona"
+        elif target.username and (target.username.lower() in v_lower or (entity.metadata_info and target.username.lower() in str(entity.metadata_info.get("username", "")).lower())):
+            rel_type = "explicit_profile_link"
+            rel_label = "enlaza a"
+
         edges.append(
             GraphEdge(
                 id=f"source-{entity.id}",
                 source=root_id,
                 target=entity_id,
-                relation_type="discovered_from",
-                label=None,
-                style=EDGE_STYLES["discovered_from"],
+                relation_type=rel_type,
+                label=rel_label,
+                style=EDGE_STYLES.get(rel_type, EDGE_STYLES["discovered_from"]),
                 evidence={"source_tool": entity.source_tool},
             )
         )
