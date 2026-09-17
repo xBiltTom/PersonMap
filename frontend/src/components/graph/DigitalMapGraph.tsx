@@ -215,14 +215,77 @@ function getEntityTheme(platform?: string | null, entityType?: string | null, va
     };
   }
 
-  // Document / PDF
-  if (t === "document" || v.endsWith(".pdf") || p.includes("pdf")) {
+  // File Types
+  const fileExtMatch = (v || "").match(/\.(pdf|docx?|odt|rtf|txt|xlsx?|csv|tsv|pptx?|zip|rar|7z|tar|gz|json|sql|xml|py|js|ts|html|css|png|jpe?g|gif|webp|svg)$/i);
+  const ext = fileExtMatch ? fileExtMatch[1].toLowerCase() : null;
+
+  if (ext === "pdf" || t === "document" || p.includes("pdf")) {
     return {
       borderClass: "border-rose-500",
       glowShadow: "0 0 22px rgba(244, 63, 94, 0.45)",
       accentText: "text-rose-400",
       badgeBg: "bg-rose-500/15 text-rose-300 border-rose-500/30",
       dotColor: "#f43f5e",
+    };
+  }
+
+  if (ext && ["docx", "doc", "odt", "rtf", "txt"].includes(ext)) {
+    return {
+      borderClass: "border-blue-500",
+      glowShadow: "0 0 22px rgba(59, 130, 246, 0.45)",
+      accentText: "text-blue-400",
+      badgeBg: "bg-blue-500/15 text-blue-300 border-blue-500/30",
+      dotColor: "#3b82f6",
+    };
+  }
+
+  if (ext && ["xlsx", "xls", "csv", "tsv"].includes(ext)) {
+    return {
+      borderClass: "border-emerald-500",
+      glowShadow: "0 0 22px rgba(16, 185, 129, 0.45)",
+      accentText: "text-emerald-400",
+      badgeBg: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+      dotColor: "#10b981",
+    };
+  }
+
+  if (ext && ["pptx", "ppt", "key"].includes(ext)) {
+    return {
+      borderClass: "border-orange-500",
+      glowShadow: "0 0 22px rgba(249, 115, 22, 0.45)",
+      accentText: "text-orange-400",
+      badgeBg: "bg-orange-500/15 text-orange-300 border-orange-500/30",
+      dotColor: "#f97316",
+    };
+  }
+
+  if (ext && ["zip", "rar", "7z", "tar", "gz"].includes(ext)) {
+    return {
+      borderClass: "border-amber-500",
+      glowShadow: "0 0 22px rgba(245, 158, 11, 0.45)",
+      accentText: "text-amber-400",
+      badgeBg: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+      dotColor: "#f59e0b",
+    };
+  }
+
+  if (ext && ["json", "xml", "sql", "py", "js", "ts", "html", "css", "sh"].includes(ext)) {
+    return {
+      borderClass: "border-purple-400",
+      glowShadow: "0 0 22px rgba(168, 85, 247, 0.45)",
+      accentText: "text-purple-300",
+      badgeBg: "bg-purple-500/15 text-purple-300 border-purple-500/30",
+      dotColor: "#a855f7",
+    };
+  }
+
+  if (ext && ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) {
+    return {
+      borderClass: "border-fuchsia-400",
+      glowShadow: "0 0 22px rgba(217, 70, 239, 0.45)",
+      accentText: "text-fuchsia-300",
+      badgeBg: "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/30",
+      dotColor: "#d946ef",
     };
   }
 
@@ -284,16 +347,18 @@ function getNodeDisplayNames(data: GraphNodeData): { title: string; subtitle: st
     return { title: v, subtitle: "" };
   }
 
+  // File types detection (matches "PDF" / "CV_BiltonNeva.pdf" in img-referencia-mapa.png)
+  const fileExtMatch = (v || d).match(/\.(pdf|docx?|odt|rtf|txt|xlsx?|csv|tsv|pptx?|zip|rar|7z|tar|gz|json|sql|xml|py|js|ts|html|css|png|jpe?g|gif|webp|svg)$/i);
+  if (t === "document" || fileExtMatch) {
+    const ext = fileExtMatch ? fileExtMatch[1].toUpperCase() : "DOC";
+    const filename = v.split("/").pop() || d || v;
+    return { title: ext, subtitle: filename };
+  }
+
   // Domain
   if (t === "domain") {
     const cleanDomain = v.replace(/^https?:\/\//, "").replace(/\/$/, "");
     return { title: cleanDomain, subtitle: p && p !== "domain" ? p : "" };
-  }
-
-  // Document / PDF
-  if (t === "document" || v.endsWith(".pdf") || p.toLowerCase().includes("pdf")) {
-    const filename = v.split("/").pop() || v;
-    return { title: "PDF", subtitle: filename };
   }
 
   // Location
@@ -562,9 +627,11 @@ const CustomEntityNode = React.memo(function CustomEntityNode({ data, selected }
       {/* Circular Orb at Top */}
       <div
         style={{
-          boxShadow: isFocused ? `${theme.glowShadow}, 0 0 22px rgba(255, 255, 255, 0.18)` : undefined,
+          boxShadow: isFocused
+            ? `${theme.glowShadow}, 0 0 28px rgba(255, 255, 255, 0.25)`
+            : theme.glowShadow,
         }}
-        className={`relative flex h-[52px] w-[52px] cursor-pointer items-center justify-center rounded-full border-2 bg-[#090e18] transition-transform duration-150 ${
+        className={`relative flex h-[52px] w-[52px] cursor-pointer items-center justify-center overflow-hidden rounded-full border-2 bg-[#090e18] transition-transform duration-150 ${
           theme.borderClass
         } ${isFocused ? "scale-105 border-white/90" : "hover:scale-105"}`}
       >
@@ -572,6 +639,8 @@ const CustomEntityNode = React.memo(function CustomEntityNode({ data, selected }
           platform={data.platform}
           entityType={data.entity_type}
           value={data.value}
+          displayName={data.display_name}
+          avatarUrl={typeof data.metadata_info?.avatar_url === "string" ? data.metadata_info.avatar_url : undefined}
           className={`h-5 w-5 ${theme.accentText} transition-transform duration-150`}
         />
 

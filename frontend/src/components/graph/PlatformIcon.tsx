@@ -1,35 +1,93 @@
-import React from "react";
+"use client";
+
+import React, { useState } from "react";
 import {
   AlertTriangle,
+  Archive,
+  BookOpen,
+  Code2,
+  Database,
+  FileCode,
+  FileSpreadsheet,
   FileText,
   Globe,
+  GraduationCap,
+  Image as ImageIcon,
+  KeyRound,
   Landmark,
   Link as LinkIcon,
   Mail,
   MapPin,
+  MessageCircle,
+  Music,
   Phone,
+  Presentation,
+  Server,
+  Shield,
   Skull,
   User,
+  Video,
 } from "lucide-react";
 
-interface PlatformIconProps {
+export interface PlatformIconProps {
   platform?: string | null;
   entityType?: string | null;
   value?: string | null;
+  displayName?: string | null;
+  avatarUrl?: string | null;
   className?: string;
 }
 
-export const PlatformIcon = React.memo(function PlatformIcon({
+function extractDomain(urlOrDomain: string): string | null {
+  try {
+    const raw = urlOrDomain.trim().toLowerCase();
+    if (!raw) return null;
+    const withProtocol = raw.startsWith("http://") || raw.startsWith("https://") ? raw : `https://${raw}`;
+    const parsed = new URL(withProtocol);
+    const host = parsed.hostname.replace(/^www\./, "");
+    if (!host.includes(".") || host.endsWith(".local") || host === "localhost") return null;
+    return host;
+  } catch {
+    return null;
+  }
+}
+
+export function PlatformIcon({
   platform,
   entityType,
   value,
+  displayName,
+  avatarUrl,
   className = "w-5 h-5",
 }: PlatformIconProps) {
+  const [avatarError, setAvatarError] = useState(false);
+  const [faviconError, setFaviconError] = useState(false);
+
   const p = (platform || "").toLowerCase();
   const v = (value || "").toLowerCase();
+  const d = (displayName || "").toLowerCase();
   const t = (entityType || "").toLowerCase();
 
-  // 1. Specific Brands / Platforms matching img-referencia-mapa.png
+  // -------------------------------------------------------------------
+  // TIER 1: Harvested Avatar / Real Profile Picture
+  // -------------------------------------------------------------------
+  if (avatarUrl && !avatarError) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={platform || value || "avatar"}
+        className="h-full w-full rounded-full object-cover p-0.5"
+        onError={() => setAvatarError(true)}
+        loading="lazy"
+      />
+    );
+  }
+
+  // -------------------------------------------------------------------
+  // TIER 2: Specific Vector Brand SVGs (Matching img-referencia-mapa.png)
+  // -------------------------------------------------------------------
+
+  // GitHub
   if (p.includes("github") || v.includes("github.com")) {
     return (
       <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -38,6 +96,7 @@ export const PlatformIcon = React.memo(function PlatformIcon({
     );
   }
 
+  // GitLab
   if (p.includes("gitlab") || v.includes("gitlab.com")) {
     return (
       <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -46,6 +105,7 @@ export const PlatformIcon = React.memo(function PlatformIcon({
     );
   }
 
+  // Twitter / X
   if (p.includes("twitter") || p.includes("x_twitter") || p === "x" || v.includes("x.com") || v.includes("twitter.com")) {
     return (
       <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -54,6 +114,7 @@ export const PlatformIcon = React.memo(function PlatformIcon({
     );
   }
 
+  // Instagram
   if (p.includes("instagram") || v.includes("instagram.com")) {
     return (
       <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -64,6 +125,7 @@ export const PlatformIcon = React.memo(function PlatformIcon({
     );
   }
 
+  // Reddit
   if (p.includes("reddit") || v.includes("reddit.com")) {
     return (
       <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -72,6 +134,7 @@ export const PlatformIcon = React.memo(function PlatformIcon({
     );
   }
 
+  // LinkedIn
   if (p.includes("linkedin") || v.includes("linkedin.com")) {
     return (
       <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -80,6 +143,7 @@ export const PlatformIcon = React.memo(function PlatformIcon({
     );
   }
 
+  // YouTube
   if (p.includes("youtube") || v.includes("youtube.com") || v.includes("youtu.be")) {
     return (
       <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -88,6 +152,7 @@ export const PlatformIcon = React.memo(function PlatformIcon({
     );
   }
 
+  // Discord
   if (p.includes("discord") || v.includes("discord.gg") || v.includes("discord.com")) {
     return (
       <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -96,6 +161,7 @@ export const PlatformIcon = React.memo(function PlatformIcon({
     );
   }
 
+  // Stack Overflow
   if (p.includes("stackoverflow") || p.includes("stack overflow") || v.includes("stackoverflow.com")) {
     return (
       <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -104,6 +170,7 @@ export const PlatformIcon = React.memo(function PlatformIcon({
     );
   }
 
+  // Dev.to
   if (p.includes("dev.to") || p === "dev" || v.includes("dev.to")) {
     return (
       <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -112,6 +179,7 @@ export const PlatformIcon = React.memo(function PlatformIcon({
     );
   }
 
+  // Gravatar
   if (p.includes("gravatar") || v.includes("gravatar.com")) {
     return (
       <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -120,6 +188,43 @@ export const PlatformIcon = React.memo(function PlatformIcon({
     );
   }
 
+  // Telegram
+  if (p.includes("telegram") || v.includes("t.me") || v.includes("telegram.me")) {
+    return (
+      <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.446 1.394c-.14.18-.357.295-.6.295-.002 0-.003 0-.005 0l.213-3.054 5.56-5.022c.24-.213-.054-.334-.373-.121l-6.869 4.326-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.832.922z" />
+      </svg>
+    );
+  }
+
+  // TikTok
+  if (p.includes("tiktok") || v.includes("tiktok.com")) {
+    return (
+      <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.24 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z" />
+      </svg>
+    );
+  }
+
+  // Spotify
+  if (p.includes("spotify") || v.includes("spotify.com")) {
+    return (
+      <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
+      </svg>
+    );
+  }
+
+  // Steam
+  if (p.includes("steam") || v.includes("steamcommunity.com")) {
+    return (
+      <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+        <path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.005.105.005.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 12-5.373 12-12s-5.373-12-12-12z" />
+      </svg>
+    );
+  }
+
+  // Cloudflare
   if (p.includes("cloudflare") || v.includes("cloudflare")) {
     return (
       <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -128,6 +233,7 @@ export const PlatformIcon = React.memo(function PlatformIcon({
     );
   }
 
+  // Netlify
   if (p.includes("netlify") || v.includes("netlify")) {
     return (
       <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -136,17 +242,78 @@ export const PlatformIcon = React.memo(function PlatformIcon({
     );
   }
 
-  // 2. Specialized OSINT Entity Types
+  // DockerHub
+  if (p.includes("docker") || v.includes("docker.com")) {
+    return (
+      <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+        <path d="M13.983 11.078h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.185.185 0 00-.185.185v1.888c0 .102.083.185.185.185m-2.954-5.43h2.118a.186.186 0 00.186-.186V3.574a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m0 2.716h2.118a.187.187 0 00.186-.186V6.29a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.887c0 .102.082.186.185.186m-2.93 0h2.12a.186.186 0 00.184-.186V6.29a.185.185 0 00-.185-.185H8.1a.185.185 0 00-.185.185v1.887c0 .102.083.186.185.186m-2.964 0h2.119a.186.186 0 00.185-.186V6.29a.185.185 0 00-.185-.185H5.136a.186.186 0 00-.186.185v1.887c0 .102.084.186.186.186m5.893 2.715h2.118a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m-2.93 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.083.185.185.185m-2.964 0h2.119a.185.185 0 00.185-.185V9.006a.185.185 0 00-.185-.186H5.136a.186.186 0 00-.186.185v1.888c0 .102.084.185.186.185m-2.928 0h2.119a.185.185 0 00.185-.185V9.006a.185.185 0 00-.185-.186H2.208a.186.186 0 00-.186.185v1.888c0 .102.084.185.186.185m21.758 1.487c-.504-.338-1.58-.415-2.37-.179-.17-.468-.444-.888-.813-1.226l-.427-.375-.382.42c-.443.488-.696 1.096-.757 1.734-.54.195-1.503.208-2.02.046l-.326-.102-.06.34a3.86 3.86 0 01-1.344 2.22c-1.32.96-3.23 1.378-5.385 1.176-.906-.086-1.802-.303-2.618-.638l-.634-.26-.395.556c-1.072 1.507-2.735 2.45-4.57 2.59-1.018.077-2.036-.12-2.955-.572l-.763-.377-.074.848a6.38 6.38 0 00.74 3.253 6.95 6.95 0 002.433 2.535 11.968 11.968 0 005.892 1.442c5.967 0 10.96-3.834 12.44-9.553.774-.06 2.29-.356 2.92-1.748l.192-.423-.464-.176z" />
+      </svg>
+    );
+  }
+
+  // -------------------------------------------------------------------
+  // TIER 3: File Types Detection & Badges
+  // -------------------------------------------------------------------
+  const fileExtMatch = (v || d).match(/\.(pdf|docx?|odt|rtf|txt|xlsx?|csv|tsv|pptx?|zip|rar|7z|tar|gz|json|sql|xml|py|js|ts|html|css|png|jpe?g|gif|webp|svg)$/i);
+  const ext = fileExtMatch ? fileExtMatch[1].toLowerCase() : null;
+
+  if (ext === "pdf" || t === "document" || p.includes("pdf")) {
+    return <FileText className={className} />;
+  }
+
+  if (ext && ["docx", "doc", "odt", "rtf", "txt"].includes(ext)) {
+    return <FileText className={className} />;
+  }
+
+  if (ext && ["xlsx", "xls", "csv", "tsv"].includes(ext)) {
+    return <FileSpreadsheet className={className} />;
+  }
+
+  if (ext && ["pptx", "ppt", "key"].includes(ext)) {
+    return <Presentation className={className} />;
+  }
+
+  if (ext && ["zip", "rar", "7z", "tar", "gz"].includes(ext)) {
+    return <Archive className={className} />;
+  }
+
+  if (ext && ["sql", "sqlite", "db"].includes(ext)) {
+    return <Database className={className} />;
+  }
+
+  if (ext && ["json", "xml", "py", "js", "ts", "html", "css", "sh"].includes(ext)) {
+    return <FileCode className={className} />;
+  }
+
+  if (ext && ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) {
+    return <ImageIcon className={className} />;
+  }
+
+  // -------------------------------------------------------------------
+  // TIER 4: Dynamic Favicons for Arbitrary Websites/Domains
+  // -------------------------------------------------------------------
+  const domain = extractDomain(v);
+  if (domain && !faviconError && (t === "domain" || v.startsWith("http"))) {
+    return (
+      <img
+        src={`https://www.google.com/s2/favicons?domain=${domain}&sz=64`}
+        alt={domain}
+        className="h-5 w-5 rounded-sm object-contain"
+        onError={() => setFaviconError(true)}
+        loading="lazy"
+      />
+    );
+  }
+
+  // -------------------------------------------------------------------
+  // TIER 5: Fallback OSINT Category & Platform Icons
+  // -------------------------------------------------------------------
   if (t === "email" || v.includes("@")) {
     return <Mail className={className} />;
   }
 
-  if (t === "domain" || p.includes("domain") || p.includes("portfolio")) {
+  if (t === "domain" || p.includes("domain") || p.includes("portfolio") || p.includes("link")) {
     return <Globe className={className} />;
-  }
-
-  if (t === "document" || p.includes("pdf") || v.endsWith(".pdf")) {
-    return <FileText className={className} />;
   }
 
   if (t === "academic" || p.includes("universidad") || p.includes("unt") || v.includes("unt") || p.includes("scholar") || p.includes("orcid")) {
@@ -173,10 +340,6 @@ export const PlatformIcon = React.memo(function PlatformIcon({
     return <User className={className} />;
   }
 
-  if (p.includes("portfolio") || p.includes("enlace") || p.includes("link")) {
-    return <LinkIcon className={className} />;
-  }
-
   // Default fallback
   return <Globe className={className} />;
-});
+}
