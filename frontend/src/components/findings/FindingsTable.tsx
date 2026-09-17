@@ -12,7 +12,7 @@ import { AvatarThumb } from "@/components/identity/AvatarThumb";
 import { LAYER_META } from "@/lib/engines";
 
 /** Filas por página. Suficiente para desplazarse sin ahogar al navegador. */
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 20;
 
 export function FindingsTable({ entities }: { entities: EntityData[] }) {
   const [search, setSearch] = useState("");
