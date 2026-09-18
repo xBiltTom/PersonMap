@@ -29,6 +29,294 @@ import {
   Video,
 } from "lucide-react";
 
+export interface EntityTheme {
+  borderClass: string;
+  glowShadow: string;
+  accentText: string;
+  badgeBg: string;
+  dotColor: string;
+}
+
+export function getEntityTheme(
+  platform?: string | null,
+  entityType?: string | null,
+  value?: string | null
+): EntityTheme {
+  const p = (platform || "").toLowerCase();
+  const v = (value || "").toLowerCase();
+  const t = (entityType || "").toLowerCase();
+
+  // GitHub / Dev domain / Portfolio
+  if (p.includes("github") || v.includes("github.com") || p.includes("portfolio")) {
+    return {
+      borderClass: "border-cyan-400",
+      glowShadow: "0 0 22px rgba(6, 182, 212, 0.45)",
+      accentText: "text-cyan-400",
+      badgeBg: "bg-cyan-500/15 text-cyan-300 border-cyan-500/30",
+      dotColor: "#22d3ee",
+    };
+  }
+
+  // GitLab
+  if (p.includes("gitlab") || v.includes("gitlab.com")) {
+    return {
+      borderClass: "border-amber-500",
+      glowShadow: "0 0 22px rgba(245, 158, 11, 0.45)",
+      accentText: "text-amber-400",
+      badgeBg: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+      dotColor: "#f59e0b",
+    };
+  }
+
+  // Twitter / X
+  if (p.includes("twitter") || p.includes("x_twitter") || p === "x" || v.includes("x.com") || v.includes("twitter.com")) {
+    return {
+      borderClass: "border-cyan-300",
+      glowShadow: "0 0 22px rgba(34, 211, 238, 0.45)",
+      accentText: "text-cyan-300",
+      badgeBg: "bg-cyan-400/15 text-cyan-200 border-cyan-400/30",
+      dotColor: "#38bdf8",
+    };
+  }
+
+  // Instagram
+  if (p.includes("instagram") || v.includes("instagram.com")) {
+    return {
+      borderClass: "border-fuchsia-500",
+      glowShadow: "0 0 22px rgba(217, 70, 239, 0.45)",
+      accentText: "text-fuchsia-400",
+      badgeBg: "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/30",
+      dotColor: "#d946ef",
+    };
+  }
+
+  // Reddit
+  if (p.includes("reddit") || v.includes("reddit.com")) {
+    return {
+      borderClass: "border-orange-500",
+      glowShadow: "0 0 22px rgba(249, 115, 22, 0.45)",
+      accentText: "text-orange-400",
+      badgeBg: "bg-orange-500/15 text-orange-300 border-orange-500/30",
+      dotColor: "#f97316",
+    };
+  }
+
+  // LinkedIn
+  if (p.includes("linkedin") || v.includes("linkedin.com")) {
+    return {
+      borderClass: "border-blue-500",
+      glowShadow: "0 0 22px rgba(59, 130, 246, 0.45)",
+      accentText: "text-blue-400",
+      badgeBg: "bg-blue-500/15 text-blue-300 border-blue-500/30",
+      dotColor: "#3b82f6",
+    };
+  }
+
+  // Gravatar / Identity
+  if (p.includes("gravatar") || v.includes("gravatar.com")) {
+    return {
+      borderClass: "border-sky-400",
+      glowShadow: "0 0 22px rgba(56, 189, 248, 0.45)",
+      accentText: "text-sky-300",
+      badgeBg: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+      dotColor: "#38bdf8",
+    };
+  }
+
+  // YouTube
+  if (p.includes("youtube") || v.includes("youtube.com")) {
+    return {
+      borderClass: "border-rose-500",
+      glowShadow: "0 0 22px rgba(244, 63, 94, 0.45)",
+      accentText: "text-rose-400",
+      badgeBg: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+      dotColor: "#f43f5e",
+    };
+  }
+
+  // Discord
+  if (p.includes("discord") || v.includes("discord.com")) {
+    return {
+      borderClass: "border-indigo-400",
+      glowShadow: "0 0 22px rgba(129, 140, 248, 0.45)",
+      accentText: "text-indigo-300",
+      badgeBg: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30",
+      dotColor: "#818cf8",
+    };
+  }
+
+  // Stack Overflow
+  if (p.includes("stackoverflow") || p.includes("stack overflow")) {
+    return {
+      borderClass: "border-amber-400",
+      glowShadow: "0 0 22px rgba(251, 191, 36, 0.45)",
+      accentText: "text-amber-300",
+      badgeBg: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+      dotColor: "#fbbf24",
+    };
+  }
+
+  // Dev.to
+  if (p.includes("dev.to") || p === "dev" || v.includes("dev.to")) {
+    return {
+      borderClass: "border-purple-400",
+      glowShadow: "0 0 22px rgba(168, 85, 247, 0.45)",
+      accentText: "text-purple-300",
+      badgeBg: "bg-purple-500/15 text-purple-300 border-purple-500/30",
+      dotColor: "#a855f7",
+    };
+  }
+
+  // Cloudflare / Netlify
+  if (p.includes("cloudflare") || p.includes("netlify") || v.includes("cloudflare") || v.includes("netlify")) {
+    return {
+      borderClass: "border-teal-400",
+      glowShadow: "0 0 22px rgba(45, 212, 191, 0.45)",
+      accentText: "text-teal-300",
+      badgeBg: "bg-teal-500/15 text-teal-300 border-teal-500/30",
+      dotColor: "#2dd4bf",
+    };
+  }
+
+  // Email
+  if (t === "email" || v.includes("@")) {
+    return {
+      borderClass: "border-sky-400",
+      glowShadow: "0 0 22px rgba(56, 189, 248, 0.45)",
+      accentText: "text-sky-300",
+      badgeBg: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+      dotColor: "#38bdf8",
+    };
+  }
+
+  // Domain / Host
+  if (t === "domain") {
+    return {
+      borderClass: "border-sky-400",
+      glowShadow: "0 0 22px rgba(56, 189, 248, 0.45)",
+      accentText: "text-sky-300",
+      badgeBg: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+      dotColor: "#0ea5e9",
+    };
+  }
+
+  // File Types
+  const fileExtMatch = (v || "").match(/\.(pdf|docx?|odt|rtf|txt|xlsx?|csv|tsv|pptx?|zip|rar|7z|tar|gz|json|sql|xml|py|js|ts|html|css|png|jpe?g|gif|webp|svg)$/i);
+  const ext = fileExtMatch ? fileExtMatch[1].toLowerCase() : null;
+
+  if (ext === "pdf" || t === "document" || p.includes("pdf")) {
+    return {
+      borderClass: "border-rose-500",
+      glowShadow: "0 0 22px rgba(244, 63, 94, 0.45)",
+      accentText: "text-rose-400",
+      badgeBg: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+      dotColor: "#f43f5e",
+    };
+  }
+
+  if (ext && ["docx", "doc", "odt", "rtf", "txt"].includes(ext)) {
+    return {
+      borderClass: "border-blue-500",
+      glowShadow: "0 0 22px rgba(59, 130, 246, 0.45)",
+      accentText: "text-blue-400",
+      badgeBg: "bg-blue-500/15 text-blue-300 border-blue-500/30",
+      dotColor: "#3b82f6",
+    };
+  }
+
+  if (ext && ["xlsx", "xls", "csv", "tsv"].includes(ext)) {
+    return {
+      borderClass: "border-emerald-500",
+      glowShadow: "0 0 22px rgba(168, 185, 129, 0.45)",
+      accentText: "text-emerald-400",
+      badgeBg: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+      dotColor: "#10b981",
+    };
+  }
+
+  if (ext && ["pptx", "ppt", "key"].includes(ext)) {
+    return {
+      borderClass: "border-orange-500",
+      glowShadow: "0 0 22px rgba(249, 115, 22, 0.45)",
+      accentText: "text-orange-400",
+      badgeBg: "bg-orange-500/15 text-orange-300 border-orange-500/30",
+      dotColor: "#f97316",
+    };
+  }
+
+  if (ext && ["zip", "rar", "7z", "tar", "gz"].includes(ext)) {
+    return {
+      borderClass: "border-amber-500",
+      glowShadow: "0 0 22px rgba(245, 158, 11, 0.45)",
+      accentText: "text-amber-400",
+      badgeBg: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+      dotColor: "#f59e0b",
+    };
+  }
+
+  if (ext && ["json", "xml", "sql", "py", "js", "ts", "html", "css", "sh"].includes(ext)) {
+    return {
+      borderClass: "border-purple-400",
+      glowShadow: "0 0 22px rgba(168, 85, 247, 0.45)",
+      accentText: "text-purple-300",
+      badgeBg: "bg-purple-500/15 text-purple-300 border-purple-500/30",
+      dotColor: "#a855f7",
+    };
+  }
+
+  if (ext && ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) {
+    return {
+      borderClass: "border-fuchsia-400",
+      glowShadow: "0 0 22px rgba(217, 70, 239, 0.45)",
+      accentText: "text-fuchsia-300",
+      badgeBg: "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/30",
+      dotColor: "#d946ef",
+    };
+  }
+
+  // Academia / University
+  if (t === "academic" || p.includes("universidad") || p.includes("unt") || v.includes("unt")) {
+    return {
+      borderClass: "border-slate-400",
+      glowShadow: "0 0 20px rgba(148, 163, 184, 0.35)",
+      accentText: "text-slate-300",
+      badgeBg: "bg-slate-500/15 text-slate-300 border-slate-500/30",
+      dotColor: "#94a3b8",
+    };
+  }
+
+  // Location
+  if (p.includes("trujillo") || p.includes("location") || v.includes("trujillo")) {
+    return {
+      borderClass: "border-rose-500",
+      glowShadow: "0 0 22px rgba(244, 63, 94, 0.45)",
+      accentText: "text-rose-400",
+      badgeBg: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+      dotColor: "#f43f5e",
+    };
+  }
+
+  // Breaches / Infostealer
+  if (t === "breach" || t === "infostealer") {
+    return {
+      borderClass: "border-red-500",
+      glowShadow: "0 0 22px rgba(239, 68, 68, 0.5)",
+      accentText: "text-red-400",
+      badgeBg: "bg-red-500/15 text-red-300 border-red-500/30",
+      dotColor: "#ef4444",
+    };
+  }
+
+  // Fallback
+  return {
+    borderClass: "border-slate-500/60",
+    glowShadow: "0 0 16px rgba(100, 116, 139, 0.3)",
+    accentText: "text-slate-300",
+    badgeBg: "bg-slate-700/20 text-slate-300 border-slate-600/30",
+    dotColor: "#64748b",
+  };
+}
+
 export interface PlatformIconProps {
   platform?: string | null;
   entityType?: string | null;

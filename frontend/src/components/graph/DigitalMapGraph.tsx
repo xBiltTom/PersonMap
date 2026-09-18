@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -9,6 +9,7 @@ import {
   getBezierPath,
   Handle,
   MiniMap,
+  Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -29,6 +30,7 @@ import {
   EyeOff,
   FileDown,
   Filter,
+  Home,
   Maximize2,
   Minimize2,
   Minus,
@@ -795,44 +797,85 @@ function ViewportToolbar({
 }) {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
 
+  const handleZoomIn = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void zoomIn({ duration: 250 });
+  };
+
+  const handleZoomOut = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void zoomOut({ duration: 250 });
+  };
+
+  const handleFitView = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void fitView({ padding: 0.18, duration: 350 });
+  };
+
+  const handleFullscreen = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onToggleFullscreen();
+  };
+
   return (
-    <div className="pointer-events-auto flex flex-col items-center overflow-hidden rounded-lg border border-slate-700/70 bg-[#070e1a]/95 p-0.5 shadow-xl">
+    <div
+      className="nopan nodrag flex flex-col items-center gap-0.5 overflow-hidden rounded-lg border border-slate-700/80 bg-[#070e1a]/95 p-1 shadow-2xl backdrop-blur-md"
+      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
       <button
         type="button"
-        onClick={() => void zoomIn({ duration: 300 })}
-        className="rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-cyan-300"
-        title="Acercar (+)"
-        aria-label="Acercar"
+        onClick={handleZoomIn}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="nopan nodrag flex h-7 w-7 items-center justify-center rounded text-slate-300 transition-colors hover:bg-cyan-500/20 hover:text-cyan-200 active:scale-95"
+        title="Acercar zoom (+)"
+        aria-label="Acercar zoom"
       >
-        <Plus className="h-3.5 w-3.5" />
+        <Plus className="h-4 w-4" />
       </button>
+
       <button
         type="button"
-        onClick={() => void zoomOut({ duration: 300 })}
-        className="rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-cyan-300"
-        title="Alejar (−)"
-        aria-label="Alejar"
+        onClick={handleZoomOut}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="nopan nodrag flex h-7 w-7 items-center justify-center rounded text-slate-300 transition-colors hover:bg-cyan-500/20 hover:text-cyan-200 active:scale-95"
+        title="Alejar zoom (−)"
+        aria-label="Alejar zoom"
       >
-        <Minus className="h-3.5 w-3.5" />
+        <Minus className="h-4 w-4" />
       </button>
-      <div className="my-0.5 h-px w-3 bg-slate-800" />
+
+      <div className="my-0.5 h-px w-4 bg-slate-700/80" />
+
       <button
         type="button"
-        onClick={() => void fitView({ padding: 0.18, duration: 400 })}
-        className="rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-cyan-300"
-        title="Centrar mapa"
-        aria-label="Centrar mapa"
+        onClick={handleFitView}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="nopan nodrag flex h-7 w-7 items-center justify-center rounded text-slate-300 transition-colors hover:bg-cyan-500/20 hover:text-cyan-200 active:scale-95"
+        title="Restablecer / Centrar mapa (Home)"
+        aria-label="Restablecer / Centrar mapa"
       >
-        <Target className="h-3.5 w-3.5" />
+        <Home className="h-3.5 w-3.5" />
       </button>
+
       <button
         type="button"
-        onClick={onToggleFullscreen}
-        className="rounded p-1.5 text-slate-400 hover:bg-slate-800 hover:text-cyan-300"
-        title={isFullscreen ? "Restaurar tamaño" : "Pantalla completa"}
-        aria-label="Pantalla completa"
+        onClick={handleFullscreen}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="nopan nodrag flex h-7 w-7 items-center justify-center rounded text-slate-300 transition-colors hover:bg-cyan-500/20 hover:text-cyan-200 active:scale-95"
+        title={isFullscreen ? "Salir de pantalla completa (Esc o F)" : "Pantalla completa (F)"}
+        aria-label={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
       >
-        {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+        {isFullscreen ? (
+          <Minimize2 className="h-3.5 w-3.5 text-cyan-400" />
+        ) : (
+          <Maximize2 className="h-3.5 w-3.5" />
+        )}
       </button>
     </div>
   );
@@ -1002,6 +1045,97 @@ function DigitalMapGraphInner({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { fitView } = useReactFlow();
+
+  const handleToggleFullscreen = useCallback(async () => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    try {
+      if (!document.fullscreenElement) {
+        if (container.requestFullscreen) {
+          await container.requestFullscreen();
+        } else {
+          const webkitContainer = container as unknown as { webkitRequestFullscreen?: () => Promise<void> };
+          if (webkitContainer.webkitRequestFullscreen) {
+            await webkitContainer.webkitRequestFullscreen();
+          } else {
+            setIsFullscreen(true);
+          }
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else {
+          const webkitDoc = document as unknown as { webkitExitFullscreen?: () => Promise<void> };
+          if (webkitDoc.webkitExitFullscreen) {
+            await webkitDoc.webkitExitFullscreen();
+          } else {
+            setIsFullscreen(false);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Fullscreen toggle warning (using overlay fallback):", err);
+      setIsFullscreen((prev) => !prev);
+    }
+  }, []);
+
+  // Sync fullscreen state with document events (e.g. Esc pressed natively)
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      const isFs = Boolean(document.fullscreenElement);
+      setIsFullscreen(isFs);
+    };
+
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isFullscreen && !document.fullscreenElement) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isFullscreen]);
+
+  // Keyboard shortcut: 'F' toggles fullscreen
+  useEffect(() => {
+    const handleGlobalKeys = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        void handleToggleFullscreen();
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeys);
+    return () => window.removeEventListener("keydown", handleGlobalKeys);
+  }, [handleToggleFullscreen]);
+
+  // Smoothly fit view when toggling fullscreen
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fitView({ padding: 0.18, duration: 350 });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [isFullscreen, fitView]);
 
   const loadGraph = useCallback(async () => {
     try {
@@ -1282,8 +1416,9 @@ function DigitalMapGraphInner({
 
   return (
     <div
-      className={`digital-map-canvas relative w-full overflow-hidden rounded-xl border border-[#141f2f] bg-[#030712] shadow-2xl transition-all duration-300 ${
-        isFullscreen ? "fixed inset-0 z-50 h-screen rounded-none" : "h-[700px] sm:h-[750px]"
+      ref={containerRef}
+      className={`digital-map-canvas relative w-full overflow-hidden rounded-xl border border-[#141f2f] bg-[#030712] shadow-2xl transition-all duration-300 [&:fullscreen]:w-screen [&:fullscreen]:h-screen [&:fullscreen]:rounded-none [&:fullscreen]:border-0 ${
+        isFullscreen ? "fixed inset-0 z-[9999] h-screen w-screen rounded-none border-0" : "h-[700px] sm:h-[750px]"
       }`}
     >
       {/* Top Floating Filter & Actions Bar */}
@@ -1425,10 +1560,10 @@ function DigitalMapGraphInner({
         <FitToLayout layoutKey={baseView.layoutKey} />
 
         {/* Bottom-right: MiniMap and viewport controls */}
-        <div className="pointer-events-none absolute bottom-4 right-4 z-20">
-          <div className="pointer-events-auto flex items-end gap-2">
+        <Panel position="bottom-right" className="!m-4 !p-0 z-30">
+          <div className="nopan nodrag flex items-end gap-2.5">
             {/* MiniMap Container */}
-            <div className="h-[120px] w-[165px] overflow-hidden rounded-lg border border-slate-700/70 bg-[#070e1a]/95 shadow-2xl">
+            <div className="h-[120px] w-[165px] overflow-hidden rounded-lg border border-slate-700/70 bg-[#070e1a]/95 shadow-2xl backdrop-blur-md">
               <MiniMap
                 pannable
                 zoomable
@@ -1443,17 +1578,17 @@ function DigitalMapGraphInner({
                   );
                   return theme.dotColor;
                 }}
-                className="!m-0 !h-full !w-full !border-0 !bg-transparent"
+                className="!relative !inset-auto !m-0 !h-full !w-full !border-0 !bg-transparent"
               />
             </div>
 
             {/* Viewport Toolbar */}
             <ViewportToolbar
-              onToggleFullscreen={() => setIsFullscreen((prev) => !prev)}
+              onToggleFullscreen={handleToggleFullscreen}
               isFullscreen={isFullscreen}
             />
           </div>
-        </div>
+        </Panel>
       </ReactFlow>
 
       {/* Side Inspection Panel */}

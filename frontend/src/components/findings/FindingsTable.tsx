@@ -6,9 +6,8 @@ import { Search, ExternalLink, ChevronDown, Clock } from "lucide-react";
 import {
   buildEntityFilters,
   getEntityTypeMeta,
-  getFindingIcon,
 } from "@/lib/entityTypes";
-import { AvatarThumb } from "@/components/identity/AvatarThumb";
+import { PlatformIcon, getEntityTheme } from "@/components/graph/PlatformIcon";
 import { LAYER_META } from "@/lib/engines";
 
 /** Filas por página. Suficiente para desplazarse sin ahogar al navegador. */
@@ -131,25 +130,33 @@ export function FindingsTable({ entities }: { entities: EntityData[] }) {
             ) : (
               visible.map((item) => {
                 const meta = getEntityTypeMeta(item.entity_type);
-                const Icon = getFindingIcon(item.platform, item.entity_type);
+                const theme = getEntityTheme(item.platform, item.entity_type, item.value);
+                const hasDistance = typeof item.metadata_info?.avatar_hamming_distance === "number";
                 return (
                 <Fragment key={item.id}>
                 <tr className="hover:bg-[#151e2c] transition-colors">
                   <td className="py-3 px-4 whitespace-nowrap">
-                    <div className="flex items-center gap-2">
-                      {/* La miniatura del avatar. Hasta ahora la correlación
-                          visual ocurría y movía la puntuación, pero el usuario
-                          nunca veía las imágenes: es la evidencia más
-                          persuasiva del sistema y estaba oculta. */}
-                      {item.metadata_info?.avatar_url ? (
-                        <AvatarThumb
-                          url={item.metadata_info.avatar_url}
-                          distance={item.metadata_info.avatar_hamming_distance}
-                          source={item.metadata_info.avatar_source}
+                    <div className="flex items-center gap-2.5">
+                      {/* Enfoque híbrido: Avatar cosechado / Marca vectorial / Archivo / Favicon */}
+                      <div
+                        className={`relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-[#090e18] ${theme.borderClass} shadow-[0_0_10px_rgba(0,0,0,0.5)]`}
+                        title={item.platform || meta.label}
+                      >
+                        <PlatformIcon
+                          platform={item.platform}
+                          entityType={item.entity_type}
+                          value={item.value}
+                          displayName={item.display_name}
+                          avatarUrl={item.metadata_info?.avatar_url}
+                          className={`h-4 w-4 ${theme.accentText}`}
                         />
-                      ) : (
-                        <Icon className={`w-4 h-4 shrink-0 ${meta.accent}`} aria-hidden="true" />
-                      )}
+                        {hasDistance && (
+                          <span
+                            className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border border-[#090e18] bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.9)]"
+                            title={`Avatar correlacionado: ${item.metadata_info?.avatar_hamming_distance} bits de distancia`}
+                          />
+                        )}
+                      </div>
                       <div>
                         <div className="font-semibold text-slate-200">
                           {item.platform || meta.label}
