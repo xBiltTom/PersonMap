@@ -23,6 +23,7 @@ import {
   type InspectorImage,
   type InspectorLink,
 } from "@/lib/entityInspector";
+import { isProvenanceEdge } from "@/lib/graphSemantics";
 import type { GraphEdge, GraphNode } from "@/lib/types";
 import { PlatformIcon } from "./PlatformIcon";
 
@@ -248,11 +249,17 @@ export function RelationshipInspector({ edge, nodes, onClose, onSelectNode, rela
   const target = nodes.find((node) => node.id === edge.target);
   const fields = buildRelationshipEvidenceFields(edge.evidence);
   const relation = relationLabel(edge);
+  const provenance = isProvenanceEdge(edge);
   return (
     <aside className={PANEL_CLASS} aria-label="Inspector de relación">
       <header className="px-4 py-4">
-        <div className="flex items-start justify-between gap-3"><div><p className="font-mono text-[10px] uppercase tracking-[0.14em] text-cyan-300">Relación observada</p><h4 className="mt-1 text-sm font-semibold text-slate-100">{relation}</h4></div><button type="button" onClick={onClose} className="rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-white" aria-label="Cerrar inspector"><X className="h-4 w-4" /></button></div>
+        <div className="flex items-start justify-between gap-3"><div><p className={`font-mono text-[10px] uppercase tracking-[0.14em] ${provenance ? "text-slate-400" : "text-cyan-300"}`}>{provenance ? "Procedencia / contexto" : "Relación observada"}</p><h4 className="mt-1 text-sm font-semibold text-slate-100">{relation}</h4></div><button type="button" onClick={onClose} className="rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-white" aria-label="Cerrar inspector"><X className="h-4 w-4" /></button></div>
         {source && target && <div className="mt-4 grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-center gap-2 rounded-lg border border-[#1d344b] bg-[#081321]/70 p-2.5"><button type="button" onClick={() => onSelectNode(source.id)} className="truncate text-left font-mono text-[11px] text-slate-200 hover:text-cyan-200">{source.data.display_name || source.data.value}</button><Network className="h-4 w-4 text-cyan-300" /><button type="button" onClick={() => onSelectNode(target.id)} className="truncate text-right font-mono text-[11px] text-slate-200 hover:text-cyan-200">{target.data.display_name || target.data.value}</button></div>}
+        <p className={`mt-3 rounded-md border px-2.5 py-2 text-[11px] leading-relaxed ${provenance ? "border-slate-700 bg-slate-900/40 text-slate-400" : "border-cyan-900/80 bg-cyan-950/20 text-slate-300"}`}>
+          {provenance
+            ? "Esta conexión explica cómo el hallazgo se relaciona con los datos iniciales de búsqueda. No implica que el recurso pertenezca a la persona investigada."
+            : "Esta relación describe evidencia observada entre hallazgos. Requiere revisión humana y no atribuye automáticamente una identidad o propiedad."}
+        </p>
       </header>
       {fields.length > 0 && <InspectorSection title="Evidencia"><ObservedFields fields={fields} copiedValue={null} onCopy={(value) => void navigator.clipboard.writeText(value)} /></InspectorSection>}
       {edge.supports_group && <InspectorSection title="Contexto"><p className="text-[11px] leading-relaxed text-slate-400">Esta relación se conserva como evidencia estructural para la revisión humana.</p></InspectorSection>}

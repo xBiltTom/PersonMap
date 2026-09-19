@@ -46,6 +46,7 @@ import {
 import { getGraphmlUrl, getInvestigationGraph } from "@/lib/api";
 import { buildEntityFilters, getEntityTypeMeta } from "@/lib/entityTypes";
 import { layoutDigitalMap } from "@/lib/graphLayout";
+import { getFriendlyRelationLabel, isProvenanceEdge } from "@/lib/graphSemantics";
 import { getInspectorEvidenceFilters, getInspectorSearchText, type InspectorEvidenceFilter } from "@/lib/entityInspector";
 import type { GraphEdge, GraphNode, GraphNodeData, GraphResponse } from "@/lib/types";
 import { PlatformIcon } from "./PlatformIcon";
@@ -424,34 +425,6 @@ function getNodeDisplayNames(data: GraphNodeData): { title: string; subtitle: st
   return { title: d || v, subtitle: "" };
 }
 
-// ---------------------------------------------------------------------
-// Relation Labels (Sentence / Lowercase Matching img-referencia-mapa.png)
-// ---------------------------------------------------------------------
-
-export function getFriendlyRelationLabel(relationType: string, customLabel?: string | null): string {
-  if (customLabel && customLabel.trim()) return customLabel.toLowerCase();
-  const map: Record<string, string> = {
-    discovered_from: "procedencia",
-    shares_declared_email: "mismo correo",
-    explicit_profile_link: "enlaza a",
-    same_username: "mismo alias",
-    similar_avatar: "avatar relacionado",
-    same_name: "mismo nombre",
-    observed_email: "correo observado",
-    mentions: "menciona",
-    same_owner: "mismo propietario",
-    affiliation: "afiliación",
-    possible_location: "posible ubicación",
-    links_to: "enlaza a",
-    same_platform: "misma plataforma",
-  };
-  return map[relationType] ?? relationType.replace(/_/g, " ").toLowerCase();
-}
-
-function isProvenanceEdge(edge: GraphEdge): boolean {
-  return edge.id.startsWith("source-") || edge.relation_type === "discovered_from";
-}
-
 type MapFocusMode = "all" | "neighbors" | "two_hops";
 
 function getFocusNodeIds(edges: GraphEdge[], selectedNodeId: string, depth: number): Set<string> {
@@ -467,12 +440,6 @@ function getFocusNodeIds(edges: GraphEdge[], selectedNodeId: string, depth: numb
     frontier = next;
   }
   return visible;
-}
-
-function normalizeMapEdge(edge: GraphEdge): GraphEdge {
-  return isProvenanceEdge(edge)
-    ? { ...edge, relation_type: "discovered_from", label: null }
-    : edge;
 }
 
 /** Keep a factual, connected backbone at rest; full local evidence appears on interaction. */
@@ -1215,24 +1182,25 @@ function DigitalMapGraphInner({
       const sourcePos = layout.positions.get(edge.source) ?? { x: 0, y: 0 };
       const targetPos = layout.positions.get(edge.target) ?? { x: 0, y: 0 };
       const handles = getBestHandlePair(sourcePos.x, sourcePos.y, targetPos.x, targetPos.y);
+      const isProvenance = isProvenanceEdge(edge);
       const isRootEdge = root && (edge.source === root.id || edge.target === root.id);
-      const strokeColor = isRootEdge ? "#06b6d4" : (edge.style?.stroke as string) || "#38bdf8";
+      const strokeColor = isProvenance ? "#64748b" : (edge.style?.stroke as string) || "#38bdf8";
 
       return {
         ...edge,
         ...handles,
         type: "customEdge",
-        data: normalizeMapEdge(edge),
+        data: edge,
         label: undefined,
         animated: false,
         interactionWidth: 14,
         style: {
           stroke: strokeColor,
-          strokeWidth: isRootEdge ? 1.2 : 1,
-          strokeOpacity: isProvenanceEdge(edge) ? 0.16 : denseGraph ? 0.28 : 0.52,
-          strokeDasharray: isProvenanceEdge(edge) ? "3 7" : undefined,
+          strokeWidth: isProvenance ? 1 : isRootEdge ? 1.2 : 1,
+          strokeOpacity: isProvenance ? 0.28 : denseGraph ? 0.28 : 0.52,
+          strokeDasharray: isProvenance ? "4 7" : undefined,
         },
-        zIndex: isRootEdge ? 1 : 2,
+        zIndex: isProvenance ? 1 : 2,
       };
     };
 
@@ -1313,6 +1281,7 @@ function DigitalMapGraphInner({
         Boolean(activeNodeId && (edge.source === activeNodeId || edge.target === activeNodeId));
       const isDimmed = hasFocus && !isFocused;
       const rawEdge = edge.data as GraphEdge;
+      const isProvenance = isProvenanceEdge(rawEdge);
       const showLabel =
         edge.id === selectedEdgeId ||
         (!isProvenanceEdge(rawEdge) &&
@@ -1325,10 +1294,10 @@ function DigitalMapGraphInner({
         label: showLabel ? getFriendlyRelationLabel(rawEdge.relation_type, rawEdge.label) : undefined,
         style: {
           ...edge.style,
-          strokeOpacity: isDimmed ? 0.025 : isFocused ? 0.9 : (edge.style?.strokeOpacity ?? 0.52),
-          strokeWidth: isFocused ? 2 : (edge.style?.strokeWidth ?? 1),
+          strokeOpacity: isDimmed ? 0.025 : isFocused ? isProvenance ? 0.58 : 0.9 : (edge.style?.strokeOpacity ?? 0.52),
+          strokeWidth: isFocused ? isProvenance ? 1.3 : 2 : (edge.style?.strokeWidth ?? 1),
         },
-        zIndex: isFocused ? 6 : edge.zIndex,
+        zIndex: isFocused ? isProvenance ? 5 : 6 : edge.zIndex,
       };
     });
 
@@ -1352,7 +1321,7 @@ function DigitalMapGraphInner({
 
   const selectedNode = allNodes.find((node) => node.id === selectedNodeId) ?? null;
   const selectedEdgeRaw = allEdges.find((edge) => edge.id === selectedEdgeId);
-  const selectedEdge = selectedEdgeRaw ? normalizeMapEdge(selectedEdgeRaw) : null;
+  const selectedEdge = selectedEdgeRaw ?? null;
 
   const selectInspectorNode = useCallback((nodeId: string) => {
     setSelectedNodeId(nodeId);
