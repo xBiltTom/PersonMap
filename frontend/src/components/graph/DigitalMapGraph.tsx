@@ -24,21 +24,29 @@ import "@xyflow/react/dist/style.css";
 import {
   AlertTriangle,
   Braces,
+  Check,
+  ChevronDown,
   Eye,
   EyeOff,
   FileDown,
   Filter,
   Home,
+  Image,
+  Link2,
   Maximize2,
   Minimize2,
   Minus,
   Network,
   Plus,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
   User,
 } from "lucide-react";
 import { getGraphmlUrl, getInvestigationGraph } from "@/lib/api";
 import { buildEntityFilters, getEntityTypeMeta } from "@/lib/entityTypes";
 import { layoutDigitalMap } from "@/lib/graphLayout";
+import { getInspectorEvidenceFilters, getInspectorSearchText, type InspectorEvidenceFilter } from "@/lib/entityInspector";
 import type { GraphEdge, GraphNode, GraphNodeData, GraphResponse } from "@/lib/types";
 import { PlatformIcon } from "./PlatformIcon";
 import { EntityInspector, RelationshipInspector } from "./EntityInspector";
@@ -442,6 +450,23 @@ export function getFriendlyRelationLabel(relationType: string, customLabel?: str
 
 function isProvenanceEdge(edge: GraphEdge): boolean {
   return edge.id.startsWith("source-") || edge.relation_type === "discovered_from";
+}
+
+type MapFocusMode = "all" | "neighbors" | "two_hops";
+
+function getFocusNodeIds(edges: GraphEdge[], selectedNodeId: string, depth: number): Set<string> {
+  const visible = new Set([selectedNodeId]);
+  let frontier = new Set([selectedNodeId]);
+  for (let step = 0; step < depth; step += 1) {
+    const next = new Set<string>();
+    for (const edge of edges) {
+      if (frontier.has(edge.source) && !visible.has(edge.target)) next.add(edge.target);
+      if (frontier.has(edge.target) && !visible.has(edge.source)) next.add(edge.source);
+    }
+    next.forEach((nodeId) => visible.add(nodeId));
+    frontier = next;
+  }
+  return visible;
 }
 
 function normalizeMapEdge(edge: GraphEdge): GraphEdge {
@@ -912,6 +937,11 @@ function DigitalMapGraphInner({
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState("all");
   const [showDiscoveryLines, setShowDiscoveryLines] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeRelationTypes, setActiveRelationTypes] = useState<Set<string>>(() => new Set());
+  const [activeEvidenceFilters, setActiveEvidenceFilters] = useState<Set<InspectorEvidenceFilter>>(() => new Set());
+  const [focusMode, setFocusMode] = useState<MapFocusMode>("all");
+  const [openFilterMenu, setOpenFilterMenu] = useState<"layers" | "relations" | "evidence" | "focus" | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -1035,13 +1065,66 @@ function DigitalMapGraphInner({
     [allNodes]
   );
 
+  const relationOptions = useMemo(() => {
+    const types = new Set(
+      allEdges
+        .filter((edge) => !isProvenanceEdge(edge))
+        .map((edge) => edge.relation_type)
+    );
+    return [...types].sort();
+  }, [allEdges]);
+
+  const toggleRelationFilter = useCallback((relationType: string) => {
+    setActiveRelationTypes((current) => {
+      const next = new Set(current);
+      if (next.has(relationType)) next.delete(relationType);
+      else next.add(relationType);
+      return next;
+    });
+  }, []);
+
+  const toggleEvidenceFilter = useCallback((filter: InspectorEvidenceFilter) => {
+    setActiveEvidenceFilters((current) => {
+      const next = new Set(current);
+      if (next.has(filter)) next.delete(filter);
+      else next.add(filter);
+      return next;
+    });
+  }, []);
+
+  const resetExplorationFilters = useCallback(() => {
+    setActiveCategory("all");
+    setSearchQuery("");
+    setActiveRelationTypes(new Set());
+    setActiveEvidenceFilters(new Set());
+    setFocusMode("all");
+    setOpenFilterMenu(null);
+  }, []);
+
   // Compute Layout, Nodes, and Edges
   const baseView = useMemo(() => {
     const isRoot = (node: GraphNode) => node.type === "personRoot" || node.data.is_root;
     const root = allNodes.find(isRoot);
-    const entities = allNodes.filter(
-      (node) => !isRoot(node) && (activeCategory === "all" || node.data.entity_type === activeCategory)
+    const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+    const relationMatches = allEdges.filter(
+      (edge) => !isProvenanceEdge(edge) &&
+        (activeRelationTypes.size === 0 || activeRelationTypes.has(edge.relation_type))
     );
+    const relationNodeIds = new Set(relationMatches.flatMap((edge) => [edge.source, edge.target]));
+    const focusNodeIds = focusMode === "all" || !selectedNodeId
+      ? null
+      : getFocusNodeIds(allEdges, selectedNodeId, focusMode === "neighbors" ? 1 : 2);
+    const entities = allNodes.filter((node) => {
+      if (isRoot(node)) return false;
+      if (activeCategory !== "all" && node.data.entity_type !== activeCategory) return false;
+      if (normalizedQuery && !getInspectorSearchText(node).includes(normalizedQuery)) return false;
+      if (activeRelationTypes.size > 0 && !relationNodeIds.has(node.id)) return false;
+      if (activeEvidenceFilters.size > 0) {
+        const availableEvidence = getInspectorEvidenceFilters(node);
+        if (![...activeEvidenceFilters].every((filter) => availableEvidence.has(filter))) return false;
+      }
+      return !focusNodeIds || focusNodeIds.has(node.id);
+    });
     const visibleIds = new Set(entities.map((node) => node.id));
     if (root) visibleIds.add(root.id);
 
@@ -1050,7 +1133,10 @@ function DigitalMapGraphInner({
     );
 
     const provenanceEdges = candidateEdges.filter(isProvenanceEdge);
-    const evidenceEdges = candidateEdges.filter((edge) => !isProvenanceEdge(edge));
+    const evidenceEdges = candidateEdges.filter(
+      (edge) => !isProvenanceEdge(edge) &&
+        (activeRelationTypes.size === 0 || activeRelationTypes.has(edge.relation_type))
+    );
     const visibleEdges = showDiscoveryLines
       ? [...evidenceEdges, ...provenanceEdges]
       : evidenceEdges;
@@ -1156,7 +1242,7 @@ function DigitalMapGraphInner({
       .map((edge) => displayById.get(edge.id))
       .filter((edge): edge is DisplayEdge => Boolean(edge));
 
-    const layoutKey = `${activeCategory}:${entities.map((n) => n.id).join(",")}:${evidenceEdges.map((e) => e.id).join(",")}`;
+    const layoutKey = `${activeCategory}:${searchQuery}:${[...activeRelationTypes].sort().join(",")}:${[...activeEvidenceFilters].sort().join(",")}:${focusMode}:${selectedNodeId ?? ""}:${entities.map((n) => n.id).join(",")}:${evidenceEdges.map((e) => e.id).join(",")}`;
 
     return {
       nodes,
@@ -1166,7 +1252,7 @@ function DigitalMapGraphInner({
       persistentLabels: evidenceEdges.length <= 12,
       layoutKey,
     };
-  }, [activeCategory, allEdges, allNodes, showDiscoveryLines]);
+  }, [activeCategory, activeEvidenceFilters, activeRelationTypes, allEdges, allNodes, focusMode, searchQuery, selectedNodeId, showDiscoveryLines]);
 
   // Handle Focus & Interaction
   const view = useMemo(() => {
@@ -1286,6 +1372,11 @@ function DigitalMapGraphInner({
     (node) => node.type !== "personRoot" && !node.data.is_root
   ).length;
   const evidenceCount = allEdges.filter((edge) => !isProvenanceEdge(edge)).length;
+  const shownEntityCount = baseView.nodes.filter((node) => node.type !== "personRoot" && !node.data.is_root).length;
+  const shownEvidenceCount = baseView.visibleEdges.filter((edge) => !isProvenanceEdge(edge)).length;
+  const hasActiveExplorationFilters = Boolean(
+    activeCategory !== "all" || searchQuery || activeRelationTypes.size || activeEvidenceFilters.size || focusMode !== "all"
+  );
 
   const exportGraphJson = () => {
     const blob = new Blob([JSON.stringify({ nodes: allNodes, edges: allEdges }, null, 2)], {
@@ -1309,41 +1400,81 @@ function DigitalMapGraphInner({
       {/* Top Floating Filter & Actions Bar */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-[#030712] via-[#030712]/90 to-transparent px-3 pb-8 pt-3 sm:px-4">
         <div className="pointer-events-auto flex flex-wrap items-center justify-between gap-2">
-          {/* Layer Filter Pills */}
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <span className="mr-1 flex shrink-0 items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.2em] text-slate-500">
-              <Filter className="h-3 w-3" /> Capas
-            </span>
-            {categories.map((category) => {
-              const meta = getEntityTypeMeta(category.id);
-              const Icon = category.id === "all" ? Network : meta.Icon;
-              const active = activeCategory === category.id;
-              return (
-                <button
-                  key={category.id}
-                  type="button"
-                  onClick={() => setActiveCategory(category.id)}
-                  title={category.description}
-                  aria-pressed={active}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[9px] transition-all duration-150 ${
-                    active
-                      ? "border-cyan-400/60 bg-cyan-500/15 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.3)]"
-                      : "border-slate-800/80 bg-[#070e1a]/85 text-slate-400 hover:border-slate-600 hover:text-slate-200"
-                  }`}
-                >
-                  <Icon className={`h-3 w-3 ${active ? "text-cyan-300" : meta.accent}`} />
-                  {category.label}
-                  <span className="text-slate-500">{category.count}</span>
-                </button>
-              );
-            })}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            <label className="flex h-7 min-w-[190px] flex-1 items-center gap-1.5 rounded-md border border-slate-800 bg-[#070e1a]/90 px-2 text-slate-500 focus-within:border-cyan-400/60 focus-within:text-cyan-300 sm:max-w-[270px]">
+              <Search className="h-3.5 w-3.5 shrink-0" />
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Buscar alias, correo, dominio…"
+                className="min-w-0 flex-1 bg-transparent font-mono text-[10px] text-slate-200 outline-none placeholder:text-slate-600"
+                aria-label="Buscar nodos del mapa"
+              />
+            </label>
+
+            <div className="relative">
+              <button type="button" onClick={() => setOpenFilterMenu((menu) => menu === "layers" ? null : "layers")} aria-expanded={openFilterMenu === "layers"} className={`flex h-7 items-center gap-1 rounded-md border px-2 font-mono text-[9px] ${activeCategory !== "all" ? "border-cyan-400/60 bg-cyan-500/15 text-cyan-100" : "border-slate-800 bg-[#070e1a]/90 text-slate-400 hover:text-slate-200"}`}>
+                <Filter className="h-3 w-3" /> Capas <ChevronDown className="h-3 w-3" />
+              </button>
+              {openFilterMenu === "layers" && (
+                <div className="absolute left-0 top-8 z-40 w-56 overflow-hidden rounded-lg border border-[#29415b] bg-[#07111f]/98 p-1 shadow-2xl backdrop-blur-md">
+                  {categories.map((category) => {
+                    const meta = getEntityTypeMeta(category.id);
+                    const Icon = category.id === "all" ? Network : meta.Icon;
+                    const active = activeCategory === category.id;
+                    return <button key={category.id} type="button" onClick={() => { setActiveCategory(category.id); setOpenFilterMenu(null); }} className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left font-mono text-[10px] ${active ? "bg-cyan-500/15 text-cyan-100" : "text-slate-400 hover:bg-slate-800/80 hover:text-slate-200"}`}><span className="w-3">{active && <Check className="h-3 w-3" />}</span><Icon className={`h-3 w-3 ${meta.accent}`} /><span className="flex-1">{category.label}</span><span className="text-slate-600">{category.count}</span></button>;
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="relative">
+              <button type="button" onClick={() => setOpenFilterMenu((menu) => menu === "relations" ? null : "relations")} aria-expanded={openFilterMenu === "relations"} className={`flex h-7 items-center gap-1 rounded-md border px-2 font-mono text-[9px] ${activeRelationTypes.size ? "border-violet-400/60 bg-violet-500/15 text-violet-100" : "border-slate-800 bg-[#070e1a]/90 text-slate-400 hover:text-slate-200"}`}>
+                <Link2 className="h-3 w-3" /> Relaciones {activeRelationTypes.size ? activeRelationTypes.size : ""}<ChevronDown className="h-3 w-3" />
+              </button>
+              {openFilterMenu === "relations" && (
+                <div className="absolute left-0 top-8 z-40 w-52 overflow-hidden rounded-lg border border-[#29415b] bg-[#07111f]/98 p-1 shadow-2xl backdrop-blur-md">
+                  <p className="px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-slate-500">Mostrar relaciones</p>
+                  {relationOptions.map((relationType) => {
+                    const active = activeRelationTypes.has(relationType);
+                    return <button key={relationType} type="button" onClick={() => toggleRelationFilter(relationType)} className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left font-mono text-[10px] ${active ? "bg-violet-500/15 text-violet-100" : "text-slate-400 hover:bg-slate-800/80 hover:text-slate-200"}`}><span className={`flex h-3 w-3 items-center justify-center rounded border ${active ? "border-violet-300 bg-violet-400 text-[#07111f]" : "border-slate-600"}`}>{active && <Check className="h-2.5 w-2.5" />}</span>{getFriendlyRelationLabel(relationType)}</button>;
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="relative">
+              <button type="button" onClick={() => setOpenFilterMenu((menu) => menu === "evidence" ? null : "evidence")} aria-expanded={openFilterMenu === "evidence"} className={`flex h-7 items-center gap-1 rounded-md border px-2 font-mono text-[9px] ${activeEvidenceFilters.size ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-100" : "border-slate-800 bg-[#070e1a]/90 text-slate-400 hover:text-slate-200"}`}>
+                <SlidersHorizontal className="h-3 w-3" /> Evidencia {activeEvidenceFilters.size ? activeEvidenceFilters.size : ""}<ChevronDown className="h-3 w-3" />
+              </button>
+              {openFilterMenu === "evidence" && (
+                <div className="absolute left-0 top-8 z-40 w-48 overflow-hidden rounded-lg border border-[#29415b] bg-[#07111f]/98 p-1 shadow-2xl backdrop-blur-md">
+                  {([ ["links", "Con enlaces", Link2], ["descriptions", "Con bio o texto", FileDown], ["images", "Con imagen", Image], ["provenance", "Con procedencia", Eye] ] as const).map(([filter, label, Icon]) => {
+                    const active = activeEvidenceFilters.has(filter);
+                    return <button key={filter} type="button" onClick={() => toggleEvidenceFilter(filter)} className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left font-mono text-[10px] ${active ? "bg-emerald-500/15 text-emerald-100" : "text-slate-400 hover:bg-slate-800/80 hover:text-slate-200"}`}><span className={`flex h-3 w-3 items-center justify-center rounded border ${active ? "border-emerald-300 bg-emerald-400 text-[#07111f]" : "border-slate-600"}`}>{active && <Check className="h-2.5 w-2.5" />}</span><Icon className="h-3 w-3" />{label}</button>;
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="relative">
+              <button type="button" disabled={!selectedNodeId} onClick={() => setOpenFilterMenu((menu) => menu === "focus" ? null : "focus")} aria-expanded={openFilterMenu === "focus"} className={`flex h-7 items-center gap-1 rounded-md border px-2 font-mono text-[9px] ${focusMode !== "all" ? "border-cyan-400/60 bg-cyan-500/15 text-cyan-100" : "border-slate-800 bg-[#070e1a]/90 text-slate-400 hover:text-slate-200"} disabled:cursor-not-allowed disabled:opacity-40`}>
+                <Network className="h-3 w-3" /> Foco <ChevronDown className="h-3 w-3" />
+              </button>
+              {openFilterMenu === "focus" && selectedNodeId && (
+                <div className="absolute left-0 top-8 z-40 w-44 overflow-hidden rounded-lg border border-[#29415b] bg-[#07111f]/98 p-1 shadow-2xl backdrop-blur-md">
+                  {([ ["all", "Mapa completo"], ["neighbors", "Vecinos directos"], ["two_hops", "Hasta 2 saltos"] ] as const).map(([mode, label]) => <button key={mode} type="button" onClick={() => { setFocusMode(mode); setOpenFilterMenu(null); }} className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left font-mono text-[10px] ${focusMode === mode ? "bg-cyan-500/15 text-cyan-100" : "text-slate-400 hover:bg-slate-800/80 hover:text-slate-200"}`}><span className="w-3">{focusMode === mode && <Check className="h-3 w-3" />}</span>{label}</button>)}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Action buttons */}
           <div className="flex shrink-0 items-center gap-1.5">
             <span className="hidden font-mono text-[9px] text-slate-400 lg:inline">
-              {entityCount} nodos · {evidenceCount} vínculos
+              {shownEntityCount}/{entityCount} nodos · {shownEvidenceCount}/{evidenceCount} vínculos
             </span>
+            {hasActiveExplorationFilters && <button type="button" onClick={resetExplorationFilters} className="flex h-7 items-center gap-1 rounded-md border border-slate-700 bg-[#070e1a]/90 px-2 font-mono text-[9px] text-slate-300 hover:border-cyan-400/60 hover:text-cyan-100" title="Restablecer filtros"><RotateCcw className="h-3 w-3" /> Restablecer</button>}
             <button
               type="button"
               onClick={() => setShowDiscoveryLines((visible) => !visible)}
@@ -1405,9 +1536,9 @@ function DigitalMapGraphInner({
       )}
 
       {/* Empty category state */}
-      {!loading && !error && view.nodes.length === 0 && (
+      {!loading && !error && shownEntityCount === 0 && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#030712]/90 font-mono text-xs text-slate-400">
-          No hay nodos para esta capa seleccionada.
+          No hay nodos que coincidan con los criterios de exploración.
         </div>
       )}
 

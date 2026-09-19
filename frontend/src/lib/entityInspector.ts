@@ -3,6 +3,7 @@ import type { GraphEdge, GraphNode } from "@/lib/types";
 export type InspectorFieldKind = "text" | "email" | "url" | "location" | "date";
 export type InspectorLinkKind = "profile" | "website" | "social" | "repository" | "source" | "other";
 export type InspectorImageKind = "avatar" | "profile" | "thumbnail" | "other";
+export type InspectorEvidenceFilter = "links" | "descriptions" | "images" | "provenance";
 
 export interface InspectorField {
   key: string;
@@ -227,6 +228,33 @@ function buildImages(metadata: Metadata): InspectorImage[] {
   for (const value of stringList(metadata.image_urls)) add(value, "other");
   for (const value of stringList(metadata.images)) add(value, "other");
   return uniqueByUrl(images);
+}
+
+/** Facetas factuales para explorar el mapa; no expresan certeza de identidad. */
+export function getInspectorEvidenceFilters(node: GraphNode): Set<InspectorEvidenceFilter> {
+  const metadata = isRecord(node.data.metadata_info) ? node.data.metadata_info : {};
+  const filters = new Set<InspectorEvidenceFilter>();
+  if (buildLinks(node, metadata).length) filters.add("links");
+  if (buildDescriptions(metadata).length) filters.add("descriptions");
+  if (buildImages(metadata).length) filters.add("images");
+  if (stringValue(node.data.source_tool) || firstString(metadata, ["source_tool"]) || stringList(metadata.source_tools).length) {
+    filters.add("provenance");
+  }
+  return filters;
+}
+
+/** Texto de búsqueda reducido a identificadores y datos observados conocidos. */
+export function getInspectorSearchText(node: GraphNode): string {
+  const metadata = isRecord(node.data.metadata_info) ? node.data.metadata_info : {};
+  const scalarKeys = [
+    "username", "preferred_username", "name", "full_name", "display_name",
+    "email", "location", "university", "domain", "title", "doi", "orcid",
+  ];
+  const listKeys = ["emails", "extracted_emails", "usernames", "institutions"];
+  const values = [node.data.label, node.data.display_name, node.data.value, node.data.platform, node.data.entity_type];
+  for (const key of scalarKeys) values.push(stringValue(metadata[key]));
+  for (const key of listKeys) values.push(...stringList(metadata[key]));
+  return values.filter((value): value is string => Boolean(value)).join(" ").toLocaleLowerCase();
 }
 
 function buildObservedFields(node: GraphNode, metadata: Metadata, isRoot: boolean): InspectorField[] {
