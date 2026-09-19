@@ -2,8 +2,8 @@
 
 import { use, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { InvestigationData } from "@/lib/types";
-import { getInvestigation } from "@/lib/api";
+import { GraphResponse, InvestigationData } from "@/lib/types";
+import { getInvestigation, getInvestigationGraph } from "@/lib/api";
 import { ENGINE_META, resolveEngine } from "@/lib/engines";
 import { DigitalMapGraph } from "@/components/graph/DigitalMapGraph";
 import { FindingsTable } from "@/components/findings/FindingsTable";
@@ -38,6 +38,8 @@ export default function InvestigationDetailPage({
   const [activeTab, setActiveTab] = useState<
     "graph" | "findings" | "timeline" | "console" | "report"
   >("graph");
+  const [graph, setGraph] = useState<GraphResponse | null>(null);
+  const [mapFocusNodeId, setMapFocusNodeId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -67,6 +69,35 @@ export default function InvestigationDetailPage({
       clearInterval(interval);
     };
   }, [id, loadData, investigation?.status]);
+
+  // El mapa y Hallazgos consumen una única respuesta factual del endpoint de
+  // grafo. Así sus relaciones no divergen ni se duplica la carga al alternar
+  // entre las dos vistas.
+  useEffect(() => {
+    if (!investigation?.id) return;
+    let cancelled = false;
+    const requestTimer = window.setTimeout(() => {
+      setGraph(null);
+      void getInvestigationGraph(id)
+        .then((data) => {
+          if (!cancelled) setGraph(data);
+        })
+        .catch(() => {
+          // La tabla conserva los hallazgos y el inspector aun si las relaciones
+          // no están disponibles temporalmente.
+          if (!cancelled) setGraph(null);
+        });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(requestTimer);
+    };
+  }, [id, investigation?.completed_at, investigation?.entities?.length, investigation?.id, investigation?.status]);
+
+  const handleViewInMap = useCallback((entityId: string) => {
+    setMapFocusNodeId(`ent-${entityId}`);
+    setActiveTab("graph");
+  }, []);
 
   // Un único stream para toda la página: lo comparten la consola y la barra de
   // progreso, que tiene que verse en cualquier pestaña mientras dura la búsqueda.
@@ -292,11 +323,17 @@ export default function InvestigationDetailPage({
           <DigitalMapGraph
             investigationId={investigation.id}
             refreshKey={`${investigation.status}:${investigation.completed_at ?? ""}`}
+            graphData={graph}
+            focusNodeId={mapFocusNodeId}
           />
         )}
 
         {activeTab === "findings" && (
-          <FindingsTable entities={investigation.entities || []} />
+          <FindingsTable
+            entities={investigation.entities || []}
+            graph={graph}
+            onViewInMap={handleViewInMap}
+          />
         )}
 
         {activeTab === "timeline" && (

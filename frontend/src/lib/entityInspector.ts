@@ -1,4 +1,4 @@
-import type { GraphEdge, GraphNode } from "@/lib/types";
+import type { EntityData, GraphEdge, GraphNode } from "@/lib/types";
 
 export type InspectorFieldKind = "text" | "email" | "url" | "location" | "date";
 export type InspectorLinkKind = "profile" | "website" | "social" | "repository" | "source" | "other";
@@ -56,7 +56,38 @@ export interface EntityInspectorViewModel {
   relationships: InspectorRelationship[];
 }
 
+/** Resumen compacto de evidencia para vistas tabulares. Deriva siempre del
+ * mismo ViewModel que alimenta el inspector, para no crear dos lecturas
+ * distintas de la metadata de una entidad. */
+export interface InspectorEvidenceBadge {
+  key: string;
+  label: string;
+}
+
 type Metadata = Record<string, unknown>;
+
+/**
+ * Adapta una entidad del expediente al contrato de nodo del grafo. Hallazgos
+ * puede así reutilizar la normalización del inspector aun mientras el grafo
+ * todavía se está cargando.
+ */
+export function entityToGraphNode(entity: EntityData): GraphNode {
+  return {
+    id: `ent-${entity.id}`,
+    type: "customEntity",
+    position: { x: 0, y: 0 },
+    data: {
+      label: entity.display_name || entity.value,
+      entity_type: entity.entity_type,
+      platform: entity.platform,
+      value: entity.value,
+      display_name: entity.display_name,
+      metadata_info: entity.metadata_info ?? {},
+      source_tool: entity.source_tool,
+      discovered_at: entity.discovered_at,
+    },
+  };
+}
 
 const ENTITY_TYPE_LABELS: Record<string, string> = {
   target: "Punto de partida",
@@ -370,6 +401,43 @@ export function buildEntityInspectorViewModel(
       : undefined,
     relationships: buildRelationships(node, nodes, edges, relationLabel),
   };
+}
+
+/** Etiquetas breves para auditar una fila sin repetir la normalización. */
+export function getInspectorEvidenceBadges(view: EntityInspectorViewModel): InspectorEvidenceBadge[] {
+  const badges: InspectorEvidenceBadge[] = [];
+  const add = (key: string, label: string) => {
+    if (!badges.some((badge) => badge.key === key)) badges.push({ key, label });
+  };
+
+  if (view.descriptions.length) {
+    add("description", view.descriptions.some((item) => item.label === "Bio declarada") ? "Bio" : "Texto");
+  }
+
+  const fieldBadges: Record<string, string> = {
+    email: "Correo",
+    emails: "Correo",
+    extracted_emails: "Correo",
+    university: "Universidad",
+    institutions: "Institución",
+    location: "Ubicación",
+    orcid: "ORCID",
+    doi: "DOI",
+    domain: "Dominio",
+    title: "Título",
+    dni: "Documento",
+  };
+  for (const field of view.observedFields) {
+    const label = fieldBadges[field.key];
+    if (label) add(field.key === "emails" || field.key === "extracted_emails" ? "email" : field.key, label);
+  }
+
+  if (view.images.some((image) => image.kind === "avatar")) add("avatar", "Avatar");
+  const nonAvatarImages = view.images.filter((image) => image.kind !== "avatar").length;
+  if (nonAvatarImages) add("image", nonAvatarImages > 1 ? `${nonAvatarImages} imágenes` : "Imagen");
+  if (view.links.length) add("links", view.links.length > 1 ? `${view.links.length} enlaces` : "Enlace");
+
+  return badges;
 }
 
 export function buildRelationshipEvidenceFields(evidence: unknown): InspectorField[] {

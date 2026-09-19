@@ -894,9 +894,14 @@ function FitToLayout({ layoutKey }: { layoutKey: string }) {
 function DigitalMapGraphInner({
   investigationId,
   refreshKey,
+  graphData,
+  focusNodeId,
 }: {
   investigationId: string;
   refreshKey?: string;
+  /** `undefined` conserva la carga autónoma; `null` indica que la página la está cargando. */
+  graphData?: GraphResponse | null;
+  focusNodeId?: string | null;
 }) {
   const [allNodes, setAllNodes] = useState<GraphNode[]>([]);
   const [allEdges, setAllEdges] = useState<GraphEdge[]>([]);
@@ -1020,9 +1025,26 @@ function DigitalMapGraphInner({
   }, [investigationId]);
 
   useEffect(() => {
+    if (graphData === undefined) return;
+    const updateTimer = window.setTimeout(() => {
+      if (!graphData) {
+        setLoading(true);
+        setError(null);
+        return;
+      }
+      setAllNodes(graphData.nodes || []);
+      setAllEdges(graphData.edges || []);
+      setError(null);
+      setLoading(false);
+    }, 0);
+    return () => window.clearTimeout(updateTimer);
+  }, [graphData]);
+
+  useEffect(() => {
+    if (graphData !== undefined) return;
     const initialLoad = window.setTimeout(() => void loadGraph(), 0);
     return () => window.clearTimeout(initialLoad);
-  }, [loadGraph, refreshKey]);
+  }, [graphData, loadGraph, refreshKey]);
 
   const categories = useMemo(
     () =>
@@ -1221,6 +1243,20 @@ function DigitalMapGraphInner({
       layoutKey,
     };
   }, [activeCategory, activeEvidenceFilters, activeRelationTypes, allEdges, allNodes, focusMode, searchQuery, selectedNodeId, showDiscoveryLines]);
+
+  // Entrada desde Hallazgos: una vez que el mismo grafo ya está disponible,
+  // seleccionamos y centramos el nodo sin crear un canal de selección paralelo.
+  useEffect(() => {
+    if (!focusNodeId) return;
+    const node = baseView.nodes.find((candidate) => candidate.id === focusNodeId);
+    if (!node) return;
+    const focusTimer = window.setTimeout(() => {
+      setSelectedNodeId(focusNodeId);
+      setSelectedEdgeId(null);
+      void setCenter(node.position.x + 60, node.position.y + 46, { duration: 420, zoom: 1.05 });
+    }, 0);
+    return () => window.clearTimeout(focusTimer);
+  }, [baseView.nodes, focusNodeId, setCenter]);
 
   // Handle Focus & Interaction
   const view = useMemo(() => {
@@ -1609,13 +1645,22 @@ function DigitalMapGraphInner({
 export function DigitalMapGraph({
   investigationId,
   refreshKey,
+  graphData,
+  focusNodeId,
 }: {
   investigationId: string;
   refreshKey?: string;
+  graphData?: GraphResponse | null;
+  focusNodeId?: string | null;
 }) {
   return (
     <ReactFlowProvider>
-      <DigitalMapGraphInner investigationId={investigationId} refreshKey={refreshKey} />
+      <DigitalMapGraphInner
+        investigationId={investigationId}
+        refreshKey={refreshKey}
+        graphData={graphData}
+        focusNodeId={focusNodeId}
+      />
     </ReactFlowProvider>
   );
 }
