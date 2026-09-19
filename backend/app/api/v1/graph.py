@@ -73,8 +73,10 @@ async def get_investigation_graph(id: UUID, db: AsyncSession = Depends(get_db)):
                     "full_name": target.full_name,
                     "email": target.email,
                     "username": target.username,
+                    "phone": target.phone,
                     "university": target.university,
                     "dni": target.dni,
+                    "description": target.description,
                 },
             ),
         )
@@ -94,6 +96,8 @@ async def get_investigation_graph(id: UUID, db: AsyncSession = Depends(get_db)):
                     value=entity.value,
                     display_name=entity.display_name,
                     metadata_info=entity.metadata_info or {},
+                    source_tool=entity.source_tool,
+                    discovered_at=entity.discovered_at.isoformat() if entity.discovered_at else None,
                     group_id=membership.get(str(entity.id)),
                 ),
             )

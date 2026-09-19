@@ -150,6 +150,10 @@ export interface GraphNodeData {
   value: string;
   display_name?: string | null;
   metadata_info?: Record<string, unknown>;
+  /** Herramienta que produjo la observación, expuesta por el endpoint graph. */
+  source_tool?: string | null;
+  /** Momento en que se persistió el hallazgo; el target raíz no lo usa como evidencia. */
+  discovered_at?: string | null;
   is_root?: boolean;
   group_id?: string | null;
   [key: string]: unknown;

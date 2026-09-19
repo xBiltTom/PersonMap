@@ -67,6 +67,18 @@ class GravatarDeepTool(BaseTool):
                         if val:
                             extracted_phones.append(val)
 
+                    # Gravatar ya entrega estos perfiles como enlaces públicos
+                    # declarados. Además de crear las entidades pivotables más
+                    # abajo, conservarlos en el perfil padre permite al
+                    # inspector mostrarlos y al motor registrar la relación
+                    # explícita cuando ambos nodos existan.
+                    accounts = entry.get("accounts", [])
+                    linked_profiles = [
+                        str(account.get("url"))
+                        for account in accounts
+                        if isinstance(account, dict) and account.get("url")
+                    ]
+
                     profile_meta: Dict[str, Any] = {
                         "source_tool": "gravatar_deep",
                         "email": clean_email,
@@ -78,6 +90,7 @@ class GravatarDeepTool(BaseTool):
                         "emails": extracted_emails,
                         "usernames": extracted_usernames,
                         "phones": extracted_phones,
+                        "linked_profiles": linked_profiles,
                     }
 
                     # Add main Gravatar profile entity
@@ -93,7 +106,6 @@ class GravatarDeepTool(BaseTool):
                     )
 
                     # 2. Linked Social Accounts
-                    accounts = entry.get("accounts", [])
                     for acc in accounts:
                         shortname = acc.get("shortname") or acc.get("domain", "social")
                         acc_url = acc.get("url")

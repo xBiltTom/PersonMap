@@ -24,8 +24,6 @@ import "@xyflow/react/dist/style.css";
 import {
   AlertTriangle,
   Braces,
-  Copy,
-  ExternalLink,
   Eye,
   EyeOff,
   FileDown,
@@ -36,15 +34,14 @@ import {
   Minus,
   Network,
   Plus,
-  Target,
   User,
-  X,
 } from "lucide-react";
 import { getGraphmlUrl, getInvestigationGraph } from "@/lib/api";
 import { buildEntityFilters, getEntityTypeMeta } from "@/lib/entityTypes";
 import { layoutDigitalMap } from "@/lib/graphLayout";
 import type { GraphEdge, GraphNode, GraphNodeData, GraphResponse } from "@/lib/types";
 import { PlatformIcon } from "./PlatformIcon";
+import { EntityInspector, RelationshipInspector } from "./EntityInspector";
 
 // ---------------------------------------------------------------------
 // Entity Theme Configuration (Matching img-referencia-mapa.png)
@@ -899,132 +896,6 @@ function FitToLayout({ layoutKey }: { layoutKey: string }) {
 }
 
 // ---------------------------------------------------------------------
-// Detail Drawer Panel (Node or Edge Inspection)
-// ---------------------------------------------------------------------
-
-function DetailPanel({
-  node,
-  edge,
-  onClose,
-}: {
-  node: GraphNode | null;
-  edge: GraphEdge | null;
-  onClose: () => void;
-}) {
-  const [copied, setCopied] = useState(false);
-  if (!node && !edge) return null;
-
-  const copyToClipboard = (text: string) => {
-    void navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-
-  if (edge) {
-    const friendlyLabel = getFriendlyRelationLabel(edge.relation_type, edge.label);
-    return (
-      <aside className="absolute bottom-4 right-4 top-16 z-30 w-[min(340px,calc(100%-2rem))] overflow-y-auto rounded-xl border border-slate-700/80 bg-[#070e1a]/95 p-4 shadow-2xl backdrop-blur-md">
-        <div className="mb-4 flex items-center justify-between border-b border-slate-800 pb-3">
-          <div>
-            <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-400">Relación observada</p>
-            <h4 className="mt-1 text-sm font-semibold capitalize text-slate-100">{friendlyLabel}</h4>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-white"
-            aria-label="Cerrar detalle"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <p className="mb-1 font-mono text-[9px] uppercase tracking-wider text-slate-500">Evidencia registrada</p>
-        <pre className="whitespace-pre-wrap break-words rounded-lg border border-slate-800 bg-[#040812] p-3 font-mono text-[10px] leading-relaxed text-slate-300">
-          {edge.evidence && typeof edge.evidence === "object"
-            ? JSON.stringify(edge.evidence, null, 2)
-            : String(edge.evidence || "Sin detalle adicional")}
-        </pre>
-      </aside>
-    );
-  }
-
-  if (!node) return null;
-  const metadata = node.data.metadata_info ?? {};
-  const isRoot = node.type === "personRoot" || node.data.is_root;
-  const meta = getEntityTypeMeta(node.data.entity_type);
-  const { title, subtitle } = getNodeDisplayNames(node.data);
-  const bio = typeof metadata.bio === "string" ? metadata.bio : null;
-
-  return (
-    <aside className="absolute bottom-4 right-4 top-16 z-30 w-[min(340px,calc(100%-2rem))] overflow-y-auto rounded-xl border border-slate-700/80 bg-[#070e1a]/95 p-4 shadow-2xl backdrop-blur-md">
-      <div className="mb-4 flex items-start justify-between border-b border-slate-800 pb-3">
-        <div className="min-w-0">
-          <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-400">
-            {isRoot ? "Punto de partida" : meta.label}
-          </p>
-          <h4 className="mt-1 break-words font-mono text-sm font-semibold text-slate-100">{title}</h4>
-          {subtitle && <p className="font-mono text-xs text-slate-400">{subtitle}</p>}
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="ml-2 rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-white"
-          aria-label="Cerrar detalle"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <dl className="space-y-3 text-xs">
-        {node.data.platform && (
-          <div>
-            <dt className="font-mono text-[9px] uppercase tracking-wider text-slate-500">Plataforma</dt>
-            <dd className="mt-0.5 font-medium text-slate-200">{node.data.platform}</dd>
-          </div>
-        )}
-
-        <div>
-          <dt className="font-mono text-[9px] uppercase tracking-wider text-slate-500">Valor observado</dt>
-          <dd className="mt-0.5 flex items-center justify-between gap-1 break-all rounded bg-[#040812] p-1.5 font-mono text-[11px] text-slate-300">
-            {node.data.value.startsWith("http") ? (
-              <a
-                href={node.data.value}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-cyan-300 hover:underline"
-              >
-                {node.data.value}
-                <ExternalLink className="h-3 w-3 shrink-0" />
-              </a>
-            ) : (
-              <span>{node.data.value}</span>
-            )}
-            <button
-              type="button"
-              onClick={() => copyToClipboard(node.data.value)}
-              className="p-1 text-slate-400 hover:text-cyan-300"
-              title="Copiar valor"
-            >
-              <Copy className="h-3 w-3" />
-            </button>
-          </dd>
-          {copied && <span className="font-mono text-[9px] text-emerald-400">¡Copiado!</span>}
-        </div>
-
-        {bio && (
-          <div>
-            <dt className="font-mono text-[9px] uppercase tracking-wider text-slate-500">Biografía / Perfil</dt>
-            <dd className="mt-1 rounded-lg border border-slate-800 bg-[#040812] p-2.5 text-[11px] leading-relaxed text-slate-300">
-              {bio}
-            </dd>
-          </div>
-        )}
-      </dl>
-    </aside>
-  );
-}
-
-// ---------------------------------------------------------------------
 // Main Component: DigitalMapGraph
 // ---------------------------------------------------------------------
 
@@ -1046,7 +917,7 @@ function DigitalMapGraphInner({
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { fitView } = useReactFlow();
+  const { fitView, setCenter } = useReactFlow();
 
   const handleToggleFullscreen = useCallback(async () => {
     const container = containerRef.current;
@@ -1397,6 +1268,20 @@ function DigitalMapGraphInner({
   const selectedEdgeRaw = allEdges.find((edge) => edge.id === selectedEdgeId);
   const selectedEdge = selectedEdgeRaw ? normalizeMapEdge(selectedEdgeRaw) : null;
 
+  const selectInspectorNode = useCallback((nodeId: string) => {
+    setSelectedNodeId(nodeId);
+    setSelectedEdgeId(null);
+    const displayNode = baseView.nodes.find((node) => node.id === nodeId);
+    if (displayNode) {
+      const width = displayNode.width ?? 120;
+      const height = displayNode.height ?? 92;
+      void setCenter(displayNode.position.x + width / 2, displayNode.position.y + height / 2, {
+        duration: 380,
+        zoom: 1.05,
+      });
+    }
+  }, [baseView.nodes, setCenter]);
+
   const entityCount = allNodes.filter(
     (node) => node.type !== "personRoot" && !node.data.is_root
   ).length;
@@ -1591,15 +1476,32 @@ function DigitalMapGraphInner({
         </Panel>
       </ReactFlow>
 
-      {/* Side Inspection Panel */}
-      <DetailPanel
-        node={selectedNode}
-        edge={selectedEdge}
-        onClose={() => {
-          setSelectedNodeId(null);
-          setSelectedEdgeId(null);
-        }}
-      />
+      {/* Side OSINT inspector */}
+      {selectedNode && (
+        <EntityInspector
+          node={selectedNode}
+          nodes={allNodes}
+          edges={allEdges}
+          onSelectNode={selectInspectorNode}
+          relationLabel={(edge) => getFriendlyRelationLabel(edge.relation_type, edge.label)}
+          onClose={() => {
+            setSelectedNodeId(null);
+            setSelectedEdgeId(null);
+          }}
+        />
+      )}
+      {!selectedNode && selectedEdge && (
+        <RelationshipInspector
+          edge={selectedEdge}
+          nodes={allNodes}
+          onSelectNode={selectInspectorNode}
+          relationLabel={(edge) => getFriendlyRelationLabel(edge.relation_type, edge.label)}
+          onClose={() => {
+            setSelectedNodeId(null);
+            setSelectedEdgeId(null);
+          }}
+        />
+      )}
     </div>
   );
 }

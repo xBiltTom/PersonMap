@@ -7,10 +7,13 @@ datos, de modo que la suite rápida los ejecuta sin PostgreSQL ni red.
 
 import uuid
 
+import pytest
+
 from app.engine.persistence import (
     MAX_EDGES_PER_ENTITY,
     dedupe_findings,
     detect_relationships,
+    persist_findings,
 )
 from app.models.entity import Entity
 from app.tools.base import ToolFinding
@@ -101,6 +104,43 @@ def test_dedupe_merges_a_profile_each_tool_names_differently():
     assert result[0].metadata_info["source_tools"] == [
         "username_finder",
         "github_deep_scanner",
+    ]
+
+
+class _MemorySession:
+    """Doble mínimo para verificar qué llega a Entity sin PostgreSQL."""
+
+    def __init__(self):
+        self.added = []
+
+    def add(self, entity):
+        self.added.append(entity)
+
+    async def flush(self):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_persistence_keeps_tool_evidence_urls_for_the_inspector():
+    finding = ToolFinding(
+        entity_type="social_account",
+        platform="github",
+        value="https://github.com/jperez",
+        confidence=0.9,
+        evidence_urls=[
+            "https://github.com/jperez",
+            "https://github.com/jperez/commits/main",
+            "https://github.com/jperez",
+        ],
+    )
+
+    session = _MemorySession()
+    entities = await persist_findings(str(uuid.uuid4()), [finding], None, session)
+
+    assert len(entities) == 1
+    assert entities[0].metadata_info["evidence_urls"] == [
+        "https://github.com/jperez",
+        "https://github.com/jperez/commits/main",
     ]
 
 

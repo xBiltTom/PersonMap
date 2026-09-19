@@ -14,6 +14,10 @@ class GraphNodeData(BaseModel):
     value: str
     display_name: Optional[str] = None
     metadata_info: Dict[str, Any] = {}
+    # Trazabilidad de la observación. Se exponen junto a metadata_info para que
+    # el inspector no tenga que deducir procedencia a partir del valor del nodo.
+    source_tool: Optional[str] = None
+    discovered_at: Optional[str] = None
     is_root: bool = False
     group_id: Optional[str] = None
 

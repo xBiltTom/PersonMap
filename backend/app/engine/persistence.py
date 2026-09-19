@@ -113,6 +113,12 @@ async def persist_findings(
 
     for f in dedupe_findings(findings):
         metadata = dict(f.metadata_info or {})
+        # Las herramientas ya recogen URLs de evidencia, pero Entity no tenía
+        # una columna específica para ellas. Persistirlas dentro del metadata
+        # evita una migración y permite que el inspector separe la fuente del
+        # recurso observado. Solo se añaden cuando la herramienta las entregó.
+        if f.evidence_urls and "evidence_urls" not in metadata:
+            metadata["evidence_urls"] = list(dict.fromkeys(f.evidence_urls))
 
         entity = Entity(
             investigation_id=investigation_id,
