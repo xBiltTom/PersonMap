@@ -28,3 +28,6 @@ __all__ = [
     "GraphNodeData",
     "GraphNodePosition",
 ]
+from app.schemas.trace import InvestigationTraceResponse
+
+__all__ = ["InvestigationTraceResponse"]

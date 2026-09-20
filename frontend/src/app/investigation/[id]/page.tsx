@@ -297,7 +297,7 @@ export default function InvestigationDetailPage({
 
   const lowerTabs = [
     { id: "findings", label: `Hallazgos (${findingsCount})`, icon: Table },
-    { id: "timeline", label: "Línea de tiempo", icon: Clock },
+    { id: "timeline", label: "Trazabilidad", icon: Clock },
     { id: "console", label: "Consola", icon: Terminal },
   ];
 
@@ -634,7 +634,12 @@ export default function InvestigationDetailPage({
               )}
 
               {activeTab === "timeline" && (
-                <DiscoveryTimeline entities={investigation.entities || []} />
+                <DiscoveryTimeline
+                  investigation={investigation}
+                  isRunning={isRunning}
+                  onInspectNode={inspectNode}
+                  onViewInMap={handleViewInMap}
+                />
               )}
 
               {activeTab === "console" && (

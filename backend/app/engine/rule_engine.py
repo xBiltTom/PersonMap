@@ -1,11 +1,13 @@
 import asyncio
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import List, Optional, Set
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.events import event_bus
 from app.engine.persistence import build_relationships, persist_findings
 from app.engine.pivot_rules import extract_and_apply_pivots
+from app.engine.trace import PendingObservation, trace_recorder
 from app.models.entity import Entity
 from app.models.target import Target
 from app.tools.base import TargetContext, ToolFinding
@@ -27,6 +29,13 @@ class SweepResult:
     context: Optional[TargetContext] = None
     executed_runs: Set[str] = field(default_factory=set)
     rounds: int = 0
+    observations: List[PendingObservation] = field(default_factory=list)
+
+
+@dataclass
+class ToolRunOutcome:
+    findings: List[ToolFinding] = field(default_factory=list)
+    error: Optional[BaseException] = None
 
 
 class RuleEngine:
@@ -62,6 +71,9 @@ class RuleEngine:
         self,
         investigation_id: str,
         target: Target,
+        db: Optional[AsyncSession] = None,
+        trace_engine: str = "rules",
+        trace_layer: str = "heuristic",
     ) -> SweepResult:
         """
         Ejecuta la barrida heuristica completa y devuelve los hallazgos en bruto.
@@ -98,6 +110,7 @@ class RuleEngine:
         all_findings: List[ToolFinding] = []
         executed_runs: Set[str] = set()
         rounds_run = 0
+        observations: List[PendingObservation] = []
 
         await event_bus.publish(investigation_id, {
             "type": "log",
@@ -106,6 +119,14 @@ class RuleEngine:
             "message": f"Iniciando orquestador OSINT para el objetivo: {target.full_name or target.username or target.email}",
             "timestamp": time.time(),
         })
+        if db:
+            await trace_recorder.record_event(
+                db,
+                investigation_id=investigation_id,
+                event_type="engine_start",
+                engine=trace_engine,
+                engine_layer=trace_layer,
+            )
 
         for round_idx in range(1, self.MAX_ROUNDS + 1):
             runnable = [
@@ -117,6 +138,17 @@ class RuleEngine:
 
             rounds_run = round_idx
 
+            if db:
+                await trace_recorder.record_event(
+                    db,
+                    investigation_id=investigation_id,
+                    event_type="round_start",
+                    engine=trace_engine,
+                    engine_layer=trace_layer,
+                    round_index=round_idx,
+                    data={"tools_scheduled": len(runnable)},
+                )
+
             await event_bus.publish(investigation_id, {
                 "type": "log",
                 "phase": f"round_{round_idx}",
@@ -126,21 +158,77 @@ class RuleEngine:
             })
 
             tasks = []
+            executions = []
             for tool in runnable:
                 executed_runs.add(self._get_tool_run_key(tool, context))
                 tasks.append(self._run_single_tool(investigation_id, tool, context))
+                if db:
+                    executions.append(
+                        await trace_recorder.start_tool(
+                            db,
+                            investigation_id=investigation_id,
+                            tool=tool,
+                            engine=trace_engine,
+                            engine_layer=trace_layer,
+                            round_index=round_idx,
+                            context=context,
+                        )
+                    )
 
             batch_results = await asyncio.gather(*tasks, return_exceptions=True)
             round_findings: List[ToolFinding] = []
 
-            for res in batch_results:
-                if isinstance(res, list):
-                    round_findings.extend(res)
+            for index, result in enumerate(batch_results):
+                outcome = result if isinstance(result, ToolRunOutcome) else ToolRunOutcome(error=result)
+                round_findings.extend(outcome.findings)
+                if db:
+                    execution = executions[index]
+                    await trace_recorder.complete_tool(
+                        execution,
+                        findings_count=len(outcome.findings),
+                        error=outcome.error,
+                    )
+                    observed_at = execution.completed_at or datetime.now(timezone.utc)
+                    observations.extend(
+                        PendingObservation(finding=finding, tool_execution_id=execution.id, observed_at=observed_at)
+                        for finding in outcome.findings
+                    )
 
             all_findings.extend(round_findings)
 
             # Heuristic Pivot Analysis
+            pivot_before = {
+                "emails": len(context.all_emails()),
+                "usernames": len(context.all_usernames()),
+                "urls": len(context.extra.get("candidate_urls", [])),
+                "avatars": len(context.extra.get("avatar_urls", [])),
+            }
             has_pivots = extract_and_apply_pivots(round_findings, context)
+            pivot_after = {
+                "emails": len(context.all_emails()),
+                "usernames": len(context.all_usernames()),
+                "urls": len(context.extra.get("candidate_urls", [])),
+                "avatars": len(context.extra.get("avatar_urls", [])),
+            }
+            pivot_additions = {kind: pivot_after[kind] - pivot_before[kind] for kind in pivot_before}
+            if db:
+                await trace_recorder.record_event(
+                    db,
+                    investigation_id=investigation_id,
+                    event_type="round_complete",
+                    engine=trace_engine,
+                    engine_layer=trace_layer,
+                    round_index=round_idx,
+                    data={"findings_count": len(round_findings)},
+                )
+                await trace_recorder.record_pivot(
+                    db,
+                    investigation_id=investigation_id,
+                    engine=trace_engine,
+                    engine_layer=trace_layer,
+                    round_index=round_idx,
+                    additions=pivot_additions,
+                )
             if has_pivots:
                 await event_bus.publish(investigation_id, {
                     "type": "log",
@@ -160,6 +248,7 @@ class RuleEngine:
             context=context,
             executed_runs=executed_runs,
             rounds=rounds_run,
+            observations=observations,
         )
 
     async def execute_investigation(
@@ -170,7 +259,7 @@ class RuleEngine:
     ) -> List[Entity]:
         start_time = time.time()
 
-        sweep = await self.collect_findings(investigation_id, target)
+        sweep = await self.collect_findings(investigation_id, target, db)
 
         # Deduplicación, scoring y persistencia compartidos con el agente autónomo
         entities = await persist_findings(
@@ -179,6 +268,12 @@ class RuleEngine:
             target=target,
             db=db,
             default_source_tool="osint_engine",
+        )
+        await trace_recorder.link_observations(
+            db,
+            investigation_id=investigation_id,
+            pending=sweep.observations,
+            entities=entities,
         )
         await build_relationships(investigation_id, entities, db)
 
@@ -198,7 +293,7 @@ class RuleEngine:
         investigation_id: str,
         tool,
         context: TargetContext,
-    ) -> List[ToolFinding]:
+    ) -> ToolRunOutcome:
         await event_bus.publish(investigation_id, {
             "type": "tool_start",
             "tool": tool.name,
@@ -221,7 +316,7 @@ class RuleEngine:
                 "message": f"[{tool.name}] completado: {len(findings)} hallazgos.",
                 "timestamp": time.time(),
             })
-            return findings
+            return ToolRunOutcome(findings=findings)
         except Exception as err:
             await event_bus.publish(investigation_id, {
                 "type": "tool_error",
@@ -231,7 +326,7 @@ class RuleEngine:
                 "message": f"[{tool.name}] error: {err}",
                 "timestamp": time.time(),
             })
-            return []
+            return ToolRunOutcome(error=err)
 
 
 rule_engine = RuleEngine()

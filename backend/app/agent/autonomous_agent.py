@@ -8,6 +8,7 @@ from app.core.events import event_bus
 from app.agent.llm_client import complete_with_retries, describe_llm_error
 from app.agent.tool_dispatch import build_tool_schemas, dispatch_tool_call, resolve_tool_name
 from app.engine.persistence import build_relationships, persist_findings
+from app.engine.trace import PendingObservation, trace_recorder
 from app.models.entity import Entity
 from app.models.target import Target
 from app.tools.base import ToolFinding
@@ -48,6 +49,7 @@ class AutonomousOSINTAgent:
             return AgentRun(entities, {"agent_fallback_to_rules": True, "agent_tools_executed": 0})
 
         all_findings: List[ToolFinding] = []
+        trace_observations: List[PendingObservation] = []
         turns = 0
         tools_executed = 0
         llm_error: Optional[str] = None
@@ -84,6 +86,14 @@ class AutonomousOSINTAgent:
             "message": f"Agente Autónomo IA iniciado con modelo [{settings.llm_model}]. Formulando plan de ataque...",
             "timestamp": time.time(),
         })
+        if db:
+            await trace_recorder.record_event(
+                db,
+                investigation_id=investigation_id,
+                event_type="engine_start",
+                engine="agentic",
+                engine_layer="agentic",
+            )
 
         async def announce_retry(attempt: int, delay: float, err: BaseException) -> None:
             await event_bus.publish(investigation_id, {
@@ -98,6 +108,15 @@ class AutonomousOSINTAgent:
 
         for turn in range(1, self.MAX_TURNS + 1):
             turns = turn
+            if db:
+                await trace_recorder.record_event(
+                    db,
+                    investigation_id=investigation_id,
+                    event_type="turn_start",
+                    engine="agentic",
+                    engine_layer="agentic",
+                    turn_index=turn,
+                )
             try:
                 response = await complete_with_retries(
                     model=settings.llm_model,
@@ -148,7 +167,13 @@ class AutonomousOSINTAgent:
                     })
 
                     tool_findings = await self._execute_agent_tool(
-                        investigation_id, fn_name, args, target
+                        investigation_id,
+                        fn_name,
+                        args,
+                        target,
+                        db=db,
+                        turn_index=turn,
+                        observations=trace_observations,
                     )
                     tools_executed += 1
                     all_findings.extend(tool_findings)
@@ -164,6 +189,16 @@ class AutonomousOSINTAgent:
                         "content": json.dumps({"findings_count": len(tool_findings), "sample": summary_result}),
                     })
 
+                if db:
+                    await trace_recorder.record_event(
+                        db,
+                        investigation_id=investigation_id,
+                        event_type="turn_complete",
+                        engine="agentic",
+                        engine_layer="agentic",
+                        turn_index=turn,
+                    )
+
             except Exception as err:
                 llm_error = describe_llm_error(err)
                 await event_bus.publish(investigation_id, {
@@ -175,9 +210,15 @@ class AutonomousOSINTAgent:
                 break
 
         if llm_error is not None:
-            all_findings.extend(
-                await self._heuristic_fallback(investigation_id, target, tools_executed, llm_error)
+            fallback = await self._heuristic_fallback(
+                investigation_id,
+                target,
+                tools_executed,
+                llm_error,
+                db=db,
             )
+            all_findings.extend(fallback.findings)
+            trace_observations.extend(fallback.observations)
 
         # Deduplicación, scoring y persistencia compartidos con el motor de reglas.
         # Antes esto estaba duplicado aquí en una versión degradada: sin
@@ -192,6 +233,13 @@ class AutonomousOSINTAgent:
             db=db,
             default_source_tool="agent_autonomous",
         )
+        if db:
+            await trace_recorder.link_observations(
+                db,
+                investigation_id=investigation_id,
+                pending=trace_observations,
+                entities=entities,
+            )
         await build_relationships(investigation_id, entities, db)
 
         return AgentRun(
@@ -210,7 +258,8 @@ class AutonomousOSINTAgent:
         target: Target,
         tools_executed: int,
         reason: str,
-    ) -> List[ToolFinding]:
+        db: AsyncSession | None = None,
+    ):
         """
         Barrido heurístico completo cuando el LLM deja de responder.
 
@@ -235,8 +284,15 @@ class AutonomousOSINTAgent:
             ),
             "timestamp": time.time(),
         })
-        sweep = await rule_engine.collect_findings(investigation_id, target)
-        return sweep.findings
+        if db:
+            return await rule_engine.collect_findings(
+                investigation_id,
+                target,
+                db,
+                trace_engine="agentic",
+                trace_layer="heuristic",
+            )
+        return await rule_engine.collect_findings(investigation_id, target)
 
     async def _execute_agent_tool(
         self,
@@ -244,6 +300,10 @@ class AutonomousOSINTAgent:
         name: str,
         args: Dict[str, Any],
         target: Target,
+        *,
+        db: AsyncSession | None = None,
+        turn_index: int | None = None,
+        observations: List[PendingObservation] | None = None,
     ) -> List[ToolFinding]:
         """
         Delega en el despachador compartido, conservando el prefijo `agent:` de
@@ -260,6 +320,20 @@ class AutonomousOSINTAgent:
         fallo de UNA herramienta ya no tumba el turno entero del agente.
         """
         tool_name = resolve_tool_name(name)
+        trace_execution = None
+        if db:
+            from app.tools.registry import tool_registry
+
+            tool = tool_registry.get_tool(tool_name)
+            if tool:
+                trace_execution = await trace_recorder.start_tool(
+                    db,
+                    investigation_id=investigation_id,
+                    tool=tool,
+                    engine="agentic",
+                    engine_layer="agentic",
+                    turn_index=turn_index,
+                )
         try:
             findings = await dispatch_tool_call(
                 name,
@@ -269,6 +343,8 @@ class AutonomousOSINTAgent:
                 investigation_id=investigation_id,
             )
         except Exception as err:
+            if trace_execution:
+                await trace_recorder.complete_tool(trace_execution, findings_count=0, error=err)
             await event_bus.publish(investigation_id, {
                 "type": "tool_error",
                 "tool": tool_name,
@@ -285,6 +361,17 @@ class AutonomousOSINTAgent:
             "message": f"[{tool_name}] completado: {len(findings)} hallazgos.",
             "timestamp": time.time(),
         })
+        if trace_execution:
+            await trace_recorder.complete_tool(trace_execution, findings_count=len(findings))
+            if observations is not None and trace_execution.completed_at:
+                observations.extend(
+                    PendingObservation(
+                        finding=finding,
+                        tool_execution_id=trace_execution.id,
+                        observed_at=trace_execution.completed_at,
+                    )
+                    for finding in findings
+                )
         return findings
 
 

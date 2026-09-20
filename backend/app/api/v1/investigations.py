@@ -11,11 +11,15 @@ from app.engine.orchestrator import orchestrator
 from app.models.entity import Entity
 from app.models.investigation import Investigation
 from app.models.target import Target
+from app.models.tool_execution import ToolExecution
+from app.models.entity_observation import EntityObservation
+from app.models.investigation_trace_event import InvestigationTraceEvent
 from app.schemas.investigation import (
     InvestigationCreate,
     InvestigationDetail,
     InvestigationRead,
 )
+from app.schemas.trace import InvestigationTraceResponse
 
 router = APIRouter()
 
@@ -105,6 +109,48 @@ async def get_investigation(
     if not inv:
         raise HTTPException(status_code=404, detail="Investigación no encontrada")
     return inv
+
+
+@router.get("/investigations/{id}/trace", response_model=InvestigationTraceResponse)
+async def get_investigation_trace(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Trazabilidad persistida de ejecución; nunca se reconstruye desde relaciones del grafo."""
+    investigation = await db.get(Investigation, id)
+    if not investigation:
+        raise HTTPException(status_code=404, detail="Investigación no encontrada")
+
+    executions = list(
+        (await db.execute(
+            select(ToolExecution)
+            .where(ToolExecution.investigation_id == id)
+            .order_by(ToolExecution.started_at, ToolExecution.id)
+        )).scalars().all()
+    )
+    observations = list(
+        (await db.execute(
+            select(EntityObservation)
+            .where(EntityObservation.investigation_id == id)
+            .options(selectinload(EntityObservation.entity))
+            .order_by(EntityObservation.observed_at, EntityObservation.id)
+        )).scalars().all()
+    )
+    events = list(
+        (await db.execute(
+            select(InvestigationTraceEvent)
+            .where(InvestigationTraceEvent.investigation_id == id)
+            .order_by(InvestigationTraceEvent.created_at, InvestigationTraceEvent.id)
+        )).scalars().all()
+    )
+
+    return InvestigationTraceResponse(
+        investigation_id=id,
+        available=bool(executions or observations or events),
+        executions=executions,
+        observations=observations,
+        events=events,
+    )
 
 @router.delete("/investigations/{id}")
 async def delete_investigation(

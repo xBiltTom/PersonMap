@@ -1,75 +1,116 @@
 "use client";
 
-import { EntityData } from "@/lib/types";
-import { Clock, ExternalLink } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle, Bot, CheckCircle2, ChevronDown, ChevronRight, Eye,
+  Filter, Layers, Map as MapIcon, Network, RefreshCw, Search, Wrench, XCircle,
+} from "lucide-react";
+import { getInvestigationTrace } from "@/lib/api";
+import { buildEntityInspectorViewModel, entityToGraphNode, getInspectorEvidenceBadges } from "@/lib/entityInspector";
+import { getEntityTypeMeta } from "@/lib/entityTypes";
+import { PlatformIcon } from "@/components/graph/PlatformIcon";
+import type { EntityObservationData, InvestigationData, InvestigationTraceEventData, InvestigationTraceResponse, ToolExecutionData } from "@/lib/types";
 
-export function DiscoveryTimeline({ entities }: { entities: EntityData[] }) {
-  const sorted = [...entities].sort(
-    (a, b) => new Date(a.discovered_at).getTime() - new Date(b.discovered_at).getTime()
-  );
+type TraceMode = "tree" | "chronology";
+type Selection = { kind: "execution"; execution: ToolExecutionData } | { kind: "pivot"; event: InvestigationTraceEventData } | null;
+const LEAVES_PER_TOOL = 12;
 
-  if (sorted.length === 0) {
-    return (
-      <div className="panel-card p-8 text-center text-slate-500 font-mono text-xs">
-        No hay registros cronológicos todavía.
-      </div>
-    );
-  }
+function formatTime(value?: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(date);
+}
+function formatDateTime(value?: string | null): string {
+  if (!value) return "No registrado";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("es-PE", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
+}
+function durationBetween(start?: string | null, end?: string | null): string | undefined {
+  if (!start || !end) return undefined;
+  const milliseconds = new Date(end).getTime() - new Date(start).getTime();
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return undefined;
+  if (milliseconds < 1000) return `${milliseconds} ms`;
+  if (milliseconds < 60_000) return `${(milliseconds / 1000).toFixed(1)} s`;
+  return `${Math.floor(milliseconds / 60_000)} min ${Math.floor((milliseconds % 60_000) / 1000).toString().padStart(2, "0")} s`;
+}
+function layerKey(execution: ToolExecutionData): string {
+  if (execution.engine_layer === "refinement") return "refinement";
+  if (execution.engine === "agentic" || execution.engine_layer === "agentic") return "agentic";
+  return "heuristic";
+}
+function layerMeta(execution: ToolExecutionData): { label: string; className: string; Icon: typeof Wrench } {
+  if (execution.engine_layer === "refinement") return { label: "Refinamiento IA", className: "text-violet-300 border-violet-500/35 bg-violet-500/10", Icon: Bot };
+  if (execution.engine === "agentic" || execution.engine_layer === "agentic") return { label: "Agente autónomo", className: "text-violet-300 border-violet-500/35 bg-violet-500/10", Icon: Bot };
+  return { label: "Barrido heurístico", className: "text-emerald-300 border-emerald-500/35 bg-emerald-500/10", Icon: Wrench };
+}
+function groupLabel(execution: ToolExecutionData): string {
+  if (execution.round_index) return `Ronda ${execution.round_index}`;
+  if (execution.turn_index) return `Turno ${execution.turn_index}`;
+  return "Ejecuciones registradas";
+}
+function statusMeta(status: string): { label: string; className: string; Icon: typeof CheckCircle2 } {
+  if (status === "failed") return { label: "Fallida", className: "text-rose-300", Icon: XCircle };
+  if (status === "running") return { label: "En curso", className: "text-sky-300", Icon: RefreshCw };
+  return { label: "Completada", className: "text-emerald-300", Icon: CheckCircle2 };
+}
+function matches(execution: ToolExecutionData, observations: EntityObservationData[], search: string, tool: string, layer: string, status: string) {
+  if (tool !== "all" && tool !== execution.tool_name) return false;
+  if (layer !== "all" && layer !== layerKey(execution)) return false;
+  if (status !== "all" && status !== execution.status) return false;
+  if (!search) return true;
+  const needle = search.toLocaleLowerCase();
+  return `${execution.tool_name} ${execution.tool_description ?? ""}`.toLocaleLowerCase().includes(needle) || observations.some((item) => `${item.entity.display_name ?? ""} ${item.entity.value} ${item.entity.platform ?? ""}`.toLocaleLowerCase().includes(needle));
+}
 
-  return (
-    <div className="panel-card p-6">
-      <div className="flex items-center gap-2 pb-4 border-b border-[#162234] mb-6">
-        <Clock className="w-4 h-4 text-sky-400" />
-        <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">
-          Secuencia Cronológica de Extracción y Pivoteo ({sorted.length})
-        </h3>
-      </div>
+function Toggle({ expanded, label, onClick }: { expanded: boolean; label: string; onClick: () => void }) {
+  return <button type="button" onClick={onClick} aria-expanded={expanded} aria-label={`${expanded ? "Contraer" : "Expandir"} ${label}`} className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[#24384f] bg-[#0a1420] text-slate-400 hover:border-sky-400/60 hover:text-sky-200">{expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</button>;
+}
 
-      <div className="relative pl-6 border-l border-[#162234] space-y-6">
-        {sorted.map((item) => {
-          const time = new Date(item.discovered_at).toLocaleTimeString("es-ES", {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-          });
+function ObservationRow({ observation, onInspect, onViewInMap }: { observation: EntityObservationData; onInspect?: (id: string) => void; onViewInMap?: (id: string) => void }) {
+  const entity = observation.entity;
+  const node = entityToGraphNode(entity);
+  const view = buildEntityInspectorViewModel(node, [node], [], () => "");
+  const badges = getInspectorEvidenceBadges(view).slice(0, 3);
+  const type = getEntityTypeMeta(entity.entity_type);
+  return <div className="group flex min-w-0 items-center gap-2 border-t border-[#142536]/75 py-2 pl-8 pr-2 hover:bg-[#0e1b29]/70"><span className="h-px w-3 shrink-0 bg-[#31506b]" /><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[#243b52] bg-[#08121d] ${type.accent}`}><PlatformIcon platform={entity.platform} entityType={entity.entity_type} value={entity.value} displayName={entity.display_name} avatarUrl={entity.metadata_info?.avatar_url} className="h-3.5 w-3.5" /></span><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-medium text-slate-200">{entity.platform || type.label} <span className="text-slate-500">·</span> {entity.display_name || entity.value}</p>{badges.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{badges.map((badge) => <span key={badge.key} className="rounded border border-sky-500/20 bg-sky-500/[0.08] px-1.5 py-px font-mono text-[9px] text-sky-200">{badge.label}</span>)}</div>}</div><span className="hidden shrink-0 font-mono text-[9px] text-slate-500 sm:block">{formatTime(observation.observed_at)}</span><div className="flex shrink-0 items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100">{onInspect && <button type="button" onClick={() => onInspect(`ent-${entity.id}`)} title="Inspeccionar hallazgo" className="rounded p-1 text-slate-400 hover:bg-sky-500/10 hover:text-sky-200"><Eye className="h-3.5 w-3.5" /></button>}{onViewInMap && <button type="button" onClick={() => onViewInMap(entity.id)} title="Ver en mapa" className="rounded p-1 text-slate-400 hover:bg-violet-500/10 hover:text-violet-200"><MapIcon className="h-3.5 w-3.5" /></button>}</div></div>;
+}
 
-          return (
-            <div key={item.id} className="relative group">
-              {/* Dot */}
-              <div className="absolute -left-[31px] top-1 w-3 h-3 rounded-full bg-[#162030] border-2 border-sky-400 group-hover:bg-sky-400 transition-colors" />
+function ExecutionRow({ execution, observations, expanded, shown, onToggle, onShowMore, onSelect, onInspect, onViewInMap }: { execution: ToolExecutionData; observations: EntityObservationData[]; expanded: boolean; shown: number; onToggle: () => void; onShowMore: () => void; onSelect: () => void; onInspect?: (id: string) => void; onViewInMap?: (id: string) => void }) {
+  const status = statusMeta(execution.status); const StatusIcon = status.Icon; const duration = durationBetween(execution.started_at, execution.completed_at);
+  return <div className="border-t border-[#1b3044] first:border-t-0"><div className="group flex min-w-0 items-center gap-2 bg-[#091421]/60 px-2 py-2 hover:bg-[#102033]"><Toggle expanded={expanded} onClick={onToggle} label={execution.tool_name} /><button type="button" onClick={onSelect} className="min-w-0 flex-1 text-left"><p className="truncate font-mono text-[11px] font-semibold text-slate-100">{execution.tool_name}</p>{execution.tool_description && <p className="truncate text-[10px] text-slate-500">{execution.tool_description}</p>}</button><span className="hidden whitespace-nowrap font-mono text-[10px] text-sky-200 sm:inline">{observations.length} observación{observations.length === 1 ? "" : "es"}</span><span className="hidden w-14 whitespace-nowrap font-mono text-[10px] text-slate-400 lg:inline">{duration || "en curso"}</span><span className={`flex items-center gap-1 whitespace-nowrap font-mono text-[10px] ${status.className}`}><StatusIcon className={`h-3.5 w-3.5 ${execution.status === "running" ? "animate-spin" : ""}`} /><span className="hidden xl:inline">{status.label}</span></span></div>{expanded && <div className="ml-4 border-l border-dashed border-[#31506b]">{observations.slice(0, shown).map((observation) => <ObservationRow key={observation.id} observation={observation} onInspect={onInspect} onViewInMap={onViewInMap} />)}{observations.length === 0 && execution.status === "completed" && <p className="px-8 py-2 font-mono text-[10px] text-slate-500">La herramienta terminó sin observaciones nuevas.</p>}{observations.length > shown && <button type="button" onClick={onShowMore} className="ml-8 my-2 rounded border border-[#29435b] bg-[#0b1826] px-2 py-1 font-mono text-[10px] text-sky-200 hover:border-sky-400/60">Mostrar {Math.min(LEAVES_PER_TOOL, observations.length - shown)} más</button>}</div>}</div>;
+}
 
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-[10px] font-mono text-slate-500">[{time}]</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 uppercase font-semibold">
-                  {item.source_tool}
-                </span>
-                <span className="text-xs font-bold text-slate-200">
-                  {item.platform || item.entity_type}
-                </span>
-                <span className="text-[10px] font-mono text-slate-400 ml-auto">
-                  Indicio registrado
-                </span>
-              </div>
+function TraceInspector({ selection, onClose }: { selection: Exclude<Selection, null>; onClose: () => void }) {
+  const execution = selection.kind === "execution" ? selection.execution : null;
+  const additions = selection.kind === "pivot" && selection.event.data.additions && typeof selection.event.data.additions === "object" ? selection.event.data.additions as Record<string, unknown> : {};
+  return <div className="fixed inset-0 z-50 flex items-center justify-end bg-[#020712]/70 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Inspector de trazabilidad" onClick={onClose}><aside className="h-full max-h-[calc(100vh-1.5rem)] w-full max-w-[390px] overflow-hidden rounded-xl border border-[#294259] bg-[#07111e] shadow-2xl" onClick={(event) => event.stopPropagation()}><header className="border-b border-[#1b2e42] bg-[#091725] p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-mono text-[10px] uppercase tracking-[0.14em] text-sky-300">{execution ? "Ejecución registrada" : "Pivote incorporado"}</p><h4 className="mt-1 text-sm font-semibold text-slate-100">{execution?.tool_name || "Pivote heurístico"}</h4></div><button type="button" onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="Cerrar inspector">×</button></div></header><div className="space-y-4 overflow-y-auto p-4 text-xs">{execution ? <><dl className="grid grid-cols-[100px_1fr] gap-x-3 gap-y-2 font-mono text-[10px]"><dt className="text-slate-500">Capa</dt><dd className="text-slate-200">{layerMeta(execution).label}</dd>{execution.round_index && <><dt className="text-slate-500">Ronda</dt><dd className="text-slate-200">{execution.round_index}</dd></>}{execution.turn_index && <><dt className="text-slate-500">Turno</dt><dd className="text-slate-200">{execution.turn_index}</dd></>}<dt className="text-slate-500">Inicio</dt><dd className="text-slate-200">{formatDateTime(execution.started_at)}</dd><dt className="text-slate-500">Fin</dt><dd className="text-slate-200">{formatDateTime(execution.completed_at)}</dd><dt className="text-slate-500">Duración</dt><dd className="text-slate-200">{durationBetween(execution.started_at, execution.completed_at) || "En curso"}</dd><dt className="text-slate-500">Observaciones</dt><dd className="text-sky-200">{execution.findings_count}</dd></dl>{Object.keys(execution.input_summary).length > 0 && <section className="rounded-lg border border-[#1b3248] bg-[#091725]/70 p-3"><h5 className="font-mono text-[10px] uppercase tracking-wider text-slate-400">Contexto seguro</h5><p className="mt-1.5 text-[11px] leading-relaxed text-slate-300">{Array.isArray(execution.input_summary.required_inputs) && execution.input_summary.required_inputs.length > 0 ? `Entradas requeridas: ${execution.input_summary.required_inputs.join(", ")}.` : "Sin entradas adicionales registradas."}{execution.input_summary.context_origin === "expanded" ? " Se ejecutó con contexto ampliado por pivotes previos." : " Se ejecutó con datos iniciales del expediente."}</p></section>}{execution.error_summary && <p className="rounded border border-rose-500/30 bg-rose-500/10 p-3 text-[11px] text-rose-200">{execution.error_summary}</p>}</> : <section><h5 className="font-mono text-[10px] uppercase tracking-wider text-amber-300">Elementos incorporados al contexto</h5><div className="mt-3 flex flex-wrap gap-2">{Object.entries(additions).map(([kind, count]) => <span key={kind} className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 font-mono text-[11px] text-amber-100">+{String(count)} {kind}</span>)}</div><p className="mt-3 text-[11px] leading-relaxed text-slate-400">Este evento documenta valores incorporados al contexto entre rondas. No atribuye cada valor a una entidad individual.</p></section>}</div></aside></div>;
+}
 
-              <div className="text-xs text-slate-300 font-medium">
-                {item.display_name || item.value}
-              </div>
+function Chronology({ executions, events, onSelectExecution, onSelectPivot }: { executions: ToolExecutionData[]; events: InvestigationTraceEventData[]; onSelectExecution: (execution: ToolExecutionData) => void; onSelectPivot: (event: InvestigationTraceEventData) => void }) {
+  const entries = useMemo(() => [...executions.flatMap((execution) => [{ id: `${execution.id}:start`, at: execution.started_at, kind: "start" as const, execution }, ...(execution.completed_at ? [{ id: `${execution.id}:complete`, at: execution.completed_at, kind: "complete" as const, execution }] : [])]), ...events.filter((event) => ["pivot", "skipped_call"].includes(event.event_type)).map((event) => ({ id: event.id, at: event.created_at, kind: "event" as const, event }))].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime()), [executions, events]);
+  return <div className="divide-y divide-[#172a3d]">{entries.map((entry) => <div key={entry.id} className="grid grid-cols-[90px_minmax(0,1fr)] gap-3 px-4 py-3 hover:bg-[#0d1b29]"><span className="font-mono text-[10px] text-slate-500">{formatTime(entry.at)}</span>{entry.kind === "event" ? <button type="button" onClick={() => onSelectPivot(entry.event)} className="flex items-center gap-2 text-left"><AlertTriangle className="h-3.5 w-3.5 text-amber-300" /><span className="font-mono text-[11px] text-amber-100">{entry.event.event_type === "pivot" ? "Pivote incorporado al contexto" : "Llamada omitida"}</span></button> : <button type="button" onClick={() => onSelectExecution(entry.execution)} className="flex min-w-0 items-center gap-2 text-left"><span className={`h-2 w-2 rounded-full ${entry.kind === "complete" ? "bg-emerald-400" : "bg-sky-400"}`} /><span className="font-mono text-[11px] text-slate-200">{entry.execution.tool_name}</span><span className="truncate text-[10px] text-slate-500">{entry.kind === "complete" ? `completada · ${entry.execution.findings_count} observaciones` : "iniciada"}</span></button>}</div>)}{entries.length === 0 && <p className="py-10 text-center font-mono text-xs text-slate-500">No hay eventos persistidos para esta selección.</p>}</div>;
+}
 
-              {item.value.startsWith("http") && (
-                <a
-                  href={item.value}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[11px] text-sky-400 hover:underline flex items-center gap-1 mt-0.5"
-                >
-                  <span className="truncate max-w-md">{item.value}</span>
-                  <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                </a>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+export function DiscoveryTimeline({ investigation, isRunning = false, onInspectNode, onViewInMap }: { investigation: InvestigationData; isRunning?: boolean; onInspectNode?: (nodeId: string) => void; onViewInMap?: (entityId: string) => void }) {
+  const [trace, setTrace] = useState<InvestigationTraceResponse | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [mode, setMode] = useState<TraceMode>("tree"); const [search, setSearch] = useState(""); const [layerFilter, setLayerFilter] = useState("all"); const [toolFilter, setToolFilter] = useState("all"); const [statusFilter, setStatusFilter] = useState("all"); const [expanded, setExpanded] = useState<Set<string>>(new Set()); const [shownLeaves, setShownLeaves] = useState<Record<string, number>>({}); const [selection, setSelection] = useState<Selection>(null);
+  const loadTrace = useCallback(async () => { try { const next = await getInvestigationTrace(investigation.id); setTrace(next); setError(null); setExpanded((previous) => { if (previous.size) return previous; const defaults = new Set<string>(); next.executions.forEach((execution) => { defaults.add(`layer:${layerKey(execution)}`); defaults.add(`group:${layerKey(execution)}:${groupLabel(execution)}`); }); return defaults; }); } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "No se pudo recuperar la trazabilidad"); } finally { setLoading(false); } }, [investigation.id]);
+  useEffect(() => { const timer = window.setTimeout(() => void loadTrace(), 0); return () => window.clearTimeout(timer); }, [loadTrace]); useEffect(() => { if (!isRunning) return; const interval = window.setInterval(() => void loadTrace(), 4000); return () => window.clearInterval(interval); }, [isRunning, loadTrace]);
+  const byExecution = useMemo(() => { const grouped = new Map<string, EntityObservationData[]>(); (trace?.observations ?? []).forEach((observation) => grouped.set(observation.tool_execution_id, [...(grouped.get(observation.tool_execution_id) ?? []), observation])); return grouped; }, [trace?.observations]);
+  const filtered = useMemo(() => (trace?.executions ?? []).filter((execution) => matches(execution, byExecution.get(execution.id) ?? [], search.trim().toLocaleLowerCase(), toolFilter, layerFilter, statusFilter)), [byExecution, layerFilter, search, statusFilter, toolFilter, trace?.executions]);
+  const layers = useMemo(() => { const result = new Map<string, ToolExecutionData[]>(); filtered.forEach((execution) => result.set(layerKey(execution), [...(result.get(layerKey(execution)) ?? []), execution])); return [...result.entries()]; }, [filtered]);
+  const metrics = useMemo(() => { const all = trace?.executions ?? []; const times = all.flatMap((execution) => [execution.started_at, execution.completed_at].filter(Boolean) as string[]).map((value) => new Date(value).getTime()).filter(Number.isFinite); return { observations: trace?.observations.length ?? 0, tools: new Set(all.map((execution) => execution.tool_name)).size, rounds: new Set(all.flatMap((execution) => execution.round_index ? [execution.round_index] : [])).size, turns: new Set(all.flatMap((execution) => execution.turn_index ? [execution.turn_index] : [])).size, duration: times.length > 1 ? durationBetween(new Date(Math.min(...times)).toISOString(), new Date(Math.max(...times)).toISOString()) : undefined }; }, [trace]);
+  const toggle = (id: string) => setExpanded((previous) => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  if (loading) return <div className="py-12 text-center font-mono text-xs text-slate-500">Cargando trazabilidad persistida…</div>; if (error) return <div className="rounded-lg border border-rose-500/25 bg-rose-500/5 p-5 text-center text-xs text-rose-200">{error}</div>; if (!trace?.available) return <div className="rounded-xl border border-[#1c3045] bg-[#08121d] p-8 text-center"><Network className="mx-auto h-6 w-6 text-slate-600" /><h3 className="mt-3 text-sm font-medium text-slate-200">Trazabilidad estructurada no disponible</h3><p className="mx-auto mt-2 max-w-lg text-xs leading-relaxed text-slate-500">Este expediente fue ejecutado antes de habilitar el registro de ejecución. Sus hallazgos siguen disponibles en Hallazgos y Mapa Digital, pero no se inventará una cadena causal retrospectiva.</p></div>;
+  const tools = [...new Set(trace.executions.map((execution) => execution.tool_name))].sort(); const pivots = trace.events.filter((event) => event.event_type === "pivot");
+  return <section className="overflow-hidden rounded-xl border border-[#1d3348] bg-[#080f19] shadow-xl"><header className="border-b border-[#1a2e43] bg-[#091522] px-4 py-3.5"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Network className="h-4 w-4 text-sky-400" /><h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-100">Trazabilidad</h3></div><p className="mt-1 text-[10px] text-slate-500">Cómo se registraron observaciones durante esta ejecución.</p></div><div className="flex flex-wrap gap-2 font-mono text-[10px]"><span className="rounded border border-sky-500/25 bg-sky-500/10 px-2 py-1 text-sky-200">{metrics.observations} observaciones</span><span className="rounded border border-[#2b4056] bg-[#0c1927] px-2 py-1 text-slate-300">{metrics.tools} herramientas</span>{metrics.rounds > 0 && <span className="rounded border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-emerald-200">{metrics.rounds} rondas</span>}{metrics.turns > 0 && <span className="rounded border border-violet-500/25 bg-violet-500/10 px-2 py-1 text-violet-200">{metrics.turns} turnos IA</span>}{metrics.duration && <span className="rounded border border-[#2b4056] bg-[#0c1927] px-2 py-1 text-slate-300">{metrics.duration}</span>}</div></div><div className="mt-3 flex flex-wrap items-center gap-2"><label className="flex h-8 min-w-[200px] flex-1 items-center gap-2 rounded-md border border-[#24394f] bg-[#07101b] px-2 text-slate-500 focus-within:border-sky-400/60"><Search className="h-3.5 w-3.5" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar en la traza…" className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-slate-200 outline-none placeholder:text-slate-600" /></label><Filter className="hidden h-3.5 w-3.5 text-slate-500 sm:block" /><select value={layerFilter} onChange={(event) => setLayerFilter(event.target.value)} className="h-8 rounded-md border border-[#24394f] bg-[#07101b] px-2 font-mono text-[10px] text-slate-300"><option value="all">Capa: todas</option><option value="heuristic">Heurística</option><option value="refinement">Refinamiento IA</option><option value="agentic">Agente autónomo</option></select><select value={toolFilter} onChange={(event) => setToolFilter(event.target.value)} className="h-8 max-w-[160px] rounded-md border border-[#24394f] bg-[#07101b] px-2 font-mono text-[10px] text-slate-300"><option value="all">Herramienta: todas</option>{tools.map((tool) => <option key={tool} value={tool}>{tool}</option>)}</select><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-8 rounded-md border border-[#24394f] bg-[#07101b] px-2 font-mono text-[10px] text-slate-300"><option value="all">Estado: todos</option><option value="completed">Completadas</option><option value="failed">Fallidas</option><option value="running">En curso</option></select></div><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><div className="flex rounded-md border border-[#263b50] bg-[#07101b] p-0.5 font-mono text-[10px]"><button type="button" onClick={() => setMode("tree")} className={`rounded px-2 py-1 ${mode === "tree" ? "bg-sky-500/15 text-sky-200" : "text-slate-500 hover:text-slate-300"}`}>Árbol</button><button type="button" onClick={() => setMode("chronology")} className={`rounded px-2 py-1 ${mode === "chronology" ? "bg-sky-500/15 text-sky-200" : "text-slate-500 hover:text-slate-300"}`}>Cronología</button></div><div className="flex gap-2"><button type="button" onClick={() => setExpanded(new Set())} className="font-mono text-[10px] text-slate-400 hover:text-sky-200">Contraer todo</button><button type="button" onClick={() => setExpanded(new Set(filtered.map((execution) => `tool:${execution.id}`)))} className="font-mono text-[10px] text-sky-300 hover:text-sky-100">Expandir tools</button></div></div></header>{mode === "tree" ? <div className="overflow-x-auto"><div className="min-w-[700px]"><div className="grid grid-cols-[72px_minmax(0,1fr)_112px_76px_108px] border-b border-[#1b3147] bg-[#07111d] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-slate-500"><span>Hora</span><span>Traza de la investigación</span><span>Observaciones</span><span>Duración</span><span>Estado</span></div><div className="divide-y divide-[#15293c]"><div className="grid grid-cols-[72px_minmax(0,1fr)_112px_76px_108px] items-center bg-[#0a1724] px-3 py-2.5"><span className="font-mono text-[10px] text-slate-500">{formatTime(investigation.created_at)}</span><div className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded border border-sky-500/40 bg-sky-500/10"><Network className="h-4 w-4 text-sky-300" /></span><div><p className="text-xs font-semibold text-slate-100">Investigación</p><p className="text-[10px] text-slate-500">{investigation.target?.full_name || investigation.target?.username || investigation.target?.email || investigation.id}</p></div></div><span className="font-mono text-[11px] text-sky-200">{metrics.observations}</span><span className="font-mono text-[10px] text-slate-400">{metrics.duration || "—"}</span><span className="font-mono text-[10px] text-slate-300">{investigation.status}</span></div>{layers.map(([layer, executions]) => <LayerTree key={layer} layer={layer} executions={executions} observations={byExecution} pivots={pivots} expanded={expanded} shownLeaves={shownLeaves} onToggle={toggle} onShowMore={(id) => setShownLeaves((previous) => ({ ...previous, [id]: (previous[id] ?? LEAVES_PER_TOOL) + LEAVES_PER_TOOL }))} onSelectExecution={(execution) => setSelection({ kind: "execution", execution })} onSelectPivot={(event) => setSelection({ kind: "pivot", event })} onInspect={onInspectNode} onViewInMap={onViewInMap} />)}{filtered.length === 0 && <p className="py-10 text-center font-mono text-xs text-slate-500">No hay ejecuciones que coincidan con los filtros.</p>}</div></div></div> : <Chronology executions={filtered} events={trace.events} onSelectExecution={(execution) => setSelection({ kind: "execution", execution })} onSelectPivot={(event) => setSelection({ kind: "pivot", event })} />}{selection && <TraceInspector selection={selection} onClose={() => setSelection(null)} />}</section>;
+}
+
+function LayerTree({ layer, executions, observations, pivots, expanded, shownLeaves, onToggle, onShowMore, onSelectExecution, onSelectPivot, onInspect, onViewInMap }: { layer: string; executions: ToolExecutionData[]; observations: Map<string, EntityObservationData[]>; pivots: InvestigationTraceEventData[]; expanded: Set<string>; shownLeaves: Record<string, number>; onToggle: (id: string) => void; onShowMore: (id: string) => void; onSelectExecution: (execution: ToolExecutionData) => void; onSelectPivot: (event: InvestigationTraceEventData) => void; onInspect?: (id: string) => void; onViewInMap?: (id: string) => void }) {
+  const layerId = `layer:${layer}`; const layerExpanded = expanded.has(layerId); const meta = layerMeta(executions[0]); const LayerIcon = meta.Icon; const groups = new Map<string, ToolExecutionData[]>(); executions.forEach((execution) => groups.set(groupLabel(execution), [...(groups.get(groupLabel(execution)) ?? []), execution]));
+  return <div className="bg-[#08131f]"><div className="grid grid-cols-[72px_minmax(0,1fr)_112px_76px_108px] items-center px-3 py-2"><span className="font-mono text-[10px] text-slate-500">{formatTime(executions[0]?.started_at)}</span><div className="flex min-w-0 items-center gap-2"><Toggle expanded={layerExpanded} onClick={() => onToggle(layerId)} label={meta.label} /><span className={`flex h-7 w-7 items-center justify-center rounded border ${meta.className}`}><LayerIcon className="h-4 w-4" /></span><span className="text-xs font-semibold text-slate-100">{meta.label}</span></div><span className="font-mono text-[10px] text-slate-300">{executions.reduce((count, execution) => count + (observations.get(execution.id)?.length ?? 0), 0)}</span><span /><span /></div>{layerExpanded && <div className="ml-[91px] border-l border-dashed border-[#38546d]">{[...groups.entries()].map(([label, groupExecutions]) => <GroupTree key={label} layer={layer} label={label} executions={groupExecutions} observations={observations} pivots={pivots} expanded={expanded} shownLeaves={shownLeaves} onToggle={onToggle} onShowMore={onShowMore} onSelectExecution={onSelectExecution} onSelectPivot={onSelectPivot} onInspect={onInspect} onViewInMap={onViewInMap} />)}</div>}</div>;
+}
+
+function GroupTree({ layer, label, executions, observations, pivots, expanded, shownLeaves, onToggle, onShowMore, onSelectExecution, onSelectPivot, onInspect, onViewInMap }: { layer: string; label: string; executions: ToolExecutionData[]; observations: Map<string, EntityObservationData[]>; pivots: InvestigationTraceEventData[]; expanded: Set<string>; shownLeaves: Record<string, number>; onToggle: (id: string) => void; onShowMore: (id: string) => void; onSelectExecution: (execution: ToolExecutionData) => void; onSelectPivot: (event: InvestigationTraceEventData) => void; onInspect?: (id: string) => void; onViewInMap?: (id: string) => void }) {
+  const groupId = `group:${layer}:${label}`; const groupExpanded = expanded.has(groupId); const groupPivots = pivots.filter((pivot) => layer === "heuristic" && pivot.round_index && label === `Ronda ${pivot.round_index}`);
+  return <div><div className="flex items-center gap-2 px-3 py-2"><Toggle expanded={groupExpanded} onClick={() => onToggle(groupId)} label={label} /><span className="flex h-6 w-6 items-center justify-center rounded border border-[#2e4358] bg-[#0b1826]"><Layers className="h-3.5 w-3.5 text-slate-300" /></span><span className="font-mono text-[11px] font-semibold text-slate-200">{label}</span><span className="font-mono text-[10px] text-slate-500">{executions.length} tools</span></div>{groupExpanded && <div className="ml-4 border-l border-dashed border-[#31506b]">{executions.map((execution) => <ExecutionRow key={execution.id} execution={execution} observations={observations.get(execution.id) ?? []} expanded={expanded.has(`tool:${execution.id}`)} shown={shownLeaves[execution.id] ?? LEAVES_PER_TOOL} onToggle={() => onToggle(`tool:${execution.id}`)} onShowMore={() => onShowMore(execution.id)} onSelect={() => onSelectExecution(execution)} onInspect={onInspect} onViewInMap={onViewInMap} />)}{groupPivots.map((pivot) => <button type="button" key={pivot.id} onClick={() => onSelectPivot(pivot)} className="my-2 ml-4 flex items-center gap-2 rounded border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2 text-left"><AlertTriangle className="h-3.5 w-3.5 text-amber-300" /><span className="font-mono text-[11px] text-amber-100">Pivote detectado</span><span className="font-mono text-[10px] text-amber-200/70">{Object.entries((pivot.data.additions as Record<string, unknown>) ?? {}).map(([kind, count]) => `+${String(count)} ${kind}`).join(" · ")}</span></button>)}</div>}</div>;
 }

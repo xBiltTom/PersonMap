@@ -33,7 +33,7 @@ from app.tools.base import ToolFinding
 MAX_EDGES_PER_ENTITY = 6
 
 
-def _dedupe_key(f: ToolFinding) -> Tuple[str, str, str]:
+def finding_dedupe_key(f: ToolFinding) -> Tuple[str, str, str]:
     value = f.value.strip().rstrip("/").lower()
     if value.startswith(("http://", "https://")):
         # Una URL identifica el perfil por sí sola, así que la plataforma no
@@ -43,6 +43,15 @@ def _dedupe_key(f: ToolFinding) -> Tuple[str, str, str]:
         address = value.split("://", 1)[1].removeprefix("www.")
         return (f.entity_type, "url", address)
     return (f.entity_type, (f.platform or "").lower(), value)
+
+
+def entity_dedupe_key(entity: Entity) -> Tuple[str, str, str]:
+    """La misma clave de deduplicación aplicada a una entidad ya persistida."""
+    value = entity.value.strip().rstrip("/").lower()
+    if value.startswith(("http://", "https://")):
+        address = value.split("://", 1)[1].removeprefix("www.")
+        return (entity.entity_type, "url", address)
+    return (entity.entity_type, (entity.platform or "").lower(), value)
 
 
 def dedupe_findings(findings: List[ToolFinding]) -> List[ToolFinding]:
@@ -65,7 +74,7 @@ def dedupe_findings(findings: List[ToolFinding]) -> List[ToolFinding]:
     layers: Dict[Tuple[str, str, str], List[str]] = {}
 
     for f in findings:
-        key = _dedupe_key(f)
+        key = finding_dedupe_key(f)
 
         tool = normalize_source_tool((f.metadata_info or {}).get("source_tool"))
         tools = provenance.setdefault(key, [])

@@ -47,6 +47,7 @@ from app.core.config import settings
 from app.core.events import event_bus
 from app.engine.persistence import build_relationships, persist_findings
 from app.engine.rule_engine import SweepResult, rule_engine
+from app.engine.trace import PendingObservation, trace_recorder
 from app.models.entity import Entity
 from app.models.target import Target
 from app.tools.base import TargetContext, ToolFinding
@@ -103,7 +104,13 @@ class HybridEngine:
         })
 
         # --- Capa 1: barrido heurístico ------------------------------------
-        sweep = await rule_engine.collect_findings(investigation_id, target)
+        sweep = await rule_engine.collect_findings(
+            investigation_id,
+            target,
+            db,
+            trace_engine="hybrid",
+            trace_layer=HEURISTIC_LAYER,
+        )
         for f in sweep.findings:
             f.metadata_info["engine_layer"] = HEURISTIC_LAYER
 
@@ -121,6 +128,7 @@ class HybridEngine:
 
         # --- Capa 2: refinamiento por IA -----------------------------------
         refinement_findings: List[ToolFinding] = []
+        refinement_observations: List[PendingObservation] = []
         turns_used = 0
         calls_requested = 0
         calls_skipped = 0
@@ -147,7 +155,13 @@ class HybridEngine:
                 turns_used,
                 calls_requested,
                 calls_skipped,
-            ) = await self._refine_with_llm(investigation_id, target, sweep)
+            ) = await self._refine_with_llm(
+                investigation_id,
+                target,
+                sweep,
+                db=db,
+                observations=refinement_observations,
+            )
 
         # --- Persistencia única de ambas capas -----------------------------
         all_findings = list(sweep.findings) + refinement_findings
@@ -157,6 +171,12 @@ class HybridEngine:
             target=target,
             db=db,
             default_source_tool="hybrid_engine",
+        )
+        await trace_recorder.link_observations(
+            db,
+            investigation_id=investigation_id,
+            pending=[*sweep.observations, *refinement_observations],
+            entities=entities,
         )
         await build_relationships(investigation_id, entities, db)
 
@@ -203,6 +223,9 @@ class HybridEngine:
         investigation_id: str,
         target: Target,
         sweep: SweepResult,
+        *,
+        db: AsyncSession | None = None,
+        observations: List[PendingObservation] | None = None,
     ) -> Tuple[List[ToolFinding], int, int, int]:
         """
         Pide al LLM llamadas que cubran los huecos del barrido heurístico.
@@ -214,6 +237,7 @@ class HybridEngine:
         turns_used = 0
         requested = 0
         skipped = 0
+        trace_observations = observations if observations is not None else []
 
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": REFINEMENT_SYSTEM_PROMPT},
@@ -230,9 +254,26 @@ class HybridEngine:
             ),
             "timestamp": time.time(),
         })
+        if db:
+            await trace_recorder.record_event(
+                db,
+                investigation_id=investigation_id,
+                event_type="refinement_start",
+                engine="hybrid",
+                engine_layer=REFINEMENT_LAYER,
+            )
 
         for _ in range(max(1, settings.hybrid_max_refinement_turns)):
             turns_used += 1
+            if db:
+                await trace_recorder.record_event(
+                    db,
+                    investigation_id=investigation_id,
+                    event_type="turn_start",
+                    engine="hybrid",
+                    engine_layer=REFINEMENT_LAYER,
+                    turn_index=turns_used,
+                )
             try:
                 response = await complete_with_retries(
                     model=settings.llm_model,
@@ -321,6 +362,16 @@ class HybridEngine:
                         ),
                         "timestamp": time.time(),
                     })
+                    if db:
+                        await trace_recorder.record_event(
+                            db,
+                            investigation_id=investigation_id,
+                            event_type="skipped_call",
+                            engine="hybrid",
+                            engine_layer=REFINEMENT_LAYER,
+                            turn_index=turns_used,
+                            data={"tool_name": resolve_tool_name(fn_name), "reason": "already_executed"},
+                        )
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
@@ -341,6 +392,20 @@ class HybridEngine:
                     "timestamp": time.time(),
                 })
 
+                trace_execution = None
+                if db:
+                    tool = tool_registry.get_tool(resolve_tool_name(fn_name))
+                    if tool:
+                        trace_execution = await trace_recorder.start_tool(
+                            db,
+                            investigation_id=investigation_id,
+                            tool=tool,
+                            engine="hybrid",
+                            engine_layer=REFINEMENT_LAYER,
+                            turn_index=turns_used,
+                            context=sweep.context,
+                        )
+
                 try:
                     new_findings = await dispatch_tool_call(
                         fn_name,
@@ -359,6 +424,8 @@ class HybridEngine:
                         "message": f"[{fn_name}] error en refinamiento: {err}",
                         "timestamp": time.time(),
                     })
+                    if trace_execution:
+                        await trace_recorder.complete_tool(trace_execution, findings_count=0, error=err)
                 else:
                     await event_bus.publish(investigation_id, {
                         "type": "tool_complete",
@@ -368,6 +435,21 @@ class HybridEngine:
                         "message": f"[{fn_name}] refinamiento: {len(new_findings)} hallazgos.",
                         "timestamp": time.time(),
                     })
+                    if trace_execution:
+                        await trace_recorder.complete_tool(
+                            trace_execution,
+                            findings_count=len(new_findings),
+                        )
+                        observed_at = trace_execution.completed_at
+                        if observed_at:
+                            trace_observations.extend(
+                                PendingObservation(
+                                    finding=finding,
+                                    tool_execution_id=trace_execution.id,
+                                    observed_at=observed_at,
+                                )
+                                for finding in new_findings
+                            )
 
                 findings.extend(new_findings)
                 messages.append({
@@ -381,6 +463,16 @@ class HybridEngine:
                         ],
                     }),
                 })
+
+            if db:
+                await trace_recorder.record_event(
+                    db,
+                    investigation_id=investigation_id,
+                    event_type="turn_complete",
+                    engine="hybrid",
+                    engine_layer=REFINEMENT_LAYER,
+                    turn_index=turns_used,
+                )
 
         return findings, turns_used, requested, skipped
 

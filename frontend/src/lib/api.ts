@@ -8,6 +8,7 @@ import type {
   GraphResponse,
   HealthStatus,
   InvestigationData,
+  InvestigationTraceResponse,
   MetricsComparison,
   StreamLog,
   SurveyPayload,
@@ -99,6 +100,10 @@ export function listInvestigations(
 
 export function getInvestigation(id: string): Promise<InvestigationData> {
   return request<InvestigationData>(`/investigations/${id}`);
+}
+
+export function getInvestigationTrace(id: string): Promise<InvestigationTraceResponse> {
+  return request<InvestigationTraceResponse>(`/investigations/${id}/trace`);
 }
 
 export function deleteInvestigation(id: string): Promise<void> {

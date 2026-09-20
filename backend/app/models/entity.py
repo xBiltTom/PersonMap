@@ -41,3 +41,4 @@ class Entity(Base):
     discovered_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     investigation = relationship("Investigation", back_populates="entities")
+    observations = relationship("EntityObservation", back_populates="entity", cascade="all, delete-orphan")

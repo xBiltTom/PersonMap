@@ -32,6 +32,9 @@ class Investigation(Base):
     entities = relationship("Entity", back_populates="investigation", cascade="all, delete-orphan")
     relationships = relationship("Relationship", back_populates="investigation", cascade="all, delete-orphan")
     correlation_groups = relationship("CorrelationGroup", back_populates="investigation", cascade="all, delete-orphan")
+    tool_executions = relationship("ToolExecution", back_populates="investigation", cascade="all, delete-orphan")
+    entity_observations = relationship("EntityObservation", back_populates="investigation", cascade="all, delete-orphan")
+    trace_events = relationship("InvestigationTraceEvent", back_populates="investigation", cascade="all, delete-orphan")
 
 
 # Registra los modelos relacionados incluso cuando un endpoint importa solamente
@@ -40,3 +43,6 @@ from app.models.correlation_group import CorrelationGroup  # noqa: E402, F401
 from app.models.entity import Entity  # noqa: E402, F401
 from app.models.relationship import Relationship  # noqa: E402, F401
 from app.models.target import Target  # noqa: E402, F401
+from app.models.tool_execution import ToolExecution  # noqa: E402, F401
+from app.models.entity_observation import EntityObservation  # noqa: E402, F401
+from app.models.investigation_trace_event import InvestigationTraceEvent  # noqa: E402, F401

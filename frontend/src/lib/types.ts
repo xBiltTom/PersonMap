@@ -135,6 +135,55 @@ export interface InvestigationData {
 }
 
 // ---------------------------------------------------------------------
+// Trazabilidad persistida de ejecución — no relaciones del mapa.
+// ---------------------------------------------------------------------
+
+export interface ToolExecutionData {
+  id: string;
+  tool_name: string;
+  tool_description?: string | null;
+  engine: string;
+  engine_layer?: string | null;
+  round_index?: number | null;
+  turn_index?: number | null;
+  started_at: string;
+  completed_at?: string | null;
+  status: string;
+  findings_count: number;
+  input_summary: Record<string, unknown>;
+  error_summary?: string | null;
+}
+
+export interface EntityObservationData {
+  id: string;
+  entity_id: string;
+  tool_execution_id: string;
+  observed_at: string;
+  source_url?: string | null;
+  evidence_urls: string[];
+  entity: EntityData;
+}
+
+export interface InvestigationTraceEventData {
+  id: string;
+  event_type: string;
+  engine: string;
+  engine_layer?: string | null;
+  round_index?: number | null;
+  turn_index?: number | null;
+  created_at: string;
+  data: Record<string, unknown>;
+}
+
+export interface InvestigationTraceResponse {
+  investigation_id: string;
+  available: boolean;
+  executions: ToolExecutionData[];
+  observations: EntityObservationData[];
+  events: InvestigationTraceEventData[];
+}
+
+// ---------------------------------------------------------------------
 // Grafo interactivo (React Flow) — espejo de backend/app/schemas/graph.py
 // ---------------------------------------------------------------------
 
