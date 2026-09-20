@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
-import { GraphResponse, InvestigationData } from "@/lib/types";
+import { GraphEdge, GraphNode, GraphResponse, InvestigationData } from "@/lib/types";
 import { getInvestigation, getInvestigationGraph, getGraphmlUrl } from "@/lib/api";
 import { ENGINE_META, resolveEngine } from "@/lib/engines";
 import { DigitalMapGraph } from "@/components/graph/DigitalMapGraph";
@@ -12,7 +12,9 @@ import { LiveConsole } from "@/components/console/LiveConsole";
 import { InvestigationProgress } from "@/components/console/InvestigationProgress";
 import { useInvestigationStream } from "@/lib/useInvestigationStream";
 import { ReportView } from "@/components/report/ReportView";
-import { isProvenanceEdge } from "@/lib/graphSemantics";
+import { EntityInspector, RelationshipInspector } from "@/components/graph/EntityInspector";
+import { entityToGraphNode } from "@/lib/entityInspector";
+import { getFriendlyRelationLabel, isProvenanceEdge } from "@/lib/graphSemantics";
 import { useWorkstation } from "@/context/WorkstationContext";
 import {
   ArrowLeft,
@@ -34,6 +36,10 @@ import {
   Maximize2,
   ChevronUp,
 } from "lucide-react";
+
+type WorkspaceSelection =
+  | { kind: "node"; id: string }
+  | { kind: "edge"; id: string };
 
 function formatDate(value?: string): string {
   if (!value) return "Fecha no registrada";
@@ -67,6 +73,7 @@ export default function InvestigationDetailPage({
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
   const [isMapCollapsed, setIsMapCollapsed] = useState(false);
+  const [workspaceSelection, setWorkspaceSelection] = useState<WorkspaceSelection | null>(null);
 
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
@@ -155,11 +162,50 @@ export default function InvestigationDetailPage({
   }, []);
 
   const handleViewInMap = useCallback((entityId: string) => {
-    setMapFocusNodeId(`ent-${entityId}`);
+    const nodeId = `ent-${entityId}`;
+    setMapFocusNodeId(nodeId);
+    setWorkspaceSelection({ kind: "node", id: nodeId });
     setActiveTab("graph");
     // If map was collapsed, expand it
     setIsMapCollapsed(false);
   }, [setActiveTab]);
+
+  const workspaceNodes = useMemo<GraphNode[]>(
+    () => graph?.nodes ?? (investigation?.entities ?? []).map(entityToGraphNode),
+    [graph, investigation?.entities]
+  );
+  const workspaceEdges = useMemo<GraphEdge[]>(() => graph?.edges ?? [], [graph]);
+  const selectedWorkspaceNode = workspaceSelection?.kind === "node"
+    ? workspaceNodes.find((node) => node.id === workspaceSelection.id) ?? null
+    : null;
+  const selectedWorkspaceEdge = workspaceSelection?.kind === "edge"
+    ? workspaceEdges.find((edge) => edge.id === workspaceSelection.id) ?? null
+    : null;
+
+  const inspectNode = useCallback((nodeId: string) => {
+    setWorkspaceSelection({ kind: "node", id: nodeId });
+  }, []);
+  const inspectEdge = useCallback((edgeId: string) => {
+    setWorkspaceSelection({ kind: "edge", id: edgeId });
+  }, []);
+  const selectInspectorNode = useCallback((nodeId: string) => {
+    setMapFocusNodeId(nodeId);
+    setWorkspaceSelection({ kind: "node", id: nodeId });
+  }, []);
+  const closeWorkspaceInspector = useCallback(() => {
+    setWorkspaceSelection(null);
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceSelection) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeWorkspaceInspector();
+    };
+
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [closeWorkspaceInspector, workspaceSelection]);
 
   const wasRunning = investigation?.status === "running" || investigation?.status === "pending";
   const handleStreamFinished = useCallback(() => {
@@ -468,8 +514,10 @@ export default function InvestigationDetailPage({
         />
       )}
 
-      {/* 2. Upper Card: Mapa Digital (Adaptive height + collapsible for 1366x768) */}
-      <div className="panel-card overflow-hidden border border-[#162234] bg-[#0d1420] shadow-xl">
+      {/* 2. Workspace. El inspector se consulta sobre el expediente sin reducir sus vistas. */}
+      <div className="space-y-4">
+        {/* Upper Card: Mapa Digital (Adaptive height + collapsible for 1366x768) */}
+        <div className="panel-card overflow-hidden border border-[#162234] bg-[#0d1420] shadow-xl">
         <div className="px-4 py-3 border-b border-[#162234] flex items-center justify-between gap-3 bg-[#090f18]">
           <div className="flex items-center gap-2.5">
             <Network className="w-4 h-4 text-sky-400 shrink-0" />
@@ -512,13 +560,18 @@ export default function InvestigationDetailPage({
               refreshKey={`${investigation.status}:${investigation.completed_at ?? ""}`}
               graphData={graph}
               focusNodeId={mapFocusNodeId}
+              inspectedNodeId={workspaceSelection?.kind === "node" ? workspaceSelection.id : null}
+              inspectedEdgeId={workspaceSelection?.kind === "edge" ? workspaceSelection.id : null}
+              onNodeInspect={inspectNode}
+              onEdgeInspect={inspectEdge}
+              onInspectionClear={closeWorkspaceInspector}
             />
           </div>
         )}
       </div>
 
-      {/* 3. Lower Card: Workspace Multivista (Tabs + Findings/Timeline/Console/Report) */}
-      <div className="panel-card overflow-hidden border border-[#162234] bg-[#0d1420] shadow-xl">
+        {/* Lower Card: Workspace Multivista (Tabs + Findings/Timeline/Console/Report) */}
+        <div className="panel-card overflow-hidden border border-[#162234] bg-[#0d1420] shadow-xl">
         {/* Workspace Subtabs */}
         <div
           role="tablist"
@@ -557,6 +610,7 @@ export default function InvestigationDetailPage({
               entities={investigation.entities || []}
               graph={graph}
               onViewInMap={handleViewInMap}
+              onInspectNode={inspectNode}
             />
           )}
 
@@ -575,6 +629,43 @@ export default function InvestigationDetailPage({
             <ReportView investigation={investigation} />
           )}
         </div>
+      </div>
+        {(selectedWorkspaceNode || selectedWorkspaceEdge) && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-end bg-[#020712]/70 p-3 sm:p-4 backdrop-blur-sm animate-fade-in"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Inspector de entidad"
+            onClick={(event) => {
+              if (event.currentTarget === event.target) closeWorkspaceInspector();
+            }}
+          >
+            <div className="h-full max-h-[calc(100vh-1.5rem)] w-full max-w-[420px] sm:max-h-[calc(100vh-2rem)]">
+              <div className="h-full" onClick={(event) => event.stopPropagation()}>
+                {selectedWorkspaceNode ? (
+                  <EntityInspector
+                    node={selectedWorkspaceNode}
+                    nodes={workspaceNodes}
+                    edges={workspaceEdges}
+                    onClose={closeWorkspaceInspector}
+                    onSelectNode={selectInspectorNode}
+                    relationLabel={(edge) => getFriendlyRelationLabel(edge.relation_type, edge.label)}
+                    containerMode="embedded"
+                  />
+                ) : selectedWorkspaceEdge ? (
+                  <RelationshipInspector
+                    edge={selectedWorkspaceEdge}
+                    nodes={workspaceNodes}
+                    onClose={closeWorkspaceInspector}
+                    onSelectNode={selectInspectorNode}
+                    relationLabel={(edge) => getFriendlyRelationLabel(edge.relation_type, edge.label)}
+                    containerMode="embedded"
+                  />
+                ) : null}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

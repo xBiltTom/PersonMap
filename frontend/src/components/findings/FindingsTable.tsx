@@ -24,6 +24,8 @@ interface FindingsTableProps {
   /** Misma respuesta que usa el mapa; null mientras la página la recupera. */
   graph?: GraphResponse | null;
   onViewInMap?: (entityId: string) => void;
+  /** El workspace puede alojar el inspector fuera de la tabla. */
+  onInspectNode?: (nodeId: string) => void;
 }
 
 function formatDate(value?: string): string | undefined {
@@ -195,7 +197,7 @@ function RelationshipRows({
   );
 }
 
-export function FindingsTable({ entities, graph = null, onViewInMap }: FindingsTableProps) {
+export function FindingsTable({ entities, graph = null, onViewInMap, onInspectNode }: FindingsTableProps) {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [openRelationsId, setOpenRelationsId] = useState<string | null>(null);
@@ -400,7 +402,10 @@ export function FindingsTable({ entities, graph = null, onViewInMap }: FindingsT
                           <div className="inline-flex items-center gap-1">
                             <button
                               type="button"
-                              onClick={() => setSelectedNodeId(node.id)}
+                              onClick={() => {
+                                if (onInspectNode) onInspectNode(node.id);
+                                else setSelectedNodeId(node.id);
+                              }}
                               title="Inspeccionar entidad forense"
                               aria-label="Inspeccionar entidad forense"
                               className="rounded p-1.5 text-slate-400 transition-colors hover:bg-sky-500/10 hover:text-sky-300"
@@ -492,7 +497,7 @@ export function FindingsTable({ entities, graph = null, onViewInMap }: FindingsT
       </div>
 
       {/* Modal Inspector when opened from table */}
-      {selectedNode && (
+      {selectedNode && !onInspectNode && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-end bg-black/60 p-3 sm:p-4 backdrop-blur-sm animate-fade-in"
           onClick={() => setSelectedNodeId(null)}

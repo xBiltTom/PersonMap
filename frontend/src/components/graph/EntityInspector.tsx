@@ -592,12 +592,14 @@ export function RelationshipInspector({
   onClose,
   onSelectNode,
   relationLabel,
+  containerMode = "floating",
 }: {
   edge: GraphEdge;
   nodes: GraphNode[];
   onClose: () => void;
   onSelectNode: (nodeId: string) => void;
   relationLabel: (edge: GraphEdge) => string;
+  containerMode?: "floating" | "embedded";
 }) {
   const source = nodes.find((node) => node.id === edge.source);
   const target = nodes.find((node) => node.id === edge.target);
@@ -605,9 +607,14 @@ export function RelationshipInspector({
   const relation = relationLabel(edge);
   const provenance = isProvenanceEdge(edge);
 
+  const panelClasses =
+    containerMode === "embedded"
+      ? "relative flex h-full w-full flex-col overflow-hidden rounded-xl border border-[#22354c] bg-[#070e19]/95 shadow-2xl shadow-black/60 backdrop-blur-sm"
+      : "absolute bottom-3 right-3 top-3 z-30 flex w-[min(410px,calc(100%-1.5rem))] flex-col overflow-hidden rounded-xl border border-[#22354c] bg-[#070e19]/95 shadow-2xl shadow-black/60 backdrop-blur-sm animate-slide-in-right";
+
   return (
     <aside
-      className="absolute bottom-3 right-3 top-3 z-30 flex w-[min(410px,calc(100%-1.5rem))] flex-col rounded-xl border border-[#22354c] bg-[#070e19]/95 shadow-2xl shadow-black/60 backdrop-blur-sm overflow-hidden animate-slide-in-right"
+      className={panelClasses}
       aria-label="Inspector forense de relación"
     >
       <header className="shrink-0 border-b border-[#1b2b3e] bg-[#081220]/90 px-4 pt-3.5 pb-3">

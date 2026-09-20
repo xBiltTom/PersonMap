@@ -896,12 +896,23 @@ function DigitalMapGraphInner({
   refreshKey,
   graphData,
   focusNodeId,
+  inspectedNodeId,
+  inspectedEdgeId,
+  onNodeInspect,
+  onEdgeInspect,
+  onInspectionClear,
 }: {
   investigationId: string;
   refreshKey?: string;
   /** `undefined` conserva la carga autónoma; `null` indica que la página la está cargando. */
   graphData?: GraphResponse | null;
   focusNodeId?: string | null;
+  /** Selección controlada por el workspace del expediente, si existe. */
+  inspectedNodeId?: string | null;
+  inspectedEdgeId?: string | null;
+  onNodeInspect?: (nodeId: string) => void;
+  onEdgeInspect?: (edgeId: string) => void;
+  onInspectionClear?: () => void;
 }) {
   const [allNodes, setAllNodes] = useState<GraphNode[]>([]);
   const [allEdges, setAllEdges] = useState<GraphEdge[]>([]);
@@ -1045,6 +1056,23 @@ function DigitalMapGraphInner({
     const initialLoad = window.setTimeout(() => void loadGraph(), 0);
     return () => window.clearTimeout(initialLoad);
   }, [graphData, loadGraph, refreshKey]);
+
+  useEffect(() => {
+    if (inspectedNodeId === undefined && inspectedEdgeId === undefined) return;
+    const syncTimer = window.setTimeout(() => {
+      if (inspectedNodeId) {
+        setSelectedNodeId(inspectedNodeId);
+        setSelectedEdgeId(null);
+      } else if (inspectedEdgeId) {
+        setSelectedNodeId(null);
+        setSelectedEdgeId(inspectedEdgeId);
+      } else {
+        setSelectedNodeId(null);
+        setSelectedEdgeId(null);
+      }
+    }, 0);
+    return () => window.clearTimeout(syncTimer);
+  }, [inspectedEdgeId, inspectedNodeId]);
 
   const categories = useMemo(
     () =>
@@ -1371,7 +1399,14 @@ function DigitalMapGraphInner({
         zoom: 1.05,
       });
     }
-  }, [baseView.nodes, setCenter]);
+    onNodeInspect?.(nodeId);
+  }, [baseView.nodes, onNodeInspect, setCenter]);
+
+  const selectInspectorEdge = useCallback((edgeId: string) => {
+    setSelectedEdgeId(edgeId);
+    setSelectedNodeId(null);
+    onEdgeInspect?.(edgeId);
+  }, [onEdgeInspect]);
 
   const entityCount = allNodes.filter(
     (node) => node.type !== "personRoot" && !node.data.is_root
@@ -1562,16 +1597,15 @@ function DigitalMapGraphInner({
         onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
         onNodeMouseLeave={() => setHoveredNodeId(null)}
         onNodeClick={(_, node) => {
-          setSelectedNodeId(node.id);
-          setSelectedEdgeId(null);
+          selectInspectorNode(node.id);
         }}
         onEdgeClick={(_, edge) => {
-          setSelectedEdgeId(edge.id);
-          setSelectedNodeId(null);
+          selectInspectorEdge(edge.id);
         }}
         onPaneClick={() => {
           setSelectedNodeId(null);
           setSelectedEdgeId(null);
+          onInspectionClear?.();
         }}
       >
         <Background variant={BackgroundVariant.Dots} color="#152438" gap={34} size={1} />
@@ -1613,7 +1647,7 @@ function DigitalMapGraphInner({
       </ReactFlow>
 
       {/* Side OSINT inspector */}
-      {selectedNode && (
+      {(!onNodeInspect || isFullscreen) && selectedNode && (
         <EntityInspector
           node={selectedNode}
           nodes={allNodes}
@@ -1623,10 +1657,11 @@ function DigitalMapGraphInner({
           onClose={() => {
             setSelectedNodeId(null);
             setSelectedEdgeId(null);
+            onInspectionClear?.();
           }}
         />
       )}
-      {!selectedNode && selectedEdge && (
+      {(!onNodeInspect || isFullscreen) && !selectedNode && selectedEdge && (
         <RelationshipInspector
           edge={selectedEdge}
           nodes={allNodes}
@@ -1635,6 +1670,7 @@ function DigitalMapGraphInner({
           onClose={() => {
             setSelectedNodeId(null);
             setSelectedEdgeId(null);
+            onInspectionClear?.();
           }}
         />
       )}
@@ -1647,11 +1683,21 @@ export function DigitalMapGraph({
   refreshKey,
   graphData,
   focusNodeId,
+  inspectedNodeId,
+  inspectedEdgeId,
+  onNodeInspect,
+  onEdgeInspect,
+  onInspectionClear,
 }: {
   investigationId: string;
   refreshKey?: string;
   graphData?: GraphResponse | null;
   focusNodeId?: string | null;
+  inspectedNodeId?: string | null;
+  inspectedEdgeId?: string | null;
+  onNodeInspect?: (nodeId: string) => void;
+  onEdgeInspect?: (edgeId: string) => void;
+  onInspectionClear?: () => void;
 }) {
   return (
     <ReactFlowProvider>
@@ -1660,6 +1706,11 @@ export function DigitalMapGraph({
         refreshKey={refreshKey}
         graphData={graphData}
         focusNodeId={focusNodeId}
+        inspectedNodeId={inspectedNodeId}
+        inspectedEdgeId={inspectedEdgeId}
+        onNodeInspect={onNodeInspect}
+        onEdgeInspect={onEdgeInspect}
+        onInspectionClear={onInspectionClear}
       />
     </ReactFlowProvider>
   );
