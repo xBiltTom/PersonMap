@@ -1,38 +1,57 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { InvestigationData } from "@/lib/types";
 import { listInvestigations, deleteInvestigation } from "@/lib/api";
+import { resolveEngine, ENGINE_META } from "@/lib/engines";
 import {
   FolderOpen,
   Calendar,
   AlertTriangle,
-  ChevronRight,
   Trash2,
-  Cpu,
-  Workflow,
   CheckCircle2,
   Clock,
   XCircle,
+  Search,
+  RefreshCw,
+  ArrowUpRight,
 } from "lucide-react";
+
+function formatDate(value?: string): string {
+  if (!value) return "Fecha desconocida";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("es-PE", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function getInitials(name: string): string {
+  if (!name) return "PM";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
 
 export function InvestigationHistory() {
   const [investigations, setInvestigations] = useState<InvestigationData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "running">("all");
 
   const loadData = () => {
     setLoading(true);
-    listInvestigations()
+    listInvestigations(50, 0)
       .then((data) => {
         setInvestigations(data);
         setError(null);
       })
-      // Un fallo de red NO es una lista vacía. Antes se tragaba el error y se
-      // mostraba "No hay investigaciones registradas", haciendo creer al usuario
-      // que la base de datos estaba vacía cuando el backend simplemente no
-      // respondía.
       .catch((err: unknown) =>
         setError(err instanceof Error ? err.message : "No se pudo cargar el historial")
       )
@@ -44,10 +63,11 @@ export function InvestigationHistory() {
     return () => clearTimeout(initialLoad);
   }, []);
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+  const handleDelete = async (e: React.MouseEvent, id: string, name: string) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!confirm("¿Estás seguro de eliminar esta investigación?")) return;
+    if (!confirm(`¿Estás seguro de eliminar el expediente "${name}"? Esta acción no se puede deshacer.`)) return;
+
     try {
       await deleteInvestigation(id);
       loadData();
@@ -56,156 +76,285 @@ export function InvestigationHistory() {
     }
   };
 
-  if (loading) {
-    return (
-      <div
-        role="status"
-        className="panel-card p-6 flex items-center justify-center text-xs font-mono text-slate-400 py-12"
-      >
-        <span
-          className="w-4 h-4 border-2 border-sky-500/30 border-t-sky-400 rounded-full animate-spin mr-2"
-          aria-hidden="true"
-        />
-        Cargando expediente histórico...
-      </div>
-    );
-  }
+  const filteredInvestigations = useMemo(() => {
+    return investigations.filter((inv) => {
+      const name = inv.target?.full_name || inv.target?.username || inv.target?.email || "";
+      const matchesSearch =
+        !searchQuery.trim() ||
+        name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        inv.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (inv.target?.university && inv.target.university.toLowerCase().includes(searchQuery.toLowerCase()));
 
-  if (error) {
-    return (
-      <div className="panel-card p-8 text-center border border-rose-500/30">
-        <AlertTriangle className="w-10 h-10 text-rose-400 mx-auto mb-2" aria-hidden="true" />
-        <h3 className="text-sm font-semibold text-slate-200">
-          No se pudo cargar el historial de expedientes
-        </h3>
-        <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">{error}</p>
+      if (!matchesSearch) return false;
+
+      if (statusFilter === "completed") return inv.status === "completed";
+      if (statusFilter === "running") return inv.status === "running" || inv.status === "pending";
+      return true;
+    });
+  }, [investigations, searchQuery, statusFilter]);
+
+  const completedCount = useMemo(
+    () => investigations.filter((i) => i.status === "completed").length,
+    [investigations]
+  );
+  const runningCount = useMemo(
+    () => investigations.filter((i) => i.status === "running" || i.status === "pending").length,
+    [investigations]
+  );
+
+  return (
+    <div id="historial" className="panel-card overflow-hidden border border-[#162234] bg-[#0d1420] shadow-xl">
+      {/* Header bar */}
+      <div className="px-5 py-4 border-b border-[#162234] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#090f18]">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-[#142032] border border-[#213550] flex items-center justify-center text-sky-400">
+            <FolderOpen className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <h3 className="text-xs font-mono font-semibold tracking-wider text-slate-200 uppercase flex items-center gap-2">
+              <span>Expedientes Archivados</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[#162234] text-slate-400 border border-[#22344d]">
+                {investigations.length}
+              </span>
+            </h3>
+            <p className="text-[10px] font-mono text-slate-500">
+              Auditorías de huella digital almacenadas localmente
+            </p>
+          </div>
+        </div>
+
         <button
           type="button"
           onClick={loadData}
-          className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#182334] hover:bg-[#223148] text-slate-200 text-xs font-mono border border-[#2b3a52] transition-colors cursor-pointer"
+          title="Refrescar expedientes"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#101928] hover:bg-[#162438] text-slate-300 text-xs font-mono border border-[#1d2c42] transition-colors cursor-pointer self-start sm:self-auto"
         >
-          Reintentar
+          <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${loading ? "animate-spin" : ""}`} />
+          <span>Actualizar</span>
         </button>
       </div>
-    );
-  }
 
-  if (investigations.length === 0) {
-    return (
-      <div className="panel-card p-8 text-center">
-        <FolderOpen className="w-10 h-10 text-slate-600 mx-auto mb-2 opacity-50" />
-        <h3 className="text-sm font-semibold text-slate-300">No hay investigaciones registradas</h3>
-        <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-          Inicia tu primera investigación con el formulario superior para construir el primer mapa digital.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="panel-card overflow-hidden">
-      <div className="px-5 py-4 border-b border-[#1e293b] flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <FolderOpen className="w-4 h-4 text-sky-400" />
-          <h3 className="text-xs font-mono font-semibold tracking-wider text-slate-200 uppercase">
-            Expedientes de Huella Digital ({investigations.length})
-          </h3>
+      {/* Filter and Search Toolbar */}
+      <div className="p-3 sm:px-5 sm:py-3 border-b border-[#162234] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-[#0b111c]">
+        {/* Search */}
+        <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[#080d15] border border-[#1a2636] flex-1 max-w-sm">
+          <Search className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Filtrar por nombre, universidad o ID..."
+            className="w-full bg-transparent font-mono text-xs text-slate-200 placeholder-slate-500 outline-none"
+          />
         </div>
-        <span className="text-[11px] font-mono text-slate-500">Historial Local</span>
+
+        {/* Status filters */}
+        <div className="flex items-center gap-1 text-[11px] font-mono shrink-0">
+          <button
+            type="button"
+            onClick={() => setStatusFilter("all")}
+            className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+              statusFilter === "all"
+                ? "bg-[#162438] text-sky-300 font-semibold border border-[#263e5c]"
+                : "text-slate-400 hover:text-slate-200 hover:bg-[#101928]"
+            }`}
+          >
+            Todos ({investigations.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter("completed")}
+            className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+              statusFilter === "completed"
+                ? "bg-emerald-500/15 text-emerald-300 font-semibold border border-emerald-500/30"
+                : "text-slate-400 hover:text-slate-200 hover:bg-[#101928]"
+            }`}
+          >
+            Completados ({completedCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter("running")}
+            className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+              statusFilter === "running"
+                ? "bg-sky-500/15 text-sky-300 font-semibold border border-sky-500/30"
+                : "text-slate-400 hover:text-slate-200 hover:bg-[#101928]"
+            }`}
+          >
+            En análisis ({runningCount})
+          </button>
+        </div>
       </div>
 
-      <div className="divide-y divide-[#182234]">
-        {investigations.map((inv) => {
-          const targetName =
-            inv.target?.full_name ||
-            inv.target?.username ||
-            inv.target?.email ||
-            "Objetivo Anónimo";
+      {/* Body States */}
+      {loading && investigations.length === 0 && (
+        <div className="p-12 text-center text-xs font-mono text-slate-400">
+          <div className="w-5 h-5 border-2 border-sky-500/30 border-t-sky-400 rounded-full animate-spin mx-auto mb-3" />
+          <span>Recuperando expedientes archivados...</span>
+        </div>
+      )}
 
-          const isCompleted = inv.status === "completed";
-          const isRunning = inv.status === "running";
-          const isFailed = inv.status === "failed";
+      {error && (
+        <div className="p-8 text-center border-t border-rose-500/20 bg-rose-500/5">
+          <AlertTriangle className="w-8 h-8 text-rose-400 mx-auto mb-2" />
+          <h4 className="text-xs font-mono font-semibold text-slate-200">
+            Error al consultar el historial local
+          </h4>
+          <p className="text-[11px] font-mono text-slate-400 mt-1">{error}</p>
+          <button
+            type="button"
+            onClick={loadData}
+            className="mt-3 px-3 py-1 rounded bg-[#182334] text-xs font-mono text-slate-200 border border-[#2b3a52] hover:bg-[#223148] transition-colors cursor-pointer"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
 
-          return (
-            <Link
-              key={inv.id}
-              href={`/investigation/${inv.id}`}
-              className="px-5 py-4 flex items-center justify-between hover:bg-[#151e2c] transition-colors group block"
-            >
-              <div className="flex items-center gap-4 min-w-0">
-                {/* Status Indicator */}
-                <div className="shrink-0">
-                  {isCompleted ? (
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  ) : isRunning ? (
-                    <Clock className="w-5 h-5 text-sky-400 animate-spin" />
-                  ) : isFailed ? (
-                    <XCircle className="w-5 h-5 text-rose-400" />
-                  ) : (
-                    <Clock className="w-5 h-5 text-amber-400" />
-                  )}
-                </div>
+      {!loading && !error && investigations.length === 0 && (
+        <div className="p-12 text-center">
+          <FolderOpen className="w-9 h-9 text-slate-600 mx-auto mb-3 opacity-40" />
+          <h4 className="text-xs font-mono font-semibold text-slate-300">
+            No hay expedientes registrados aún
+          </h4>
+          <p className="text-[11px] font-mono text-slate-500 mt-1 max-w-sm mx-auto">
+            Configura y despacha tu primera investigación en la consola superior para trazar el primer mapa de identidad.
+          </p>
+        </div>
+      )}
 
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-slate-200 group-hover:text-sky-300 transition-colors truncate">
-                      {targetName}
-                    </span>
-                    {inv.target?.university && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#1b2537] text-slate-400 border border-[#2b3a52] shrink-0">
-                        {inv.target.university}
+      {!loading && !error && investigations.length > 0 && filteredInvestigations.length === 0 && (
+        <div className="p-8 text-center text-xs font-mono text-slate-500">
+          No hay expedientes que coincidan con &ldquo;{searchQuery}&rdquo;.
+        </div>
+      )}
+
+      {/* List of Dossiers */}
+      {!loading && filteredInvestigations.length > 0 && (
+        <div className="divide-y divide-[#162234]">
+          {filteredInvestigations.map((inv) => {
+            const targetName =
+              inv.target?.full_name ||
+              inv.target?.username ||
+              inv.target?.email ||
+              "Objetivo Anónimo";
+
+            const code = `PM-${inv.id.slice(0, 4).toUpperCase()}`;
+            const initials = getInitials(targetName);
+            const isCompleted = inv.status === "completed";
+            const isRunning = inv.status === "running" || inv.status === "pending";
+            const isFailed = inv.status === "failed";
+            const engineKey = resolveEngine(inv.strategy, inv.metrics);
+            const engine = ENGINE_META[engineKey];
+            const entitiesCount = inv.entities?.length ?? 0;
+
+            return (
+              <div
+                key={inv.id}
+                className="px-4 sm:px-5 py-3.5 flex items-center justify-between gap-3 hover:bg-[#101928] transition-colors group"
+              >
+                {/* Left: Avatar + Details */}
+                <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                  {/* Avatar badge */}
+                  <div className="w-9 h-9 rounded-lg bg-[#121d2e] border border-[#20324c] flex items-center justify-center font-mono font-bold text-xs text-sky-300 shrink-0 shadow-sm">
+                    {initials}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link
+                        href={`/investigation/${inv.id}`}
+                        className="font-mono text-xs font-semibold text-slate-100 hover:text-sky-300 transition-colors truncate"
+                      >
+                        {targetName}
+                      </Link>
+
+                      <span className="text-[10px] font-mono text-slate-500">
+                        {code}
                       </span>
-                    )}
-                  </div>
 
-                  <div className="flex items-center gap-3 mt-1 text-[11px] font-mono text-slate-500">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {new Date(inv.created_at).toLocaleDateString("es-ES", {
-                        day: "2-digit",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
+                      {/* Engine badge */}
+                      <span
+                        className={`text-[9px] font-mono px-1.5 py-0.2 rounded border ${engine.badge}`}
+                      >
+                        {engine.label}
+                      </span>
 
-                    <span className="flex items-center gap-1">
-                      {inv.strategy === "agentic" ? (
-                        <Cpu className="w-3 h-3 text-purple-400" />
-                      ) : (
-                        <Workflow className="w-3 h-3 text-sky-400" />
+                      {/* Status indicator */}
+                      <span
+                        className={`inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.2 rounded font-medium ${
+                          isCompleted
+                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/25"
+                            : isRunning
+                            ? "bg-sky-500/10 text-sky-400 border border-sky-500/25 animate-pulse"
+                            : "bg-rose-500/10 text-rose-400 border border-rose-500/25"
+                        }`}
+                      >
+                        {isCompleted ? (
+                          <CheckCircle2 className="w-2.5 h-2.5" />
+                        ) : isRunning ? (
+                          <Clock className="w-2.5 h-2.5 animate-spin" />
+                        ) : (
+                          <XCircle className="w-2.5 h-2.5" />
+                        )}
+                        <span>
+                          {isCompleted
+                            ? "Completado"
+                            : isRunning
+                            ? "En análisis"
+                            : isFailed
+                            ? "Error"
+                            : inv.status}
+                        </span>
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] font-mono text-slate-400">
+                      {inv.target?.university && (
+                        <span className="text-slate-400">
+                          🎓 {inv.target.university}
+                        </span>
                       )}
-                      <span className="uppercase">{inv.strategy}</span>
-                    </span>
-
-                    {inv.metrics?.entities_discovered !== undefined && (
-                      <span>{inv.metrics.entities_discovered} entidades</span>
-                    )}
+                      {inv.target?.email && (
+                        <span className="text-slate-500 truncate max-w-[200px]">
+                          {inv.target.email}
+                        </span>
+                      )}
+                      <span className="text-slate-500 flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-slate-600" />
+                        {formatDate(inv.created_at)}
+                      </span>
+                      <span className="text-sky-400/80">
+                        {entitiesCount} hallazgos
+                      </span>
+                    </div>
                   </div>
                 </div>
+
+                {/* Right: Direct Actions */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <Link
+                    href={`/investigation/${inv.id}`}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#142032] hover:bg-[#1a2c46] border border-[#213550] text-sky-300 text-xs font-mono transition-colors shadow-sm"
+                  >
+                    <span>Abrir</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={(e) => handleDelete(e, inv.id, targetName)}
+                    title="Eliminar expediente"
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
-
-              <div className="flex items-center gap-3 shrink-0 ml-4">
-                {isCompleted && (
-                  <span className="text-[10px] font-mono text-emerald-400 uppercase">
-                    completada
-                  </span>
-                )}
-
-                <button
-                  onClick={(e) => handleDelete(e, inv.id)}
-                  title="Eliminar investigación"
-                  className="p-1.5 rounded hover:bg-rose-500/10 text-slate-500 hover:text-rose-400 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-
-                <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-300 transition-colors" />
-              </div>
-            </Link>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
