@@ -303,42 +303,54 @@ export default function InvestigationDetailPage({
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
-      {/* 1. Dossier Header Bar (Exact match to referencia-frontend-refactor.png) */}
-      <div className="panel-card p-4 sm:p-5 border border-[#162234] bg-[#0d1420]">
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+      {/* 1. Dossier Header Bar */}
+      <div className="panel-card p-4 sm:p-5 border border-[#162234] bg-[#0d1420] shadow-xl">
+        <div className="flex flex-col 2xl:flex-row 2xl:items-center justify-between gap-4">
           {/* Target Identity & Metadata */}
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-100 font-sans truncate">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-100 font-sans truncate max-w-full">
                 {targetName}
               </h1>
               {investigation.target?.university && (
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#131e2e] text-sky-300 border border-[#20324c]">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#131e2e] text-sky-300 border border-[#20324c] shrink-0">
                   {investigation.target.university}
                 </span>
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 mt-1.5 text-xs font-mono text-slate-400">
-              <span className="text-slate-300 font-medium">{code}</span>
-              <span className="text-slate-600">|</span>
-              <span>{formatDate(investigation.created_at)}</span>
-              <span className="text-slate-600">|</span>
-              <span className={`text-[10px] px-2 py-0.2 rounded border ${engineMeta.badge}`}>
+            <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs font-mono text-slate-400">
+              <span className="text-slate-300 font-medium shrink-0">{code}</span>
+              <span className="text-slate-600 hidden sm:inline">|</span>
+              <span className="shrink-0">{formatDate(investigation.created_at)}</span>
+              <span className="text-slate-600 hidden sm:inline">|</span>
+              <span className={`text-[10px] px-2 py-0.2 rounded border shrink-0 ${engineMeta.badge}`}>
                 {engineMeta.label}
               </span>
             </div>
 
             {/* Quick target identifiers */}
-            <div className="flex flex-wrap items-center gap-3 mt-2 text-[11px] font-mono text-slate-500">
-              {investigation.target?.email && <span>📧 {investigation.target.email}</span>}
-              {investigation.target?.username && <span>👤 @{investigation.target.username}</span>}
-              {investigation.target?.dni && <span>🪪 DNI: {investigation.target.dni}</span>}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[11px] font-mono text-slate-500">
+              {investigation.target?.email && (
+                <span className="truncate max-w-full sm:max-w-xs" title={investigation.target.email}>
+                  📧 {investigation.target.email}
+                </span>
+              )}
+              {investigation.target?.username && (
+                <span className="truncate max-w-full sm:max-w-xs">
+                  👤 @{investigation.target.username}
+                </span>
+              )}
+              {investigation.target?.dni && (
+                <span className="shrink-0">
+                  🪪 DNI: {investigation.target.dni}
+                </span>
+              )}
             </div>
           </div>
 
           {/* Metrics Strip + Status + Actions */}
-          <div className="flex flex-wrap items-center gap-4 sm:gap-6 shrink-0 pt-2 xl:pt-0 border-t xl:border-t-0 border-[#162234]">
+          <div className="flex flex-wrap items-center justify-between 2xl:justify-end gap-3 sm:gap-5 pt-3 2xl:pt-0 border-t 2xl:border-t-0 border-[#162234] max-w-full">
             {/* 3 Factual Metrics: Hallazgos, Relaciones, Fuentes */}
             <div className="grid grid-cols-3 gap-3 sm:gap-6 text-center">
               <div>
@@ -369,12 +381,12 @@ export default function InvestigationDetailPage({
               </div>
             </div>
 
-            <div className="h-8 w-px bg-[#162234] hidden sm:block" />
+            <div className="h-8 w-px bg-[#162234] hidden sm:block shrink-0" />
 
-            {/* Status Indicator */}
-            <div className="flex items-center gap-2">
+            {/* Status Indicator & Action Buttons */}
+            <div className="flex flex-wrap items-center gap-2">
               <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-semibold border ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-semibold border shrink-0 ${
                   isCompleted
                     ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
                     : isRunning
@@ -403,7 +415,7 @@ export default function InvestigationDetailPage({
               </span>
 
               {/* Export dropdown */}
-              <div className="relative" ref={exportMenuRef}>
+              <div className="relative shrink-0" ref={exportMenuRef}>
                 <button
                   type="button"
                   onClick={() => setIsExportOpen((prev) => !prev)}
@@ -419,7 +431,7 @@ export default function InvestigationDetailPage({
                     <button
                       type="button"
                       onClick={handleExportJson}
-                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors"
+                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors cursor-pointer"
                     >
                       <Download className="w-3.5 h-3.5 text-sky-400" />
                       <span>Descargar JSON</span>
@@ -430,7 +442,7 @@ export default function InvestigationDetailPage({
                         window.print();
                         setIsExportOpen(false);
                       }}
-                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors"
+                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors cursor-pointer"
                     >
                       <Printer className="w-3.5 h-3.5 text-emerald-400" />
                       <span>Imprimir / PDF forense</span>
@@ -441,7 +453,7 @@ export default function InvestigationDetailPage({
                         window.open(getGraphmlUrl(investigation.id), "_blank");
                         setIsExportOpen(false);
                       }}
-                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors"
+                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors cursor-pointer"
                     >
                       <FileDown className="w-3.5 h-3.5 text-purple-400" />
                       <span>Descargar GraphML</span>
@@ -451,7 +463,7 @@ export default function InvestigationDetailPage({
               </div>
 
               {/* More options menu */}
-              <div className="relative" ref={moreMenuRef}>
+              <div className="relative shrink-0" ref={moreMenuRef}>
                 <button
                   type="button"
                   onClick={() => setIsMoreMenuOpen((prev) => !prev)}
@@ -466,7 +478,7 @@ export default function InvestigationDetailPage({
                     <button
                       type="button"
                       onClick={handleCopyId}
-                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors"
+                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors cursor-pointer"
                     >
                       {copiedId ? (
                         <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -481,7 +493,7 @@ export default function InvestigationDetailPage({
                         loadData();
                         setIsMoreMenuOpen(false);
                       }}
-                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors"
+                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors cursor-pointer"
                     >
                       <RefreshCw className="w-3.5 h-3.5 text-sky-400" />
                       <span>Recargar datos</span>
