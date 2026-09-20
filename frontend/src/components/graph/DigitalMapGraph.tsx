@@ -1399,7 +1399,7 @@ function DigitalMapGraphInner({
     <div
       ref={containerRef}
       className={`digital-map-canvas relative w-full overflow-hidden rounded-xl border border-[#141f2f] bg-[#030712] shadow-2xl transition-all duration-300 [&:fullscreen]:w-screen [&:fullscreen]:h-screen [&:fullscreen]:rounded-none [&:fullscreen]:border-0 ${
-        isFullscreen ? "fixed inset-0 z-[9999] h-screen w-screen rounded-none border-0" : "h-[700px] sm:h-[750px]"
+        isFullscreen ? "fixed inset-0 z-[9999] h-screen w-screen rounded-none border-0" : "h-[420px] sm:h-[460px] xl:h-[500px]"
       }`}
     >
       {/* Top Floating Filter & Actions Bar */}
