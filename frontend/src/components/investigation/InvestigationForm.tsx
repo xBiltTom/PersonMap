@@ -19,7 +19,6 @@ import {
   Layers,
   Brain,
   Check,
-  FlaskConical,
 } from "lucide-react";
 
 interface StrategyOption {
@@ -114,22 +113,6 @@ export function InvestigationForm() {
     // Limit to numeric characters and max 8 digits
     const numeric = val.replace(/\D/g, "").slice(0, 8);
     setDni(numeric);
-  };
-
-  // Utility to prefill a lab test case (Carlos Mendoza)
-  const handleLoadLabSeed = () => {
-    setFullName("Carlos Mendoza");
-    setEmail("c.mendoza@unmsm.edu.pe");
-    setUsername("cmendoza");
-    setUniversity("UNMSM");
-    setDni("74829103");
-    setPhone("+51 984120934");
-    setDescription(
-      "Estudiante de Ingeniería de Sistemas de la UNMSM, activo en GitHub y comunidades de desarrollo de software."
-    );
-    setStrategy("hybrid");
-    setSelfConsent(true);
-    setError(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -450,18 +433,7 @@ export function InvestigationForm() {
         </div>
 
         {/* Action Bar */}
-        <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-[#162234]">
-          {/* Subtle Dev/Lab Seed button (Rule #4) */}
-          <button
-            type="button"
-            onClick={handleLoadLabSeed}
-            className="text-[11px] font-mono text-slate-500 hover:text-sky-400 flex items-center gap-1.5 transition-colors cursor-pointer self-start sm:self-auto"
-            title="Prellenar con el caso de laboratorio verificado para pruebas y defensa"
-          >
-            <FlaskConical className="w-3.5 h-3.5" />
-            <span>Cargar caso de prueba de laboratorio</span>
-          </button>
-
+        <div className="pt-4 flex items-center justify-end border-t border-[#162234]">
           <button
             type="submit"
             disabled={loading}
