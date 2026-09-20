@@ -71,9 +71,9 @@ export function PasswordExposureCheck() {
   const verdict = result ? verdictFor(result.count) : null;
 
   return (
-    <div className="rounded-lg border border-[#1e293b] bg-[#0e141f] overflow-hidden">
-      <div className="px-5 py-4 border-b border-[#1e293b] flex items-start gap-3">
-        <div className="w-9 h-9 rounded-lg bg-[#151d2c] border border-[#233044] flex items-center justify-center text-amber-400 shrink-0">
+    <div className="panel-card border border-[#162234] bg-[#0d1420] shadow-xl overflow-hidden h-full flex flex-col">
+      <div className="px-5 py-4 border-b border-[#162234] flex items-start gap-3 bg-[#0a0f18]/60 shrink-0">
+        <div className="w-9 h-9 rounded-lg bg-[#131e2e] border border-[#20324c] flex items-center justify-center text-amber-400 shrink-0">
           <KeyRound className="w-4.5 h-4.5" aria-hidden="true" />
         </div>
         <div>
@@ -89,7 +89,7 @@ export function PasswordExposureCheck() {
         </div>
       </div>
 
-      <div className="p-5 space-y-4">
+      <div className="p-5 space-y-4 flex-1 flex flex-col justify-between">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -122,7 +122,7 @@ export function PasswordExposureCheck() {
                 autoCapitalize="off"
                 spellCheck={false}
                 placeholder="Escríbela aquí"
-                className="w-full pl-9 pr-10 py-2.5 rounded-md bg-[#121824] border border-[#233044] text-sm text-slate-100 font-mono placeholder:text-slate-600 focus:outline-none focus:border-sky-500/60"
+                className="w-full pl-9 pr-10 py-2.5 rounded-lg bg-[#111927] border border-[#20324c] text-sm text-slate-100 font-mono placeholder:text-slate-600 focus:outline-none focus:border-sky-500/60 focus:ring-1 focus:ring-sky-500/30 transition-colors"
               />
               <button
                 type="button"
@@ -141,7 +141,7 @@ export function PasswordExposureCheck() {
             <button
               type="submit"
               disabled={!password || loading}
-              className="px-4 py-2.5 rounded-md bg-sky-500/20 text-sky-200 border border-sky-500/40 text-xs font-mono font-semibold hover:bg-sky-500/30 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors flex items-center gap-2 whitespace-nowrap"
+              className="px-4 py-2.5 rounded-lg bg-sky-500/20 text-sky-200 border border-sky-500/40 text-xs font-mono font-semibold hover:bg-sky-500/30 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors flex items-center gap-2 whitespace-nowrap shadow-sm"
             >
               {loading ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
@@ -162,7 +162,7 @@ export function PasswordExposureCheck() {
 
         {result && verdict && (
           <div
-            className="rounded-md border border-[#233044] bg-[#0c111a] p-4 space-y-3"
+            className="rounded-lg border border-[#20324c] bg-[#0a0e16] p-4 space-y-3"
             role="status"
             aria-live="polite"
           >
@@ -230,7 +230,7 @@ function Transparencia({ result }: { result: PwnedResult | null }) {
         Por qué la contraseña no sale de aquí
       </summary>
 
-      <div className="mt-3 space-y-3 text-xs text-slate-400 leading-relaxed border-l-2 border-[#233044] pl-3">
+      <div className="mt-3 space-y-3 text-xs text-slate-400 leading-relaxed border-l-2 border-[#20324c] pl-3.5">
         <p>
           Se calcula el SHA-1 de la contraseña en tu navegador y se envían{" "}
           <strong className="text-slate-200">
@@ -241,7 +241,7 @@ function Transparencia({ result }: { result: PwnedResult | null }) {
           <em className="text-slate-300">k-anonimato</em>.
         </p>
 
-        <div className="rounded bg-[#0a0e16] border border-[#1e293b] p-2.5 font-mono text-[11px] text-slate-300 overflow-x-auto">
+        <div className="rounded-lg bg-[#080c14] border border-[#162234] p-3 font-mono text-[11px] text-slate-300 overflow-x-auto">
           <p className="text-slate-500">
             {ejemplo ? "// ejemplo con una contraseña cualquiera" : "// tu consulta"}
           </p>
