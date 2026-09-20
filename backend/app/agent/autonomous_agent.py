@@ -159,13 +159,6 @@ class AutonomousOSINTAgent:
                     fn_name = tc.function.name
                     args = json.loads(tc.function.arguments) if isinstance(tc.function.arguments, str) else tc.function.arguments
 
-                    await event_bus.publish(investigation_id, {
-                        "type": "log",
-                        "phase": "agent_tool_dispatch",
-                        "message": f"IA invocó [{fn_name}] con argumentos: {args}",
-                        "timestamp": time.time(),
-                    })
-
                     tool_findings = await self._execute_agent_tool(
                         investigation_id,
                         fn_name,
@@ -334,6 +327,16 @@ class AutonomousOSINTAgent:
                     engine_layer="agentic",
                     turn_index=turn_index,
                 )
+        started_at = time.perf_counter()
+        await event_bus.publish(investigation_id, {
+            "type": "tool_start",
+            "phase": "agent_tool_dispatch",
+            "tool": tool_name,
+            "layer": "agentic",
+            "tool_execution_id": str(trace_execution.id) if trace_execution else None,
+            "message": f"IA invocó [{tool_name}].",
+            "timestamp": time.time(),
+        })
         try:
             findings = await dispatch_tool_call(
                 name,
@@ -343,22 +346,30 @@ class AutonomousOSINTAgent:
                 investigation_id=investigation_id,
             )
         except Exception as err:
+            duration_seconds = round(time.perf_counter() - started_at, 3)
             if trace_execution:
                 await trace_recorder.complete_tool(trace_execution, findings_count=0, error=err)
             await event_bus.publish(investigation_id, {
                 "type": "tool_error",
                 "tool": tool_name,
+                "layer": "agentic",
+                "tool_execution_id": str(trace_execution.id) if trace_execution else None,
                 "error": str(err),
+                "duration_seconds": duration_seconds,
                 "message": f"[{tool_name}] error: {err}",
                 "timestamp": time.time(),
             })
             return []
 
+        duration_seconds = round(time.perf_counter() - started_at, 3)
         await event_bus.publish(investigation_id, {
             "type": "tool_complete",
             "tool": tool_name,
+            "layer": "agentic",
+            "tool_execution_id": str(trace_execution.id) if trace_execution else None,
             "findings_count": len(findings),
-            "message": f"[{tool_name}] completado: {len(findings)} hallazgos.",
+            "duration_seconds": duration_seconds,
+            "message": f"[{tool_name}] completado: {len(findings)} hallazgos · {duration_seconds:.1f} s.",
             "timestamp": time.time(),
         })
         if trace_execution:

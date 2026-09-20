@@ -8,9 +8,9 @@ import type {
   GraphResponse,
   HealthStatus,
   InvestigationData,
+  InvestigationLogHistory,
   InvestigationTraceResponse,
   MetricsComparison,
-  StreamLog,
   SurveyPayload,
   SurveyRead,
   SurveyStats,
@@ -127,8 +127,8 @@ export function getGraphmlUrl(id: string): string {
 // Consola en vivo (logs + stream SSE)
 // ---------------------------------------------------------------------
 
-export function getInvestigationLogs(id: string): Promise<StreamLog[]> {
-  return request<StreamLog[]>(`/investigations/${id}/logs`);
+export function getInvestigationLogs(id: string): Promise<InvestigationLogHistory> {
+  return request<InvestigationLogHistory>(`/investigations/${id}/logs`);
 }
 
 /** URL del stream SSE. La consume `EventSource`, no `fetch`. */

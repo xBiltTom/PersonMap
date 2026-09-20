@@ -176,6 +176,12 @@ export default function InvestigationDetailPage({
     });
   }, [setActiveTab]);
 
+  const handleViewTrace = useCallback(() => {
+    // La consola no duplica el inspector de una ejecución: dirige al
+    // explorador de trazabilidad, que es la fuente de verdad de ese detalle.
+    setActiveTab("timeline");
+  }, [setActiveTab]);
+
   const workspaceNodes = useMemo<GraphNode[]>(
     () => graph?.nodes ?? (investigation?.entities ?? []).map(entityToGraphNode),
     [graph, investigation?.entities]
@@ -646,6 +652,7 @@ export default function InvestigationDetailPage({
                 <LiveConsole
                   stream={stream}
                   isFinished={investigation.status === "completed" || investigation.status === "failed"}
+                  onViewTrace={handleViewTrace}
                 />
               )}
             </div>

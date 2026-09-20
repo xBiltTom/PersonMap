@@ -258,9 +258,16 @@ export interface StreamLog {
    * capas; la consola pinta el distintivo únicamente cuando ve las dos, para no
    * añadir ruido a una investigación puramente heurística.
    */
-  layer?: EngineLayer;
+  layer?: EngineLayer | "agentic";
   findings_count?: number;
   error?: string;
+  /** Duración real de una herramienta cuando el backend la conoce. */
+  duration_seconds?: number;
+  /** Identidad durable de la ejecución en Trazabilidad, no un id de UI. */
+  tool_execution_id?: string;
+  engine?: EngineId | string;
+  round_index?: number | null;
+  turn_index?: number | null;
   /**
    * Cifras del evento `phase: "progress"`. El backend ya lo emitía, pero solo
    * con una frase; sin `checked`/`total` no se puede dibujar una barra y el
@@ -271,6 +278,14 @@ export interface StreamLog {
   pct?: number;
   /** Alias o identificador que se está comprobando. */
   subject?: string;
+}
+
+export type InvestigationLogMode = "original" | "reconstructed" | "legacy";
+
+/** Respuesta histórica de consola: EventBus o una proyección transparente de Trace DB. */
+export interface InvestigationLogHistory {
+  mode: InvestigationLogMode;
+  logs: StreamLog[];
 }
 
 // ---------------------------------------------------------------------

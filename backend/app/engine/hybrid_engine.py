@@ -383,15 +383,6 @@ class HybridEngine:
                     continue
 
                 executed.add(run_key)
-                await event_bus.publish(investigation_id, {
-                    "type": "log",
-                    "phase": "hybrid_refine_dispatch",
-                    "layer": REFINEMENT_LAYER,
-                    "tool": resolve_tool_name(fn_name),
-                    "message": f"Refinamiento IA invocó [{fn_name}] con argumentos: {args}",
-                    "timestamp": time.time(),
-                })
-
                 trace_execution = None
                 if db:
                     tool = tool_registry.get_tool(resolve_tool_name(fn_name))
@@ -406,6 +397,17 @@ class HybridEngine:
                             context=sweep.context,
                         )
 
+                started_at = time.perf_counter()
+                await event_bus.publish(investigation_id, {
+                    "type": "tool_start",
+                    "phase": "hybrid_refine_dispatch",
+                    "layer": REFINEMENT_LAYER,
+                    "tool": resolve_tool_name(fn_name),
+                    "tool_execution_id": str(trace_execution.id) if trace_execution else None,
+                    "message": f"Refinamiento IA invocó [{fn_name}].",
+                    "timestamp": time.time(),
+                })
+
                 try:
                     new_findings = await dispatch_tool_call(
                         fn_name,
@@ -416,23 +418,29 @@ class HybridEngine:
                     )
                 except Exception as err:
                     new_findings = []
+                    duration_seconds = round(time.perf_counter() - started_at, 3)
                     await event_bus.publish(investigation_id, {
                         "type": "tool_error",
                         "tool": resolve_tool_name(fn_name),
                         "layer": REFINEMENT_LAYER,
+                        "tool_execution_id": str(trace_execution.id) if trace_execution else None,
                         "error": str(err),
+                        "duration_seconds": duration_seconds,
                         "message": f"[{fn_name}] error en refinamiento: {err}",
                         "timestamp": time.time(),
                     })
                     if trace_execution:
                         await trace_recorder.complete_tool(trace_execution, findings_count=0, error=err)
                 else:
+                    duration_seconds = round(time.perf_counter() - started_at, 3)
                     await event_bus.publish(investigation_id, {
                         "type": "tool_complete",
                         "tool": resolve_tool_name(fn_name),
                         "layer": REFINEMENT_LAYER,
+                        "tool_execution_id": str(trace_execution.id) if trace_execution else None,
                         "findings_count": len(new_findings),
-                        "message": f"[{fn_name}] refinamiento: {len(new_findings)} hallazgos.",
+                        "duration_seconds": duration_seconds,
+                        "message": f"[{fn_name}] refinamiento: {len(new_findings)} hallazgos · {duration_seconds:.1f} s.",
                         "timestamp": time.time(),
                     })
                     if trace_execution:

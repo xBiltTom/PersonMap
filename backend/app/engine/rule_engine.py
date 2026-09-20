@@ -161,19 +161,26 @@ class RuleEngine:
             executions = []
             for tool in runnable:
                 executed_runs.add(self._get_tool_run_key(tool, context))
-                tasks.append(self._run_single_tool(investigation_id, tool, context))
+                execution = None
                 if db:
-                    executions.append(
-                        await trace_recorder.start_tool(
-                            db,
-                            investigation_id=investigation_id,
-                            tool=tool,
-                            engine=trace_engine,
-                            engine_layer=trace_layer,
-                            round_index=round_idx,
-                            context=context,
-                        )
+                    execution = await trace_recorder.start_tool(
+                        db,
+                        investigation_id=investigation_id,
+                        tool=tool,
+                        engine=trace_engine,
+                        engine_layer=trace_layer,
+                        round_index=round_idx,
+                        context=context,
                     )
+                    executions.append(execution)
+                tasks.append(
+                    self._run_single_tool(
+                        investigation_id,
+                        tool,
+                        context,
+                        tool_execution_id=str(execution.id) if execution else None,
+                    )
+                )
 
             batch_results = await asyncio.gather(*tasks, return_exceptions=True)
             round_findings: List[ToolFinding] = []
@@ -293,11 +300,14 @@ class RuleEngine:
         investigation_id: str,
         tool,
         context: TargetContext,
+        tool_execution_id: Optional[str] = None,
     ) -> ToolRunOutcome:
+        started_at = time.perf_counter()
         await event_bus.publish(investigation_id, {
             "type": "tool_start",
             "tool": tool.name,
             "layer": "heuristic",
+            "tool_execution_id": tool_execution_id,
             "message": f"Ejecutando [{tool.name}]: {tool.description[:60]}...",
             "timestamp": time.time(),
         })
@@ -308,21 +318,27 @@ class RuleEngine:
             for f in findings:
                 f.metadata_info["source_tool"] = tool.name
 
+            duration_seconds = round(time.perf_counter() - started_at, 3)
             await event_bus.publish(investigation_id, {
                 "type": "tool_complete",
                 "tool": tool.name,
                 "layer": "heuristic",
+                "tool_execution_id": tool_execution_id,
                 "findings_count": len(findings),
-                "message": f"[{tool.name}] completado: {len(findings)} hallazgos.",
+                "duration_seconds": duration_seconds,
+                "message": f"[{tool.name}] completado: {len(findings)} hallazgos · {duration_seconds:.1f} s.",
                 "timestamp": time.time(),
             })
             return ToolRunOutcome(findings=findings)
         except Exception as err:
+            duration_seconds = round(time.perf_counter() - started_at, 3)
             await event_bus.publish(investigation_id, {
                 "type": "tool_error",
                 "tool": tool.name,
                 "layer": "heuristic",
+                "tool_execution_id": tool_execution_id,
                 "error": str(err),
+                "duration_seconds": duration_seconds,
                 "message": f"[{tool.name}] error: {err}",
                 "timestamp": time.time(),
             })

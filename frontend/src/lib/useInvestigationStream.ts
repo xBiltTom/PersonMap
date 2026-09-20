@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getInvestigationLogs, getInvestigationStreamUrl } from "@/lib/api";
-import type { StreamLog } from "@/lib/types";
+import type { InvestigationLogMode, StreamLog } from "@/lib/types";
 
 export type ConnectionStatus = "connecting" | "live" | "reconnecting" | "closed";
 
@@ -19,6 +19,7 @@ export interface InvestigationStream {
   status: ConnectionStatus;
   loadingHistory: boolean;
   historyError: string | null;
+  historyMode: InvestigationLogMode;
   reconnect: () => void;
 }
 
@@ -41,6 +42,7 @@ export function useInvestigationStream(
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyMode, setHistoryMode] = useState<InvestigationLogMode>("legacy");
   const [reconnectKey, setReconnectKey] = useState(0);
 
   const retriesRef = useRef(0);
@@ -57,8 +59,9 @@ export function useInvestigationStream(
     getInvestigationLogs(investigationId)
       .then((data) => {
         if (cancelled) return;
-        if (Array.isArray(data) && data.length > 0) {
-          setLogs(data);
+        setHistoryMode(data.mode);
+        if (data.logs.length > 0) {
+          setLogs(data.logs);
         }
         setHistoryError(null);
       })
@@ -139,7 +142,7 @@ export function useInvestigationStream(
     setReconnectKey((k) => k + 1);
   }, []);
 
-  return { logs, status, loadingHistory, historyError, reconnect };
+  return { logs, status, loadingHistory, historyError, historyMode, reconnect };
 }
 
 export interface ScanProgress {
