@@ -77,6 +77,7 @@ export default function InvestigationDetailPage({
 
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
+  const mapSectionRef = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -164,10 +165,16 @@ export default function InvestigationDetailPage({
   const handleViewInMap = useCallback((entityId: string) => {
     const nodeId = `ent-${entityId}`;
     setMapFocusNodeId(nodeId);
-    setWorkspaceSelection({ kind: "node", id: nodeId });
+    // Esta acción navega, no inspecciona. El detalle se abre exclusivamente
+    // desde el icono de ojo o al seleccionar una entidad en el lienzo.
+    setWorkspaceSelection(null);
     setActiveTab("graph");
     // If map was collapsed, expand it
     setIsMapCollapsed(false);
+
+    window.requestAnimationFrame(() => {
+      mapSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }, [setActiveTab]);
 
   const workspaceNodes = useMemo<GraphNode[]>(
@@ -517,7 +524,10 @@ export default function InvestigationDetailPage({
       {/* 2. Workspace. El inspector se consulta sobre el expediente sin reducir sus vistas. */}
       <div className="space-y-4">
         {/* Upper Card: Mapa Digital (Adaptive height + collapsible for 1366x768) */}
-        <div className="panel-card overflow-hidden border border-[#162234] bg-[#0d1420] shadow-xl">
+        <div
+          ref={mapSectionRef}
+          className="panel-card scroll-mt-20 overflow-hidden border border-[#162234] bg-[#0d1420] shadow-xl"
+        >
         <div className="px-4 py-3 border-b border-[#162234] flex items-center justify-between gap-3 bg-[#090f18]">
           <div className="flex items-center gap-2.5">
             <Network className="w-4 h-4 text-sky-400 shrink-0" />
