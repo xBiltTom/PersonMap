@@ -66,7 +66,7 @@ export function ReportView({ investigation }: { investigation: InvestigationData
 
       {/* Narrative Section */}
       <div className="panel-card p-6">
-        <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-2 mb-4 pb-3 border-b border-[#1e293b]">
+        <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-2 mb-4 pb-3 border-b border-[#162234]">
           <FileCheck className="w-4 h-4 text-sky-400" />
           Informe de Síntesis y Concientización
         </h3>

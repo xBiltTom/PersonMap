@@ -18,14 +18,14 @@ export function DiscoveryTimeline({ entities }: { entities: EntityData[] }) {
 
   return (
     <div className="panel-card p-6">
-      <div className="flex items-center gap-2 pb-4 border-b border-[#1e293b] mb-6">
+      <div className="flex items-center gap-2 pb-4 border-b border-[#162234] mb-6">
         <Clock className="w-4 h-4 text-sky-400" />
         <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">
           Secuencia Cronológica de Extracción y Pivoteo ({sorted.length})
         </h3>
       </div>
 
-      <div className="relative pl-6 border-l border-[#1e293b] space-y-6">
+      <div className="relative pl-6 border-l border-[#162234] space-y-6">
         {sorted.map((item) => {
           const time = new Date(item.discovered_at).toLocaleTimeString("es-ES", {
             hour: "2-digit",

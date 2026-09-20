@@ -265,8 +265,8 @@ export function EntityInspector({
 
   const panelClasses =
     containerMode === "embedded"
-      ? "relative flex h-full w-full flex-col rounded-xl border border-[#22354c] bg-[#070e19]/95 shadow-2xl shadow-black/60 backdrop-blur-md overflow-hidden"
-      : "absolute bottom-3 right-3 top-3 z-30 flex w-[min(410px,calc(100%-1.5rem))] flex-col rounded-xl border border-[#22354c] bg-[#070e19]/95 shadow-2xl shadow-black/60 backdrop-blur-md overflow-hidden animate-in fade-in slide-in-from-right-2 duration-150";
+      ? "relative flex h-full w-full flex-col rounded-xl border border-[#22354c] bg-[#070e19]/95 shadow-2xl shadow-black/60 backdrop-blur-sm overflow-hidden"
+      : "absolute bottom-3 right-3 top-3 z-30 flex w-[min(410px,calc(100%-1.5rem))] flex-col rounded-xl border border-[#22354c] bg-[#070e19]/95 shadow-2xl shadow-black/60 backdrop-blur-sm overflow-hidden animate-slide-in-right";
 
   return (
     <aside className={panelClasses} aria-label="Inspector forense de entidad">
@@ -607,7 +607,7 @@ export function RelationshipInspector({
 
   return (
     <aside
-      className="absolute bottom-3 right-3 top-3 z-30 flex w-[min(410px,calc(100%-1.5rem))] flex-col rounded-xl border border-[#22354c] bg-[#070e19]/95 shadow-2xl shadow-black/60 backdrop-blur-md overflow-hidden animate-in fade-in slide-in-from-right-2 duration-150"
+      className="absolute bottom-3 right-3 top-3 z-30 flex w-[min(410px,calc(100%-1.5rem))] flex-col rounded-xl border border-[#22354c] bg-[#070e19]/95 shadow-2xl shadow-black/60 backdrop-blur-sm overflow-hidden animate-slide-in-right"
       aria-label="Inspector forense de relación"
     >
       <header className="shrink-0 border-b border-[#1b2b3e] bg-[#081220]/90 px-4 pt-3.5 pb-3">

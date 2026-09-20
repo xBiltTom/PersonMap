@@ -494,7 +494,7 @@ export function FindingsTable({ entities, graph = null, onViewInMap }: FindingsT
       {/* Modal Inspector when opened from table */}
       {selectedNode && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-end bg-black/60 p-3 sm:p-4 backdrop-blur-xs animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 flex items-center justify-end bg-black/60 p-3 sm:p-4 backdrop-blur-sm animate-fade-in"
           onClick={() => setSelectedNodeId(null)}
         >
           <div

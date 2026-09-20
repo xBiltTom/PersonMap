@@ -107,6 +107,15 @@ body {
   animation: fade-in-up 0.2s ease-out;
 }
 
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 /* Barra de progreso sin porcentaje: la búsqueda no sabe cuánto le queda, así
    que se indica actividad en vez de inventar una cifra. */
 @keyframes progress-indeterminate {

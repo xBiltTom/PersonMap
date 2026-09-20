@@ -50,7 +50,7 @@ export default function SecurityPage() {
         <PasswordExposureCheck />
       </div>
 
-      <div className="max-w-3xl rounded-lg border border-[#1e293b] bg-[#0e141f] p-5">
+      <div className="max-w-3xl rounded-xl border border-[#162234] bg-[#0d1420] p-5 shadow-xl">
         <h2 className="text-sm font-semibold text-slate-100">
           Esto no comprueba las contraseñas de otras personas
         </h2>
