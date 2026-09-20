@@ -411,7 +411,7 @@ export function Sidebar() {
 
       {/* Footer Disclaimer */}
       <div className="p-3.5 border-t border-[#162234] bg-[#070b13] text-[10px] font-mono text-slate-500 space-y-1.5">
-        <p className="font-semibold text-slate-400">PersonMap v0.2.0</p>
+        <p className="font-semibold text-slate-400">PersonMap v0.1.0</p>
         <p className="text-[9px] leading-tight text-slate-600">
           Proyecto académico — Uso ético y de auditoría personal.
         </p>
