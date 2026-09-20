@@ -240,15 +240,8 @@ export default function InvestigationDetailPage({
     });
   };
 
-  // Metric computations (User Rule #3: Semantically distinct & completely factual)
+  // Metric computations (Factual and semantically distinct)
   const findingsCount = investigation?.entities?.length ?? 0;
-  // Unique resolved nodes (distinct from raw findings!)
-  const uniqueNodesCount = useMemo(() => {
-    if (graph?.nodes?.length) {
-      return graph.nodes.filter((n) => !n.data?.is_root && n.type !== "personRoot").length;
-    }
-    return new Set((investigation?.entities || []).map((e) => e.value)).size;
-  }, [graph, investigation?.entities]);
 
   // Documented evidence relationships (excluding provenance helper links)
   const relationsCount = useMemo(() => {
@@ -346,23 +339,14 @@ export default function InvestigationDetailPage({
 
           {/* Metrics Strip + Status + Actions */}
           <div className="flex flex-wrap items-center gap-4 sm:gap-6 shrink-0 pt-2 xl:pt-0 border-t xl:border-t-0 border-[#162234]">
-            {/* 4 Factual Metrics (Rule #3) */}
-            <div className="grid grid-cols-4 gap-3 sm:gap-5 text-center">
+            {/* 3 Factual Metrics: Hallazgos, Relaciones, Fuentes */}
+            <div className="grid grid-cols-3 gap-3 sm:gap-6 text-center">
               <div>
-                <div className="font-mono text-base sm:text-lg font-bold text-slate-100">
+                <div className="font-mono text-base sm:text-lg font-bold text-sky-400">
                   {findingsCount}
                 </div>
                 <div className="text-[10px] font-mono text-slate-400">
                   Hallazgos
-                </div>
-              </div>
-
-              <div>
-                <div className="font-mono text-base sm:text-lg font-bold text-sky-400">
-                  {uniqueNodesCount}
-                </div>
-                <div className="text-[10px] font-mono text-slate-400">
-                  Entidades
                 </div>
               </div>
 
