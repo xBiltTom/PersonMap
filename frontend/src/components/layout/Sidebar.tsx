@@ -67,18 +67,26 @@ export function Sidebar() {
           </Link>
 
           <Link
-            href="/?action=new"
+            href="/auditorias/nueva"
             onClick={() => setIsSidebarOpen(false)}
-            className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-mono text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent transition-colors"
+            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-mono transition-colors ${
+              pathname === "/auditorias/nueva"
+                ? "bg-[#142032] text-sky-300 font-semibold border border-[#213550]"
+                : "text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent"
+            }`}
           >
             <PlusCircle className="w-4 h-4 text-sky-400 shrink-0" />
             <span>Nueva auditoría</span>
           </Link>
 
           <Link
-            href="/#historial"
+            href="/expedientes"
             onClick={() => setIsSidebarOpen(false)}
-            className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-mono text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent transition-colors"
+            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-mono transition-colors ${
+              pathname === "/expedientes"
+                ? "bg-[#142032] text-sky-300 font-semibold border border-[#213550]"
+                : "text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent"
+            }`}
           >
             <FolderOpen className="w-4 h-4 text-sky-400 shrink-0" />
             <span>Expedientes</span>

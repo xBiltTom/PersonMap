@@ -1,22 +1,32 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import Link from "next/link";
-import { InvestigationData } from "@/lib/types";
-import { listInvestigations, deleteInvestigation } from "@/lib/api";
-import { resolveEngine, ENGINE_META } from "@/lib/engines";
+import type { InvestigationData } from "@/lib/types";
+import { deleteInvestigation, listInvestigations } from "@/lib/api";
+import { ENGINE_META, resolveEngine } from "@/lib/engines";
 import {
-  FolderOpen,
-  Calendar,
   AlertTriangle,
-  Trash2,
-  CheckCircle2,
-  Clock,
-  XCircle,
-  Search,
-  RefreshCw,
   ArrowUpRight,
+  CalendarDays,
+  CheckCircle2,
+  FolderOpen,
+  RefreshCw,
+  Search,
+  Trash2,
+  XCircle,
 } from "lucide-react";
+
+type StatusFilter = "all" | "completed" | "running";
+const PAGE_SIZES = [10, 20, 50, "all"] as const;
+type PageSize = (typeof PAGE_SIZES)[number];
+const REGISTRY_BATCH_SIZE = 100;
+
+function parsePageSize(value: string): PageSize {
+  if (value === "all") return "all";
+  const size = Number(value);
+  return size === 10 || size === 20 || size === 50 ? size : 20;
+}
 
 function formatDate(value?: string): string {
   if (!value) return "Fecha desconocida";
@@ -31,11 +41,25 @@ function formatDate(value?: string): string {
   }).format(date);
 }
 
-function getInitials(name: string): string {
-  if (!name) return "PM";
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
+function statusView(status: string) {
+  if (status === "completed") return { label: "Completado", icon: CheckCircle2, className: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" };
+  if (status === "running" || status === "pending") return { label: "En análisis", icon: RefreshCw, className: "border-sky-500/25 bg-sky-500/10 text-sky-300" };
+  return { label: status === "failed" ? "Error" : status, icon: XCircle, className: "border-rose-500/25 bg-rose-500/10 text-rose-300" };
+}
+
+function targetLabel(investigation: InvestigationData): string {
+  return investigation.target?.full_name || investigation.target?.username || investigation.target?.email || "Objetivo sin identificador";
+}
+
+async function listAllInvestigations(): Promise<InvestigationData[]> {
+  const records: InvestigationData[] = [];
+  let offset = 0;
+  while (true) {
+    const batch = await listInvestigations(REGISTRY_BATCH_SIZE, offset);
+    records.push(...batch);
+    if (batch.length < REGISTRY_BATCH_SIZE) return records;
+    offset += batch.length;
+  }
 }
 
 export function InvestigationHistory() {
@@ -43,318 +67,132 @@ export function InvestigationHistory() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "running">("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [pageSize, setPageSize] = useState<PageSize>(20);
+  const [page, setPage] = useState(0);
 
-  const loadData = () => {
+  const loadData = useCallback(() => {
     setLoading(true);
-    listInvestigations(50, 0)
+    void listAllInvestigations()
       .then((data) => {
         setInvestigations(data);
         setError(null);
       })
-      .catch((err: unknown) =>
-        setError(err instanceof Error ? err.message : "No se pudo cargar el historial")
-      )
+      .catch((requestError: unknown) => {
+        setError(requestError instanceof Error ? requestError.message : "No se pudo cargar el registro de expedientes");
+      })
       .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    const initialLoad = window.setTimeout(loadData, 0);
-    return () => clearTimeout(initialLoad);
   }, []);
 
-  const handleDelete = async (e: React.MouseEvent, id: string, name: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!confirm(`¿Estás seguro de eliminar el expediente "${name}"? Esta acción no se puede deshacer.`)) return;
+  useEffect(() => {
+    const loadTimer = window.setTimeout(loadData, 0);
+    return () => window.clearTimeout(loadTimer);
+  }, [loadData]);
 
+  const handleDelete = async (event: MouseEvent<HTMLButtonElement>, id: string, name: string) => {
+    event.preventDefault();
+    if (!window.confirm(`¿Eliminar el expediente “${name}”? Esta acción no se puede deshacer.`)) return;
     try {
       await deleteInvestigation(id);
       loadData();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "No se pudo eliminar la investigación");
+    } catch (deleteError: unknown) {
+      setError(deleteError instanceof Error ? deleteError.message : "No se pudo eliminar el expediente");
     }
   };
 
   const filteredInvestigations = useMemo(() => {
-    return investigations.filter((inv) => {
-      const name = inv.target?.full_name || inv.target?.username || inv.target?.email || "";
-      const matchesSearch =
-        !searchQuery.trim() ||
-        name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        inv.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (inv.target?.university && inv.target.university.toLowerCase().includes(searchQuery.toLowerCase()));
-
+    const query = searchQuery.trim().toLocaleLowerCase();
+    return investigations.filter((investigation) => {
+      const target = targetLabel(investigation).toLocaleLowerCase();
+      const matchesSearch = !query || target.includes(query) || investigation.id.toLocaleLowerCase().includes(query) || investigation.target?.university?.toLocaleLowerCase().includes(query);
       if (!matchesSearch) return false;
-
-      if (statusFilter === "completed") return inv.status === "completed";
-      if (statusFilter === "running") return inv.status === "running" || inv.status === "pending";
+      if (statusFilter === "completed") return investigation.status === "completed";
+      if (statusFilter === "running") return investigation.status === "running" || investigation.status === "pending";
       return true;
     });
   }, [investigations, searchQuery, statusFilter]);
 
-  const completedCount = useMemo(
-    () => investigations.filter((i) => i.status === "completed").length,
-    [investigations]
-  );
-  const runningCount = useMemo(
-    () => investigations.filter((i) => i.status === "running" || i.status === "pending").length,
-    [investigations]
-  );
+  const counts = useMemo(() => ({
+    all: investigations.length,
+    completed: investigations.filter((investigation) => investigation.status === "completed").length,
+    running: investigations.filter((investigation) => investigation.status === "running" || investigation.status === "pending").length,
+  }), [investigations]);
+
+  const filters: Array<{ id: StatusFilter; label: string; count: number }> = [
+    { id: "all", label: "Todos", count: counts.all },
+    { id: "completed", label: "Completados", count: counts.completed },
+    { id: "running", label: "En análisis", count: counts.running },
+  ];
+  const totalPages = pageSize === "all" ? 1 : Math.max(1, Math.ceil(filteredInvestigations.length / pageSize));
+  const currentPage = Math.min(page, totalPages - 1);
+  const visibleInvestigations = useMemo(() => {
+    if (pageSize === "all") return filteredInvestigations;
+    const start = currentPage * pageSize;
+    return filteredInvestigations.slice(start, start + pageSize);
+  }, [currentPage, filteredInvestigations, pageSize]);
+  const firstVisible = filteredInvestigations.length ? currentPage * (pageSize === "all" ? filteredInvestigations.length : pageSize) + 1 : 0;
+  const lastVisible = firstVisible ? firstVisible + visibleInvestigations.length - 1 : 0;
 
   return (
-    <div id="historial" className="panel-card overflow-hidden border border-[#162234] bg-[#0d1420] shadow-xl">
-      {/* Header bar */}
-      <div className="px-5 py-4 border-b border-[#162234] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#090f18]">
+    <section className="panel-card overflow-hidden border border-[#1b2d43] bg-[#0b121d]" aria-labelledby="dossiers-title">
+      <header className="flex flex-col gap-3 border-b border-[#1b2d43] bg-[#0a101a] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-[#142032] border border-[#213550] flex items-center justify-center text-sky-400">
-            <FolderOpen className="w-3.5 h-3.5" />
-          </div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#24425e] bg-[#102034] text-sky-300"><FolderOpen className="h-4 w-4" /></div>
           <div>
-            <h3 className="text-xs font-mono font-semibold tracking-wider text-slate-200 uppercase flex items-center gap-2">
-              <span>Expedientes Archivados</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[#162234] text-slate-400 border border-[#22344d]">
-                {investigations.length}
-              </span>
-            </h3>
-            <p className="text-[10px] font-mono text-slate-500">
-              Auditorías de huella digital almacenadas localmente
-            </p>
+            <h1 id="dossiers-title" className="font-mono text-xs font-semibold uppercase tracking-[0.12em] text-slate-200">Expedientes</h1>
+            <p className="mt-0.5 text-[10px] font-mono text-slate-500">Registro de auditorías ejecutadas</p>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={loadData}
-          title="Refrescar expedientes"
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#101928] hover:bg-[#162438] text-slate-300 text-xs font-mono border border-[#1d2c42] transition-colors cursor-pointer self-start sm:self-auto"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${loading ? "animate-spin" : ""}`} />
-          <span>Actualizar</span>
+        <button type="button" onClick={loadData} title="Actualizar expedientes" className="inline-flex w-fit items-center gap-1.5 rounded border border-[#29435e] bg-[#101d2e] px-2.5 py-1.5 font-mono text-[11px] text-slate-300 transition-colors hover:border-sky-400/40 hover:text-sky-100">
+          <RefreshCw className={`h-3.5 w-3.5 text-sky-400 ${loading ? "animate-spin" : ""}`} /> Actualizar
         </button>
-      </div>
+      </header>
 
-      {/* Filter and Search Toolbar */}
-      <div className="p-3 sm:px-5 sm:py-3 border-b border-[#162234] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-[#0b111c]">
-        {/* Search */}
-        <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[#080d15] border border-[#1a2636] flex-1 max-w-sm">
-          <Search className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filtrar por nombre, universidad o ID..."
-            className="w-full bg-transparent font-mono text-xs text-slate-200 placeholder-slate-500 outline-none"
-          />
-        </div>
-
-        {/* Status filters */}
-        <div className="flex items-center gap-1 text-[11px] font-mono shrink-0">
-          <button
-            type="button"
-            onClick={() => setStatusFilter("all")}
-            className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
-              statusFilter === "all"
-                ? "bg-[#162438] text-sky-300 font-semibold border border-[#263e5c]"
-                : "text-slate-400 hover:text-slate-200 hover:bg-[#101928]"
-            }`}
-          >
-            Todos ({investigations.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter("completed")}
-            className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
-              statusFilter === "completed"
-                ? "bg-emerald-500/15 text-emerald-300 font-semibold border border-emerald-500/30"
-                : "text-slate-400 hover:text-slate-200 hover:bg-[#101928]"
-            }`}
-          >
-            Completados ({completedCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter("running")}
-            className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
-              statusFilter === "running"
-                ? "bg-sky-500/15 text-sky-300 font-semibold border border-sky-500/30"
-                : "text-slate-400 hover:text-slate-200 hover:bg-[#101928]"
-            }`}
-          >
-            En análisis ({runningCount})
-          </button>
+      <div className="flex flex-col gap-2.5 border-b border-[#1b2d43] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <label className="flex max-w-sm flex-1 items-center gap-2 rounded-md border border-[#1c3048] bg-[#080e17] px-2.5 py-1.5">
+          <Search className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+          <span className="sr-only">Buscar expedientes</span>
+          <input value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setPage(0); }} placeholder="Nombre, institución o código…" className="w-full bg-transparent font-mono text-xs text-slate-200 outline-none placeholder:text-slate-600" />
+        </label>
+        <div className="flex items-center gap-1 overflow-x-auto font-mono text-[10px]">
+          {filters.map((filter) => <button key={filter.id} type="button" onClick={() => { setStatusFilter(filter.id); setPage(0); }} aria-pressed={statusFilter === filter.id} className={`whitespace-nowrap rounded border px-2 py-1 transition-colors ${statusFilter === filter.id ? "border-sky-500/35 bg-sky-500/15 text-sky-200" : "border-transparent text-slate-500 hover:bg-[#101c2b] hover:text-slate-300"}`}>{filter.label} <span className="text-slate-500">{filter.count}</span></button>)}
         </div>
       </div>
 
-      {/* Body States */}
-      {loading && investigations.length === 0 && (
-        <div className="p-12 text-center text-xs font-mono text-slate-400">
-          <div className="w-5 h-5 border-2 border-sky-500/30 border-t-sky-400 rounded-full animate-spin mx-auto mb-3" />
-          <span>Recuperando expedientes archivados...</span>
-        </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-[820px] w-full text-left">
+          <thead className="border-b border-[#1b2d43] bg-[#0a101a] font-mono text-[10px] uppercase tracking-[0.1em] text-slate-500">
+            <tr><th className="px-4 py-3 sm:px-5">Expediente</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3">Motor</th><th className="px-4 py-3 text-right">Hallazgos</th><th className="px-4 py-3">Creado</th><th className="px-4 py-3 text-right">Acciones</th></tr>
+          </thead>
+          <tbody className="divide-y divide-[#17283b]">
+            {loading && investigations.length === 0 && <tr><td colSpan={6} className="px-5 py-12 text-center font-mono text-xs text-slate-500"><RefreshCw className="mx-auto mb-2 h-4 w-4 animate-spin text-sky-400" />Recuperando expedientes…</td></tr>}
+            {!loading && error && <tr><td colSpan={6} className="px-5 py-10 text-center"><AlertTriangle className="mx-auto mb-2 h-5 w-5 text-rose-400" /><p className="font-mono text-xs text-slate-300">No se pudo consultar el registro</p><p className="mt-1 font-mono text-[11px] text-slate-500">{error}</p><button type="button" onClick={loadData} className="mt-3 rounded border border-[#31435b] px-2.5 py-1 font-mono text-[11px] text-slate-300 hover:text-sky-200">Reintentar</button></td></tr>}
+            {!loading && !error && investigations.length === 0 && <tr><td colSpan={6} className="px-5 py-12 text-center"><FolderOpen className="mx-auto mb-3 h-7 w-7 text-slate-600" /><p className="font-mono text-xs text-slate-300">Aún no hay expedientes registrados.</p><Link href="/auditorias/nueva" className="mt-3 inline-flex font-mono text-[11px] text-sky-300 hover:text-sky-100">Crear una auditoría</Link></td></tr>}
+            {!loading && !error && investigations.length > 0 && filteredInvestigations.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center font-mono text-xs text-slate-500">No hay expedientes que coincidan con los filtros.</td></tr>}
+            {!error && visibleInvestigations.map((investigation) => {
+              const target = targetLabel(investigation);
+              const code = `PM-${investigation.id.slice(0, 6).toUpperCase()}`;
+              const engine = ENGINE_META[resolveEngine(investigation.strategy, investigation.metrics)];
+              const status = statusView(investigation.status);
+              const StatusIcon = status.icon;
+              return <tr key={investigation.id} className="group transition-colors hover:bg-[#0f1a28]"><td className="max-w-[300px] px-4 py-3 sm:px-5"><Link href={`/investigation/${investigation.id}`} className="block min-w-0"><span className="block truncate font-medium text-slate-200 group-hover:text-sky-200">{target}</span><span className="mt-0.5 block font-mono text-[10px] text-slate-500">{code}{investigation.target?.university ? ` · ${investigation.target.university}` : ""}</span></Link></td><td className="px-4 py-3"><span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] ${status.className}`}><StatusIcon className={`h-2.5 w-2.5 ${investigation.status === "running" || investigation.status === "pending" ? "animate-spin" : ""}`} />{status.label}</span></td><td className="px-4 py-3"><span className={`inline-flex rounded border px-1.5 py-0.5 font-mono text-[9px] ${engine.badge}`}>{engine.label}</span></td><td className="px-4 py-3 text-right font-mono text-xs text-sky-200">{investigation.entities?.length ?? 0}</td><td className="whitespace-nowrap px-4 py-3 font-mono text-[10px] text-slate-500"><span className="inline-flex items-center gap-1"><CalendarDays className="h-3 w-3 text-slate-600" />{formatDate(investigation.created_at)}</span></td><td className="px-4 py-3 text-right"><div className="inline-flex items-center gap-1"><Link href={`/investigation/${investigation.id}`} title="Abrir expediente" className="rounded p-1.5 text-slate-400 hover:bg-sky-500/10 hover:text-sky-200"><ArrowUpRight className="h-3.5 w-3.5" /></Link><button type="button" onClick={(event) => void handleDelete(event, investigation.id, target)} title="Eliminar expediente" className="rounded p-1.5 text-slate-500 hover:bg-rose-500/10 hover:text-rose-300"><Trash2 className="h-3.5 w-3.5" /></button></div></td></tr>;
+            })}
+          </tbody>
+        </table>
+      </div>
+      {!error && filteredInvestigations.length > 0 && (
+        <footer className="flex flex-col gap-3 border-t border-[#1b2d43] bg-[#0a101a] px-4 py-3 font-mono text-[11px] sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <span className="text-slate-500">Mostrando <span className="text-slate-300">{firstVisible}-{lastVisible}</span> de <span className="text-slate-300">{filteredInvestigations.length}</span>{filteredInvestigations.length !== investigations.length && <span> ({investigations.length} en total)</span>}</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-1.5 text-slate-500">Mostrar
+              <select value={pageSize} onChange={(event) => { setPageSize(parsePageSize(event.target.value)); setPage(0); }} className="rounded border border-[#29435e] bg-[#101d2e] px-1.5 py-1 font-mono text-[11px] text-slate-200 outline-none focus:border-sky-400">
+                {PAGE_SIZES.map((size) => <option key={size} value={size}>{size === "all" ? "Todos" : size}</option>)}
+              </select>
+            </label>
+            {totalPages > 1 && <nav className="flex items-center gap-2" aria-label="Paginación de expedientes"><button type="button" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={currentPage === 0} className="rounded border border-[#29435e] px-2 py-1 text-slate-300 transition-colors hover:text-sky-100 disabled:cursor-not-allowed disabled:opacity-40">Anterior</button><span className="text-slate-500">Página {currentPage + 1} de {totalPages}</span><button type="button" onClick={() => setPage((current) => Math.min(totalPages - 1, current + 1))} disabled={currentPage >= totalPages - 1} className="rounded border border-[#29435e] px-2 py-1 text-slate-300 transition-colors hover:text-sky-100 disabled:cursor-not-allowed disabled:opacity-40">Siguiente</button></nav>}
+          </div>
+        </footer>
       )}
-
-      {error && (
-        <div className="p-8 text-center border-t border-rose-500/20 bg-rose-500/5">
-          <AlertTriangle className="w-8 h-8 text-rose-400 mx-auto mb-2" />
-          <h4 className="text-xs font-mono font-semibold text-slate-200">
-            Error al consultar el historial local
-          </h4>
-          <p className="text-[11px] font-mono text-slate-400 mt-1">{error}</p>
-          <button
-            type="button"
-            onClick={loadData}
-            className="mt-3 px-3 py-1 rounded bg-[#182334] text-xs font-mono text-slate-200 border border-[#2b3a52] hover:bg-[#223148] transition-colors cursor-pointer"
-          >
-            Reintentar
-          </button>
-        </div>
-      )}
-
-      {!loading && !error && investigations.length === 0 && (
-        <div className="p-12 text-center">
-          <FolderOpen className="w-9 h-9 text-slate-600 mx-auto mb-3 opacity-40" />
-          <h4 className="text-xs font-mono font-semibold text-slate-300">
-            No hay expedientes registrados aún
-          </h4>
-          <p className="text-[11px] font-mono text-slate-500 mt-1 max-w-sm mx-auto">
-            Configura y despacha tu primera investigación en la consola superior para trazar el primer mapa de identidad.
-          </p>
-        </div>
-      )}
-
-      {!loading && !error && investigations.length > 0 && filteredInvestigations.length === 0 && (
-        <div className="p-8 text-center text-xs font-mono text-slate-500">
-          No hay expedientes que coincidan con &ldquo;{searchQuery}&rdquo;.
-        </div>
-      )}
-
-      {/* List of Dossiers */}
-      {!loading && filteredInvestigations.length > 0 && (
-        <div className="divide-y divide-[#162234]">
-          {filteredInvestigations.map((inv) => {
-            const targetName =
-              inv.target?.full_name ||
-              inv.target?.username ||
-              inv.target?.email ||
-              "Objetivo Anónimo";
-
-            const code = `PM-${inv.id.slice(0, 4).toUpperCase()}`;
-            const initials = getInitials(targetName);
-            const isCompleted = inv.status === "completed";
-            const isRunning = inv.status === "running" || inv.status === "pending";
-            const isFailed = inv.status === "failed";
-            const engineKey = resolveEngine(inv.strategy, inv.metrics);
-            const engine = ENGINE_META[engineKey];
-            const entitiesCount = inv.entities?.length ?? 0;
-
-            return (
-              <div
-                key={inv.id}
-                className="px-4 sm:px-5 py-3.5 flex items-center justify-between gap-3 hover:bg-[#101928] transition-colors group"
-              >
-                {/* Left: Avatar + Details */}
-                <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                  {/* Avatar badge */}
-                  <div className="w-9 h-9 rounded-lg bg-[#121d2e] border border-[#20324c] flex items-center justify-center font-mono font-bold text-xs text-sky-300 shrink-0 shadow-sm">
-                    {initials}
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Link
-                        href={`/investigation/${inv.id}`}
-                        className="font-mono text-xs font-semibold text-slate-100 hover:text-sky-300 transition-colors truncate"
-                      >
-                        {targetName}
-                      </Link>
-
-                      <span className="text-[10px] font-mono text-slate-500">
-                        {code}
-                      </span>
-
-                      {/* Engine badge */}
-                      <span
-                        className={`text-[9px] font-mono px-1.5 py-0.2 rounded border ${engine.badge}`}
-                      >
-                        {engine.label}
-                      </span>
-
-                      {/* Status indicator */}
-                      <span
-                        className={`inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.2 rounded font-medium ${
-                          isCompleted
-                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/25"
-                            : isRunning
-                            ? "bg-sky-500/10 text-sky-400 border border-sky-500/25 animate-pulse"
-                            : "bg-rose-500/10 text-rose-400 border border-rose-500/25"
-                        }`}
-                      >
-                        {isCompleted ? (
-                          <CheckCircle2 className="w-2.5 h-2.5" />
-                        ) : isRunning ? (
-                          <Clock className="w-2.5 h-2.5 animate-spin" />
-                        ) : (
-                          <XCircle className="w-2.5 h-2.5" />
-                        )}
-                        <span>
-                          {isCompleted
-                            ? "Completado"
-                            : isRunning
-                            ? "En análisis"
-                            : isFailed
-                            ? "Error"
-                            : inv.status}
-                        </span>
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] font-mono text-slate-400">
-                      {inv.target?.university && (
-                        <span className="text-slate-400">
-                          🎓 {inv.target.university}
-                        </span>
-                      )}
-                      {inv.target?.email && (
-                        <span className="text-slate-500 truncate max-w-[200px]">
-                          {inv.target.email}
-                        </span>
-                      )}
-                      <span className="text-slate-500 flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-slate-600" />
-                        {formatDate(inv.created_at)}
-                      </span>
-                      <span className="text-sky-400/80">
-                        {entitiesCount} hallazgos
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right: Direct Actions */}
-                <div className="flex items-center gap-2 shrink-0">
-                  <Link
-                    href={`/investigation/${inv.id}`}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#142032] hover:bg-[#1a2c46] border border-[#213550] text-sky-300 text-xs font-mono transition-colors shadow-sm"
-                  >
-                    <span>Abrir</span>
-                    <ArrowUpRight className="w-3.5 h-3.5" />
-                  </Link>
-
-                  <button
-                    type="button"
-                    onClick={(e) => handleDelete(e, inv.id, targetName)}
-                    title="Eliminar expediente"
-                    className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+    </section>
   );
 }

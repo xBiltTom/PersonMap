@@ -50,8 +50,8 @@ function CommandPaletteModal() {
       {
         id: "nav-home",
         category: "Navegación",
-        title: "Inicio / Consola de Despacho",
-        subtitle: "Lanzador de investigaciones y resumen general",
+        title: "Inicio",
+        subtitle: "Alcance, metodología y módulos de PersonMap",
         icon: Home,
         perform: () => {
           router.push("/");
@@ -65,18 +65,18 @@ function CommandPaletteModal() {
         subtitle: "Configurar un nuevo objetivo OSINT",
         icon: PlusCircle,
         perform: () => {
-          router.push("/?action=new");
+          router.push("/auditorias/nueva");
           setIsCommandPaletteOpen(false);
         },
       },
       {
         id: "nav-cases",
         category: "Navegación",
-        title: "Historial de expedientes",
-        subtitle: "Consultar auditorías previas archivadas",
+        title: "Expedientes",
+        subtitle: "Consultar auditorías previas registradas",
         icon: FolderOpen,
         perform: () => {
-          router.push("/#historial");
+          router.push("/expedientes");
           setIsCommandPaletteOpen(false);
         },
       },
