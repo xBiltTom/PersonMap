@@ -1260,7 +1260,9 @@ function DigitalMapGraphInner({
       .map((edge) => displayById.get(edge.id))
       .filter((edge): edge is DisplayEdge => Boolean(edge));
 
-    const layoutKey = `${activeCategory}:${searchQuery}:${[...activeRelationTypes].sort().join(",")}:${[...activeEvidenceFilters].sort().join(",")}:${focusMode}:${selectedNodeId ?? ""}:${entities.map((n) => n.id).join(",")}:${evidenceEdges.map((e) => e.id).join(",")}`;
+    // La selección solo cambia el énfasis visual. No debe recalcular el encuadre
+    // ni devolver al analista al ajuste inicial del mapa.
+    const layoutKey = `${activeCategory}:${searchQuery}:${[...activeRelationTypes].sort().join(",")}:${[...activeEvidenceFilters].sort().join(",")}:${focusMode}:${entities.map((n) => n.id).join(",")}:${evidenceEdges.map((e) => e.id).join(",")}`;
 
     return {
       nodes,
@@ -1401,6 +1403,12 @@ function DigitalMapGraphInner({
     }
     onNodeInspect?.(nodeId);
   }, [baseView.nodes, onNodeInspect, setCenter]);
+
+  const openInspectorForNode = useCallback((nodeId: string) => {
+    setSelectedNodeId(nodeId);
+    setSelectedEdgeId(null);
+    onNodeInspect?.(nodeId);
+  }, [onNodeInspect]);
 
   const selectInspectorEdge = useCallback((edgeId: string) => {
     setSelectedEdgeId(edgeId);
@@ -1597,7 +1605,7 @@ function DigitalMapGraphInner({
         onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
         onNodeMouseLeave={() => setHoveredNodeId(null)}
         onNodeClick={(_, node) => {
-          selectInspectorNode(node.id);
+          openInspectorForNode(node.id);
         }}
         onEdgeClick={(_, edge) => {
           selectInspectorEdge(edge.id);
