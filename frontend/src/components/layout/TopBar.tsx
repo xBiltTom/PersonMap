@@ -166,7 +166,7 @@ export function TopBar() {
         </div>
 
         {/* Analyst Profile Menu */}
-        <div className="relative" ref={profileRef}>
+        {/* <div className="relative" ref={profileRef}>
           <button
             type="button"
             onClick={() => setIsProfileOpen((prev) => !prev)}
@@ -208,6 +208,7 @@ export function TopBar() {
             </div>
           )}
         </div>
+        */}
       </div>
     </header>
   );
