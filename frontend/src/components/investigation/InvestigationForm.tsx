@@ -197,11 +197,11 @@ export function InvestigationForm() {
           <div className="flex items-center justify-between">
             <h3 className="text-[11px] font-mono font-semibold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
               <User className="w-3.5 h-3.5" />
-              1. Identidad Civil & Afiliación (Anclas de Homonimia)
+              1. Identidad Civil & Afiliación
             </h3>
-            <span className="text-[10px] font-mono text-slate-500">
+            {/*<span className="text-[10px] font-mono text-slate-500">
               Desambiguación
-            </span>
+            </span>*/}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
@@ -211,7 +211,7 @@ export function InvestigationForm() {
               </label>
               <input
                 type="text"
-                placeholder="Ej: Carlos Mendoza"
+                placeholder="Ej: Jane Doe"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 className="w-full bg-[#080d15] border border-[#1a2636] focus:border-sky-500 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 outline-none transition-colors font-mono"
@@ -267,9 +267,9 @@ export function InvestigationForm() {
               <AtSign className="w-3.5 h-3.5" />
               2. Pivotes Digitales (Barrido en 3,000+ Plataformas)
             </h3>
-            <span className="text-[10px] font-mono text-slate-500">
+            {/*<span className="text-[10px] font-mono text-slate-500">
               Sensores masivos
-            </span>
+            </span>*/} 
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
@@ -280,7 +280,7 @@ export function InvestigationForm() {
               </label>
               <input
                 type="email"
-                placeholder="Ej: c.mendoza@unmsm.edu.pe o gmail"
+                placeholder="Ej: j.doe@universidad.edu.pe o personal@gmail.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-[#080d15] border border-[#1a2636] focus:border-sky-500 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 outline-none transition-colors font-mono"
@@ -294,7 +294,7 @@ export function InvestigationForm() {
               </label>
               <input
                 type="text"
-                placeholder="Ej: cmendoza"
+                placeholder="Ej: janedoe"
                 value={username}
                 onChange={(e) => handleUsernameChange(e.target.value)}
                 className="w-full bg-[#080d15] border border-[#1a2636] focus:border-sky-500 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 outline-none transition-colors font-mono"
@@ -308,7 +308,7 @@ export function InvestigationForm() {
               </label>
               <input
                 type="tel"
-                placeholder="Ej: +51 984120934"
+                placeholder="Ej: +51 912345678"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 className="w-full bg-[#080d15] border border-[#1a2636] focus:border-sky-500 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 outline-none transition-colors font-mono"
@@ -336,11 +336,11 @@ export function InvestigationForm() {
           <div className="flex items-center justify-between">
             <h3 className="text-[11px] font-mono font-semibold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
               <Cpu className="w-3.5 h-3.5" />
-              3. Modo de Orquestación Forense
+              3. Modo de Orquestación
             </h3>
-            <span className="text-[10px] font-mono text-slate-500">
+            {/*<span className="text-[10px] font-mono text-slate-500">
               Estrategia experimental
-            </span>
+            </span>*/}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
