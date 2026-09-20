@@ -9,9 +9,6 @@ import {
   PlusCircle,
   FolderOpen,
   Network,
-  Table,
-  Clock,
-  Terminal,
   FileText,
   ShieldCheck,
   BarChart3,
@@ -132,71 +129,26 @@ export function Sidebar() {
               </div>
             </div>
 
-            {/* Subnav links inside the investigation */}
+            {/* Subnav links inside the investigation: Workspace and Informe */}
             <div className="space-y-0.5 pt-1">
               <button
                 type="button"
-                onClick={() => handleSubTabClick("graph")}
+                onClick={() => handleSubTabClick("findings")}
                 className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-mono transition-colors text-left ${
-                  isInsideInvestigation && activeTab === "graph"
+                  isInsideInvestigation && activeTab !== "report"
                     ? "bg-[#142032] text-sky-300 font-semibold border border-[#213550]"
                     : "text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent"
                 }`}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Network className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                  <span className="truncate">Mapa digital</span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSubTabClick("findings")}
-                className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-mono transition-colors text-left ${
-                  isInsideInvestigation && activeTab === "findings"
-                    ? "bg-[#142032] text-sky-300 font-semibold border border-[#213550]"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent"
-                }`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <Table className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                  <span className="truncate">Hallazgos</span>
+                  <span className="truncate">Workspace</span>
                 </div>
                 {typeof activeInvestigation?.findingsCount === "number" && (
                   <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[#162234] text-slate-300 border border-[#22344d]">
                     {activeInvestigation.findingsCount}
                   </span>
                 )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSubTabClick("timeline")}
-                className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-mono transition-colors text-left ${
-                  isInsideInvestigation && activeTab === "timeline"
-                    ? "bg-[#142032] text-sky-300 font-semibold border border-[#213550]"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent"
-                }`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                  <span className="truncate">Línea de tiempo</span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSubTabClick("console")}
-                className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-mono transition-colors text-left ${
-                  isInsideInvestigation && activeTab === "console"
-                    ? "bg-[#142032] text-sky-300 font-semibold border border-[#213550]"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent"
-                }`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <Terminal className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                  <span className="truncate">Consola</span>
-                </div>
               </button>
 
               <button

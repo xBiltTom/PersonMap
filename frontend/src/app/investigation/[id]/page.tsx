@@ -22,7 +22,6 @@ import {
   Table,
   Clock,
   Terminal,
-  FileText,
   RefreshCw,
   Download,
   AlertCircle,
@@ -307,7 +306,6 @@ export default function InvestigationDetailPage({
     { id: "findings", label: `Hallazgos (${findingsCount})`, icon: Table },
     { id: "timeline", label: "Línea de tiempo", icon: Clock },
     { id: "console", label: "Consola", icon: Terminal },
-    { id: "report", label: "Informe", icon: FileText },
   ];
 
   return (
@@ -521,125 +519,138 @@ export default function InvestigationDetailPage({
         />
       )}
 
-      {/* 2. Workspace. El inspector se consulta sobre el expediente sin reducir sus vistas. */}
-      <div className="space-y-4">
-        {/* Upper Card: Mapa Digital (Adaptive height + collapsible for 1366x768) */}
-        <div
-          ref={mapSectionRef}
-          className="panel-card scroll-mt-20 overflow-hidden border border-[#162234] bg-[#0d1420] shadow-xl"
-        >
-        <div className="px-4 py-3 border-b border-[#162234] flex items-center justify-between gap-3 bg-[#090f18]">
-          <div className="flex items-center gap-2.5">
-            <Network className="w-4 h-4 text-sky-400 shrink-0" />
-            <div>
-              <h2 className="text-xs font-mono font-semibold text-slate-200">
-                Mapa digital
-              </h2>
-              <p className="text-[10px] font-mono text-slate-500 hidden sm:block">
-                Visualiza las entidades y sus relaciones documentadas.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
+      {/* 2. Vista principal: Informe o Workspace */}
+      {activeTab === "report" ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
             <button
               type="button"
-              onClick={() => setIsMapCollapsed((prev) => !prev)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#101928] hover:bg-[#162438] text-[10px] font-mono text-slate-300 border border-[#1d2c42] transition-colors cursor-pointer"
-              title={isMapCollapsed ? "Expandir lienzo de mapa" : "Colapsar mapa para priorizar tabla"}
+              onClick={() => setActiveTab("findings")}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#162234] bg-[#0d1420] text-xs font-mono text-slate-300 hover:text-sky-300 hover:border-sky-500/40 transition-colors cursor-pointer"
             >
-              {isMapCollapsed ? (
-                <>
-                  <Maximize2 className="w-3 h-3 text-sky-400" />
-                  <span>Expandir mapa</span>
-                </>
-              ) : (
-                <>
-                  <ChevronUp className="w-3 h-3 text-slate-400" />
-                  <span>Colapsar</span>
-                </>
-              )}
+              <ArrowLeft className="w-3.5 h-3.5 text-sky-400" />
+              <span>Volver al Workspace</span>
             </button>
           </div>
+          <ReportView investigation={investigation} />
         </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Upper Card: Mapa Digital (Adaptive height + collapsible for 1366x768) */}
+          <div
+            ref={mapSectionRef}
+            className="panel-card scroll-mt-20 overflow-hidden border border-[#162234] bg-[#0d1420] shadow-xl"
+          >
+            <div className="px-4 py-3 border-b border-[#162234] flex items-center justify-between gap-3 bg-[#090f18]">
+              <div className="flex items-center gap-2.5">
+                <Network className="w-4 h-4 text-sky-400 shrink-0" />
+                <div>
+                  <h2 className="text-xs font-mono font-semibold text-slate-200">
+                    Mapa digital
+                  </h2>
+                  <p className="text-[10px] font-mono text-slate-500 hidden sm:block">
+                    Visualiza las entidades y sus relaciones documentadas.
+                  </p>
+                </div>
+              </div>
 
-        {!isMapCollapsed && (
-          <div className="w-full relative transition-all duration-200">
-            <DigitalMapGraph
-              investigationId={investigation.id}
-              refreshKey={`${investigation.status}:${investigation.completed_at ?? ""}`}
-              graphData={graph}
-              focusNodeId={mapFocusNodeId}
-              inspectedNodeId={workspaceSelection?.kind === "node" ? workspaceSelection.id : null}
-              inspectedEdgeId={workspaceSelection?.kind === "edge" ? workspaceSelection.id : null}
-              onNodeInspect={inspectNode}
-              onEdgeInspect={inspectEdge}
-              onInspectionClear={closeWorkspaceInspector}
-            />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsMapCollapsed((prev) => !prev)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#101928] hover:bg-[#162438] text-[10px] font-mono text-slate-300 border border-[#1d2c42] transition-colors cursor-pointer"
+                  title={isMapCollapsed ? "Expandir lienzo de mapa" : "Colapsar mapa para priorizar tabla"}
+                >
+                  {isMapCollapsed ? (
+                    <>
+                      <Maximize2 className="w-3 h-3 text-sky-400" />
+                      <span>Expandir mapa</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronUp className="w-3 h-3 text-slate-400" />
+                      <span>Colapsar</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {!isMapCollapsed && (
+              <div className="w-full relative transition-all duration-200">
+                <DigitalMapGraph
+                  investigationId={investigation.id}
+                  refreshKey={`${investigation.status}:${investigation.completed_at ?? ""}`}
+                  graphData={graph}
+                  focusNodeId={mapFocusNodeId}
+                  inspectedNodeId={workspaceSelection?.kind === "node" ? workspaceSelection.id : null}
+                  inspectedEdgeId={workspaceSelection?.kind === "edge" ? workspaceSelection.id : null}
+                  onNodeInspect={inspectNode}
+                  onEdgeInspect={inspectEdge}
+                  onInspectionClear={closeWorkspaceInspector}
+                />
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-        {/* Lower Card: Workspace Multivista (Tabs + Findings/Timeline/Console/Report) */}
-        <div className="panel-card overflow-hidden border border-[#162234] bg-[#0d1420] shadow-xl">
-        {/* Workspace Subtabs */}
-        <div
-          role="tablist"
-          aria-label="Vistas del expediente"
-          className="px-4 py-2 border-b border-[#162234] flex items-center gap-1.5 overflow-x-auto bg-[#090f18] select-none"
-        >
-          {lowerTabs.map((tab) => {
-            const Icon = tab.icon;
-            const isTabActive =
-              activeTab === tab.id || (activeTab === "graph" && tab.id === "findings");
+          {/* Lower Card: Workspace Multivista (Tabs + Findings/Timeline/Console) */}
+          <div className="panel-card overflow-hidden border border-[#162234] bg-[#0d1420] shadow-xl">
+            {/* Workspace Subtabs */}
+            <div
+              role="tablist"
+              aria-label="Vistas del workspace"
+              className="px-4 py-2 border-b border-[#162234] flex items-center gap-1.5 overflow-x-auto bg-[#090f18] select-none"
+            >
+              {lowerTabs.map((tab) => {
+                const Icon = tab.icon;
+                const isTabActive =
+                  activeTab === tab.id || (activeTab === "graph" && tab.id === "findings");
 
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={isTabActive}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-mono transition-all whitespace-nowrap cursor-pointer ${
-                  isTabActive
-                    ? "bg-[#142032] text-sky-300 border border-[#213550] font-semibold"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-[#101928] border border-transparent"
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5 text-sky-400" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={isTabActive}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-mono transition-all whitespace-nowrap cursor-pointer ${
+                      isTabActive
+                        ? "bg-[#142032] text-sky-300 border border-[#213550] font-semibold"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-[#101928] border border-transparent"
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5 text-sky-400" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Tab content area */}
+            <div className="p-4 sm:p-5">
+              {(activeTab === "findings" || activeTab === "graph") && (
+                <FindingsTable
+                  entities={investigation.entities || []}
+                  graph={graph}
+                  onViewInMap={handleViewInMap}
+                  onInspectNode={inspectNode}
+                />
+              )}
+
+              {activeTab === "timeline" && (
+                <DiscoveryTimeline entities={investigation.entities || []} />
+              )}
+
+              {activeTab === "console" && (
+                <LiveConsole
+                  stream={stream}
+                  isFinished={investigation.status === "completed" || investigation.status === "failed"}
+                />
+              )}
+            </div>
+          </div>
         </div>
-
-        {/* Tab content area */}
-        <div className="p-4 sm:p-5">
-          {(activeTab === "findings" || activeTab === "graph") && (
-            <FindingsTable
-              entities={investigation.entities || []}
-              graph={graph}
-              onViewInMap={handleViewInMap}
-              onInspectNode={inspectNode}
-            />
-          )}
-
-          {activeTab === "timeline" && (
-            <DiscoveryTimeline entities={investigation.entities || []} />
-          )}
-
-          {activeTab === "console" && (
-            <LiveConsole
-              stream={stream}
-              isFinished={investigation.status === "completed" || investigation.status === "failed"}
-            />
-          )}
-
-          {activeTab === "report" && (
-            <ReportView investigation={investigation} />
-          )}
-        </div>
-      </div>
+      )}
         {(selectedWorkspaceNode || selectedWorkspaceEdge) && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-end bg-[#020712]/70 p-3 sm:p-4 backdrop-blur-sm animate-fade-in"
@@ -676,7 +687,6 @@ export default function InvestigationDetailPage({
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }
