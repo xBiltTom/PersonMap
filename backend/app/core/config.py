@@ -91,6 +91,13 @@ class Settings(BaseSettings):
     bing_visual_search_key: Optional[str] = None
     serpapi_key: Optional[str] = None
 
+    # --- Consulta de DNI/RUC Perú (RENIEC) -----------------------------------
+    # La v2 de apis.net.pe requiere token Bearer (registro gratuito).
+    # Sin token, dni_lookup usa la v1 pública y, si ésta falla, el mirror de
+    # apisperu.com — mismo patrón de fallback graceful que el LLM y Tavily.
+    # Obtén la clave en https://apis.net.pe (plan gratuito disponible).
+    apis_net_pe_token: Optional[str] = None
+
     # --- Motor de búsqueda para dorking -------------------------------------
     # Tavily (https://tavily.com) es un buscador diseñado para agentes: devuelve
     # JSON estructurado con puntuación de relevancia, en lugar del HTML que hay

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { checkHealth } from "@/lib/api";
 import { useWorkstation } from "@/context/WorkstationContext";
@@ -11,8 +11,6 @@ import {
   Cpu,
   Menu,
   X,
-  User,
-  Info,
 } from "lucide-react";
 
 const HEALTH_POLL_MS = 15000;
@@ -21,8 +19,7 @@ export function TopBar() {
   const { toggleCommandPalette, toggleSidebar, isSidebarOpen, activeInvestigation } = useWorkstation();
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [aiEnabled, setAiEnabled] = useState<boolean | null>(null);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const profileRef = useRef<HTMLDivElement>(null);
+  // Nota: profileRef e isProfileOpen se declaran aquí cuando se reactive el menú de analista.
 
   useEffect(() => {
     let cancelled = false;
@@ -48,17 +45,6 @@ export function TopBar() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, []);
-
-  // Close profile dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
-        setIsProfileOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   return (

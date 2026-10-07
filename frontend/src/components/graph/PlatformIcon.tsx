@@ -4,29 +4,19 @@ import React, { useState } from "react";
 import {
   AlertTriangle,
   Archive,
-  BookOpen,
-  Code2,
   Database,
   FileCode,
   FileSpreadsheet,
   FileText,
   Globe,
-  GraduationCap,
   Image as ImageIcon,
-  KeyRound,
   Landmark,
-  Link as LinkIcon,
   Mail,
   MapPin,
-  MessageCircle,
-  Music,
   Phone,
   Presentation,
-  Server,
-  Shield,
   Skull,
   User,
-  Video,
 } from "lucide-react";
 
 export interface EntityTheme {
@@ -361,6 +351,7 @@ export function PlatformIcon({
   // -------------------------------------------------------------------
   if (avatarUrl && !avatarError) {
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={avatarUrl}
         alt={platform || value || "avatar"}
@@ -583,6 +574,7 @@ export function PlatformIcon({
   const domain = extractDomain(v);
   if (domain && !faviconError && (t === "domain" || v.startsWith("http"))) {
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={`https://www.google.com/s2/favicons?domain=${domain}&sz=64`}
         alt={domain}

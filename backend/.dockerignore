@@ -1,0 +1,32 @@
+# Entorno virtual y caché de compilación
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Tests — no son necesarios en la imagen de producción
+tests/
+
+# Archivos de entorno — se pasan en runtime, no se hornean en la imagen
+.env
+.env.*
+
+# Artefactos de build locales
+*.egg-info/
+dist/
+build/
+
+# Cache de mypy / pytest / coverage
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs locales
+*.log
+
+# Herramientas de IDE
+.vscode/
+.idea/

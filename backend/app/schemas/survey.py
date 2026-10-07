@@ -1,6 +1,6 @@
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AwarenessSurveyCreate(BaseModel):
@@ -13,6 +13,8 @@ class AwarenessSurveyCreate(BaseModel):
 
 
 class AwarenessSurveyRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     investigation_id: UUID
     pre_awareness: int
@@ -21,6 +23,3 @@ class AwarenessSurveyRead(BaseModel):
     knew_commit_leak: bool
     will_change_habits: bool
     created_at: datetime
-
-    class Config:
-        from_attributes = True

@@ -1,0 +1,104 @@
+# =====================================================================
+# PersonMap — Docker Compose
+#
+# Uso rápido:
+#   cp .env.example .env        # edita tus claves
+#   docker compose up --build   # primera vez (construye imágenes)
+#   docker compose up           # arranques posteriores (usa caché)
+#
+# Servicios:
+#   postgres  → base de datos PostgreSQL 16
+#   backend   → FastAPI (aplica migraciones antes de arrancar)
+#   frontend  → Next.js standalone
+# =====================================================================
+
+services:
+  # -------------------------------------------------------------------
+  # PostgreSQL 16
+  # -------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: person_map
+      POSTGRES_PASSWORD: person_map
+      POSTGRES_DB: person_map
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U person_map -d person_map"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    # No exponemos el puerto al host por defecto; descomenta si necesitas
+    # acceso directo desde DBeaver u otra herramienta:
+    # ports:
+    #   - "5432:5432"
+
+  # -------------------------------------------------------------------
+  # Backend — FastAPI
+  # -------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Sobreescribimos el CMD para aplicar migraciones antes de arrancar.
+    # --workers 1 es intencional: el EventBus SSE vive en memoria del proceso.
+    entrypoint: >
+      sh -c "
+        alembic upgrade head &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+      "
+    env_file:
+      - .env
+    environment:
+      # Sobreescribe DATABASE_URL del .env para apuntar al servicio postgres
+      DATABASE_URL: postgresql+asyncpg://person_map:person_map@postgres:5432/person_map
+      BACKEND_HOST: "0.0.0.0"
+      BACKEND_PORT: "8000"
+      # CORS: el frontend dentro de la red Docker llama al backend directamente,
+      # pero el navegador llama a localhost:8000 → lo incluimos en origins.
+      CORS_ORIGINS: "http://localhost:3000,http://frontend:3000"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  # -------------------------------------------------------------------
+  # Frontend — Next.js (standalone)
+  # -------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # El navegador del usuario llama a localhost:8000, no al nombre
+      # de servicio Docker. Ajusta si despliegas detrás de un proxy/dominio.
+      NEXT_PUBLIC_API_URL: "http://localhost:8000/api/v1"
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+
+# -------------------------------------------------------------------
+# Volúmenes nombrados (persisten entre `docker compose down`)
+# Para borrar datos: docker compose down -v
+# -------------------------------------------------------------------
+volumes:
+  postgres_data:

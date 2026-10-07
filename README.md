@@ -111,6 +111,7 @@ person-map/
 │       ├── components/      # Mapa, inspector, hallazgos, trazabilidad y consola
 │       ├── context/         # Estado de navegación del workstation
 │       └── lib/             # API, tipos y normalizadores compartidos
+├── docker-compose.yml
 ├── .env.example
 └── README.md
 ```
@@ -128,13 +129,37 @@ Herramientas públicas
                                           └► Trazabilidad / historial reconstruido
 ```
 
-## Requisitos
+## Ejecución con Docker Compose (Recomendado)
+
+La forma más rápida de levantar toda la plataforma (PostgreSQL 16, backend con migraciones automáticas y frontend optimizado):
+
+```bash
+# 1. Configurar variables de entorno (claves de API opcionales)
+cp .env.example .env
+
+# 2. Construir e iniciar todos los servicios
+docker compose up --build
+```
+
+- **Frontend**: `http://localhost:3000`
+- **Backend API**: `http://localhost:8000/api/v1`
+- **OpenAPI / Swagger**: `http://localhost:8000/docs`
+- **Health check**: `http://localhost:8000/health`
+
+Para detener los servicios:
+```bash
+docker compose down
+# O para reiniciar descartando el volumen de base de datos:
+docker compose down -v
+```
+
+## Requisitos para desarrollo local manual
 
 - PostgreSQL 16 o superior.
 - Python 3.12 o superior y [`uv`](https://docs.astral.sh/uv/).
 - Node.js 20 o superior y `pnpm` (el proyecto fija `pnpm@11.5.2`).
 
-## Ejecución local
+## Ejecución local (Desarrollo manual)
 
 ### 1. Configurar entorno
 
