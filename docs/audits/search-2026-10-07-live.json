@@ -1,0 +1,32 @@
+[
+  {
+    "exact_match_requested": false,
+    "http_status": 200,
+    "seconds": 1.81,
+    "result_count": 3,
+    "literal_matches": 3,
+    "domains": [
+      "apps.make.com",
+      "docs.tavily.com",
+      "github.com"
+    ],
+    "usage": {
+      "credits": 1
+    }
+  },
+  {
+    "exact_match_requested": true,
+    "http_status": 200,
+    "seconds": 1.31,
+    "result_count": 3,
+    "literal_matches": 2,
+    "domains": [
+      "docs.tavily.com",
+      "github.com",
+      "docs.tavily.com"
+    ],
+    "usage": {
+      "credits": 1
+    }
+  }
+]

@@ -467,7 +467,7 @@ class HybridEngine:
                     "tool_call_id": tc.id,
                     "content": json.dumps({
                         "findings_count": len(new_findings),
-                        "dni_name_candidates": sweep.context.extra.get("dni_name_candidates", []),
+                        "search_diagnostics": sweep.context.extra.get("search_diagnostics", []), "dni_name_candidates": sweep.context.extra.get("dni_name_candidates", []),
                         "sample": [
                             {"platform": f.platform, "value": f.value, "confidence": f.confidence}
                             for f in new_findings[:10]

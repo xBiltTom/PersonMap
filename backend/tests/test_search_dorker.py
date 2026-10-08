@@ -125,6 +125,7 @@ def test_no_dorks_without_any_identifier():
 @pytest.mark.asyncio
 @respx.mock
 async def test_tavily_is_used_when_key_is_configured(context, with_tavily_key):
+    respx.post(DDG_URL).respond(500)
     route = respx.post(TAVILY_URL).mock(
         return_value=httpx.Response(200, json=TAVILY_RESPONSE)
     )
@@ -141,6 +142,7 @@ async def test_tavily_is_used_when_key_is_configured(context, with_tavily_key):
 @pytest.mark.asyncio
 @respx.mock
 async def test_tavily_request_shape(context, with_tavily_key):
+    respx.post(DDG_URL).respond(500)
     route = respx.post(TAVILY_URL).mock(
         return_value=httpx.Response(200, json=TAVILY_RESPONSE)
     )
@@ -155,14 +157,14 @@ async def test_tavily_request_shape(context, with_tavily_key):
     body = json.loads(request.content)
     assert body["search_depth"] == settings.tavily_search_depth
     assert body["max_results"] == settings.tavily_max_results
-    # `exact_match` NO debe enviarse: verificado contra la API real, devuelve
-    # cero resultados siempre (con y sin comillas), dejando el dorking mudo.
-    assert "exact_match" not in body
+    assert body["exact_match"] is True
+    assert body["include_usage"] is True
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_relevance_score_maps_to_confidence(context, with_tavily_key):
+    respx.post(DDG_URL).respond(500)
     respx.post(TAVILY_URL).mock(return_value=httpx.Response(200, json=TAVILY_RESPONSE))
 
     findings = await SearchDorkerTool().execute(context)
@@ -180,6 +182,7 @@ async def test_relevance_score_maps_to_confidence(context, with_tavily_key):
 @pytest.mark.asyncio
 @respx.mock
 async def test_platform_is_detected_from_the_url(context, with_tavily_key):
+    respx.post(DDG_URL).respond(500)
     respx.post(TAVILY_URL).mock(return_value=httpx.Response(200, json=TAVILY_RESPONSE))
 
     findings = await SearchDorkerTool().execute(context)
@@ -244,6 +247,7 @@ async def test_semantic_noise_is_discarded(context, with_tavily_key):
 @pytest.mark.asyncio
 @respx.mock
 async def test_literal_results_are_kept(context, with_tavily_key):
+    respx.post(DDG_URL).respond(500)
     """El control de exactitud no debe descartar coincidencias reales."""
     respx.post(TAVILY_URL).mock(return_value=httpx.Response(200, json=TAVILY_RESPONSE))
 
@@ -315,7 +319,7 @@ def test_the_engines_are_a_table_not_a_branch():
 
     backends = SearchDorkerTool()._backends()
 
-    assert [b.name for b in backends] == ["tavily", "duckduckgo"]
+    assert [b.name for b in backends] == ["tavily", "tinyfish", "duckduckgo"]
 
 
 def test_the_free_engine_is_always_available():

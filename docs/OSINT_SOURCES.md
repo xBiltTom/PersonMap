@@ -68,6 +68,7 @@ disponibilidad en vivo de las fuentes de la tabla siguiente.
 | **MediaWiki** | API de contribuciones | No | 🟢 | 2026-09-04 | `wikipedia_edits` |
 | **GitHub** | API pública sin autenticar | No | 🟢 | 2026-09-04 | `github_deep_scanner`, `email_checker` |
 | **Tavily** | `POST api.tavily.com/search` | Sí (gratuita) | 🟢 | 2026-09-04 | `search_dorker` — motor principal. 1.000 créditos/mes; 1 crédito por búsqueda `basic`, 2 por `advanced` |
+| **TinyFish Search / Fetch** | `api.search.tinyfish.ai` / `api.fetch.tinyfish.ai` | Sí (opcional) | Pendiente de prueba real | 2026-10-07 | Search: respaldo por consulta; Fetch: lectura opcional de páginas dinámicas. Integración y fallos verificados con HTTP simulado; sin key se omiten |
 | **DuckDuckGo** | Scraping HTML de resultados | No | 🟡 | 2026-09-04 | `search_dorker` — motor de respaldo automático. Responde HTTP 202, no 200 |
 | **Google (Scholar/YouTube)** | Endpoints públicos sin key | No | 🟡 | 2026-09-03 | `google_account_osint` — el `lookup` de Gmail es históricamente inestable |
 | **Gemini** | `generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent` | Sí (gratuita) | 🟢 | 2026-09-04 | Capa 2 del motor `hybrid`, agente `agentic` y narrativa. Verificado que emite `functionCall` con nuestro esquema de herramientas |
@@ -78,12 +79,12 @@ disponibilidad en vivo de las fuentes de la tabla siguiente.
 
 ### Trampas verificadas en producción
 
-**Tavily — el parámetro `exact_match` no sirve.** Está documentado en la
-referencia oficial, pero probado contra la API real devuelve **cero resultados
-en todos los casos**, con y sin comillas en la consulta, y sin ningún error:
-HTTP 200 y `results: []`. Enviarlo deja el dorking mudo en silencio. Las
-comillas dentro de la propia consulta sí funcionan, así que no se envía el
-parámetro.
+**Tavily — `exact_match` necesita validación local y respaldo.** La observación
+inicial de septiembre devolvía cero resultados. La comprobación real del
+2026-10-07 sí obtuvo resultados con ese parámetro; aquella observación no era
+una limitación universal. Ahora se envía de forma configurable, se verifican
+las coincidencias en el cliente y una consulta vacía activa el siguiente motor.
+[Configuración y límites actuales](MOTOR_BUSQUEDA.md).
 
 **Tavily busca por relevancia semántica, no por coincidencia literal.** Un dork
 de un correo inexistente (`"jperez@untumbes.edu.pe"`) devuelve la portada de
@@ -91,7 +92,10 @@ de un correo inexistente (`"jperez@untumbes.edu.pe"`) devuelve la portada de
 obtener nada, porque acaba en el expediente de una persona concreta. De ahí que
 `search_dorker` imponga la exactitud del lado del cliente
 (`tavily_require_literal_match`), exigiendo que **todos** los términos
-entrecomillados del dork aparezcan en el título, el extracto o la URL.
+entrecomillados del dork aparezcan como identificadores completos en el título
+o extracto, o como segmentos completos de ruta para nombres/alias. DNI y
+teléfono requieren coincidencia en título/extracto; los parámetros de URL
+no demuestran una mención.
 
 **El listado de modelos de Gemini incluye modelos que la clave no puede usar.**
 `v1beta/models` devuelve 50 entradas, pero `gemini-2.5-flash` responde **404
@@ -268,6 +272,7 @@ trae el dato o la técnica, reimplementados sobre `app/tools/http_client.py`.
 
 | Fecha | Alcance | Resultado |
 |---|---|---|
+| 2026-10-07 | Optimización del buscador e integración opcional de TinyFish | Respaldo por consulta, filtros completos, diagnósticos y límites. Tavily comprobado de nuevo en vivo; TinyFish probado con HTTP simulado. El diagnóstico histórico de `exact_match` se actualiza arriba. |
 | 2026-09-05 | Integración de Pwned Passwords (autodefensa) | 🟢 Verificados en vivo los cuatro supuestos que sostienen el diseño: la API responde 200 sin key; `Access-Control-Allow-Origin: *` permite llamarla **desde el navegador sin proxy propio**; el preflight devuelve `Access-Control-Allow-Headers: Add-Padding`, así que el relleno anti-análisis-de-tamaño es usable; y el prefijo `CBFDA` devuelve 1.971 sufijos, es decir el anonimato real es de ~2.000 candidatos. Medido que el relleno inyecta entre 112 y 157 entradas falsas **con contador 0**, lo que obliga a leer el contador y no la mera pertenencia |
 | 2026-09-03 | Revisión inicial del ecosistema para el plan de ejecución | Se verificaron en vivo Hudson Rock, crt.sh y los patrones directos de avatar (todos 🟢, sin key). Se midió el dataset de Maigret (3653 sitios). Se descartaron `ignorant` por motivos éticos y HIBP/Brave/SerpApi por coste |
 | 2026-09-04 | Integración de Tavily como motor de dorking | 🟢 operativa. Dos trampas detectadas solo al probar contra la API real, no en los tests con mock: `exact_match` devuelve cero resultados siempre, y la búsqueda es semántica (un correo inexistente devuelve la portada de su dominio). Ambas mitigadas en `search_dorker`; ver "Trampas verificadas en producción" |

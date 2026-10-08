@@ -210,6 +210,7 @@ async def test_rules_follow_public_source_then_search_candidate_name(monkeypatch
     monkeypatch.setattr(tool_registry, '_tools', {'dni_lookup':DniLookupTool(), 'search_dorker':SearchDorkerTool()})
     monkeypatch.setattr(settings, 'tavily_api_key', 'fixture-key')
     monkeypatch.setattr(settings, 'tavily_max_queries', 5)
+    respx.post('https://html.duckduckgo.com/html/').respond(500)
     respx.post('https://api.tavily.com/search').respond(200,json={'results':[{'url':URL,'title':'ANA PRUEBA SINTETICA','content':f'DNI {DNI}', 'score':0.8}]})
     respx.get(URL).respond(200,text=CSV,headers={'content-type':'text/csv'})
     result = await RuleEngine().collect_findings('dni-fixture', Target(dni=DNI, extra_data={}))

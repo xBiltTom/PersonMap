@@ -120,7 +120,7 @@ class Settings(BaseSettings):
     # búsqueda `basic` cuesta 1 crédito.
     #
     # Sin clave, `search_dorker` cae automáticamente al scraping de DuckDuckGo,
-    # de modo que el sistema sigue funcionando al 100% sin configurar nada.
+    # sin exigir claves; la disponibilidad externa se registra en diagnósticos.
     tavily_api_key: Optional[str] = None
     # "basic" (1 crédito) o "advanced" (2 créditos, más contexto por resultado).
     tavily_search_depth: str = "basic"
@@ -130,13 +130,21 @@ class Settings(BaseSettings):
     tavily_max_results: int = 8
     # Sesga los resultados hacia el país del público objetivo. ISO en inglés.
     tavily_country: Optional[str] = "peru"
-    # Descarta los resultados que no contienen literalmente el término
-    # entrecomillado del dork. Tavily busca por relevancia semántica, así que un
-    # dork de un correo inexistente devuelve la web del dominio: un falso
-    # positivo que en OSINT es peor que no obtener nada. Su parámetro nativo
-    # `exact_match` no sirve (devuelve cero resultados siempre), de ahí que la
-    # comprobación se haga del lado del cliente.
+    # Native exact matching complements local validation; phone format alternatives use OR.
     tavily_require_literal_match: bool = True
+    tavily_exact_match: bool = True
+    search_max_queries_per_round: int = 5
+    search_timeout_seconds: float = 90
+    search_read_pages: bool = False
+    search_max_pages: int = 2
+    tinyfish_api_key: Optional[SecretStr] = None
+    tinyfish_location: str = "PE"
+    tinyfish_language: str = "es"
+    tinyfish_fetch_enabled: bool = False
+
+    @property
+    def tinyfish_enabled(self) -> bool:
+        return bool(self.tinyfish_api_key and self.tinyfish_api_key.get_secret_value().strip())
 
     def tool_concurrency_budget(self, requested: int) -> int:
         """

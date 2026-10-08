@@ -183,7 +183,7 @@ class AutonomousOSINTAgent:
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": json.dumps({"findings_count": len(tool_findings), "sample": summary_result, "dni_name_candidates": agent_context.extra.get("dni_name_candidates", []), "known_phones": agent_context.all_phones()[:settings.phone_max_numbers]}),
+                        "content": json.dumps({"findings_count": len(tool_findings), "sample": summary_result, "search_diagnostics": agent_context.extra.get("search_diagnostics", []), "dni_name_candidates": agent_context.extra.get("dni_name_candidates", []), "known_phones": agent_context.all_phones()[:settings.phone_max_numbers]}),
                     })
 
                 if db:

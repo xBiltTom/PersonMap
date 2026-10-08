@@ -1,0 +1,29 @@
+[
+  {
+    "status": "ok",
+    "matched": 7,
+    "kept": 7,
+    "include_domains": [],
+    "usage": {
+      "credits": 1
+    },
+    "result_domains": [
+      "docs.tavily.com",
+      "github.com",
+      "learn.microsoft.com",
+      "trust.tavily.com"
+    ]
+  },
+  {
+    "status": "no_verified_matches",
+    "matched": 0,
+    "kept": 0,
+    "include_domains": [
+      "docs.tavily.com"
+    ],
+    "usage": {
+      "credits": 1
+    },
+    "result_domains": []
+  }
+]

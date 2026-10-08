@@ -1,0 +1,29 @@
+{
+  "http": "simulated",
+  "literal_matching": {
+    "alias_inside_other_word": true,
+    "email_inside_another_email": true,
+    "query_reflected_in_url": true,
+    "diacritic_dropped_into_shorter_name": true
+  },
+  "planning": {
+    "first_budget_queries": [
+      "\"person@example.test\"",
+      "\"+51987654321\" OR \"+51 987 654 321\" OR \"987 654 321\"",
+      "\"00123456\"",
+      "\"PERSONA PRUEBA\"",
+      "\"PERSONA PRUEBA\""
+    ],
+    "alias_queried_in_first_budget": false,
+    "discovered_email_queried": false,
+    "discovered_alias_queried": false,
+    "other_candidate_name_queried": false
+  },
+  "fallback_with_partial_primary_success": {
+    "primary": 5,
+    "backup": 0
+  },
+  "malformed_schema_error": "AttributeError",
+  "off_domain_results_accepted_by_backup": 1,
+  "invalid_http_url_accepted": true
+}

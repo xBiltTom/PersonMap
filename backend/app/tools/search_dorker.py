@@ -1,24 +1,10 @@
-"""
-Dorking sobre la web pública con motores intercambiables.
-
-Motor principal: **Tavily** (https://tavily.com), un buscador diseñado para
-agentes. Frente al scraping de HTML que usaba este módulo, aporta:
-
-  - JSON estructurado, sin parseo de HTML que se rompe cuando el buscador
-    cambia su maquetación (era el eslabón más frágil del pipeline);
-  - `exact_match`, que respeta las comillas de un dork en lugar de tratarlas
-    como texto suelto -- es justo lo que distingue un dork de una búsqueda;
-  - `include_domains`, equivalente nativo del operador `site:`;
-  - un `score` de relevancia por resultado, que se traduce a confianza en vez
-    de asignar la misma a todos los hallazgos;
-  - sesgo por país, útil dado que el público objetivo es peruano.
-
-Motor de respaldo: scraping de DuckDuckGo, el comportamiento anterior. Se usa
-automáticamente si no hay `TAVILY_API_KEY`, de modo que el sistema sigue
-funcionando al 100% sin configurar nada.
-"""
+"""Búsqueda pública con validación local y respaldo por consulta."""
 
 import re
+import math
+import asyncio
+import unicodedata
+from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 from urllib.parse import unquote, urlsplit
@@ -28,7 +14,7 @@ from bs4 import BeautifulSoup
 
 from app.core.config import settings
 from app.tools import http_client
-from app.tools.dni_public import normalize_dni, matches_dni
+from app.tools.dni_public import normalize_dni, matches_dni, public_source_url
 from app.tools.phone_numbers import analyze_phone, matches_phone_text, extract_phone_observations
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
@@ -82,47 +68,49 @@ QUOTED_TERM_RE = re.compile(r'"([^"]+)"')
 
 
 def _normalize(text: str) -> str:
-    """Minúsculas y espacios colapsados, para comparar sin depender del formato."""
-    return re.sub(r"\s+", " ", text or "").lower().strip()
+    text = unicodedata.normalize("NFKD", text or "").casefold()
+    return re.sub(r"\s+", " ", "".join(c for c in text if not unicodedata.combining(c))).strip()
+
+
+def _bounded_match(term: str, text: str) -> bool:
+    term = _normalize(term)
+    if " " in term:
+        pattern = r"(?<!\w)" + re.escape(term) + r"(?!\w)"
+    else:
+        # Whole emails; aliases can carry a leading @ and sentence punctuation.
+        prefix = "" if "@" in term else "@?"
+        pattern = r"(?<![\w@.+-])" + prefix + re.escape(term) + r"(?![\w@+-]|\.[\w])"
+    return bool(re.search(pattern, _normalize(text)))
 
 
 def _matches_literally(dork: "Dork", title: str, snippet: str, url: str) -> bool:
-    """
-    ¿Aparecen realmente en el resultado los términos entrecomillados del dork?
-
-    Sustituye al parámetro `exact_match` de Tavily, que está documentado pero
-    devuelve cero resultados en la práctica. Sin esta comprobación el dorking
-    degenera en búsqueda semántica y contamina el expediente con homónimos y
-    páginas apenas relacionadas.
-
-    La condición es **conjuntiva**: un dork `"Juan Perez" "Universidad X"` pide
-    ambas cosas a la vez. Aceptarlo porque solo coincide la universidad
-    devolvería la web del centro para cualquier alumno.
-
-    Un dork sin comillas no impone restricción: se acepta el resultado.
-    """
     if dork.dni:
         return any(matches_dni(dork.dni, text) for text in (title, snippet))
     if dork.phone:
         return matches_phone_text(dork.phone, title, snippet)
     terms = QUOTED_TERM_RE.findall(dork.query)
-    if not terms:
-        return True
-
-    haystack = _normalize(f"{title} {snippet} {url}")
-    # Las URLs suelen unir el nombre con guiones o puntos ("juan-perez"), así
-    # que se compara también una versión sin separadores.
-    collapsed = re.sub(r"[^a-z0-9]", "", haystack)
-
+    # Only path segments can support URL matches: reflected query strings are not evidence.
+    segments = [unquote(p) for p in urlsplit(url).path.split("/") if p]
     for term in terms:
-        needle = _normalize(term)
-        compact = re.sub(r"[^a-z0-9]", "", needle)
-        if needle and needle in haystack:
+        if any(_bounded_match(term, text) for text in (title, snippet)):
             continue
-        if compact and compact in collapsed:
+        if "@" not in term and any(
+            _normalize(segment.lstrip("@")) == _normalize(term)
+            or (" " in term and _normalize(re.sub(r"[-._]+", " ", segment)) == _normalize(term))
+            for segment in segments
+        ):
             continue
         return False
     return True
+
+
+class SearchResults(list):
+    """Provider outcome; matched counts include duplicates to avoid unnecessary paid fallbacks."""
+    def __init__(self, findings=(), *, status="ok", matched=0, usage=None):
+        super().__init__(findings)
+        self.status = status
+        self.matched = matched
+        self.usage = usage
 
 
 @dataclass
@@ -172,41 +160,35 @@ class SearchDorkerTool(BaseTool):
     description = (
         "Genera y ejecuta dorks de búsqueda contextuales sobre la web pública "
         "(LinkedIn, GitHub, redes sociales, repositorios académicos) usando Tavily, "
-        "con DuckDuckGo como motor de respaldo."
+        "con TinyFish opcional y DuckDuckGo como motores de respaldo."
     )
     category = ToolCategory.SEARCH
     required_inputs = ["full_name", "username", "email", "dni", "phone"]
 
     def can_run(self, context: TargetContext) -> bool:
-        return super().can_run(context) or bool(context.all_phones()) or bool(context.discovered_names)
+        return super().can_run(context) or bool(context.all_phones()) or bool(context.discovered_names) or bool(context.all_emails()) or bool(context.all_usernames())
 
     def _backends(self) -> List["SearchBackend"]:
-        """
-        Motores en orden de preferencia.
-
-        Estructura de tabla en lugar de un `if/else`: añadir un motor nuevo es
-        una entrada más, no una rama nueva dentro de `execute`. La caída de uno
-        al siguiente es la misma que antes.
-
-        Sobre SearXNG, que el plan contemplaba: no se añade porque no funciona.
-        Las instancias públicas traen la salida JSON desactivada, y una
-        auto-hospedada recibe CAPTCHA de Google/Brave/Startpage desde una sola
-        IP. Queda como entrada futura de esta tabla si algún día cambia.
-        """
         return [
             SearchBackend(
                 name="tavily",
                 is_available=lambda: settings.tavily_enabled,
                 build_client=lambda: http_client.build_client(
-                    timeout=20.0, rotate_ua=False
+                    timeout=15.0, rotate_ua=False, max_retries=0, follow_redirects=False
                 ),
                 search=self._search_tavily,
+            ),
+            SearchBackend(
+                name="tinyfish",
+                is_available=lambda: settings.tinyfish_enabled,
+                build_client=lambda: http_client.build_client(timeout=15.0, rotate_ua=False, max_retries=0, follow_redirects=False),
+                search=self._search_tinyfish,
             ),
             SearchBackend(
                 name="duckduckgo",
                 is_available=lambda: True,
                 build_client=lambda: http_client.build_client(
-                    timeout=12.0, headers=HEADERS
+                    timeout=12.0, headers=HEADERS, max_retries=0, follow_redirects=False
                 ),
                 search=self._search_duckduckgo,
             ),
@@ -220,27 +202,56 @@ class SearchDorkerTool(BaseTool):
         max_queries = max(1, settings.tavily_max_queries)
         executed = context.extra.setdefault("search_queries_executed", [])
         dorks = [d for d in dorks if [d.query, d.include_domains] not in executed]
-        dorks = dorks[:max(0, max_queries - len(executed))]
+        # Prefer newly discovered identifiers over secondary domain variants on later rounds.
+        if executed:
+            dorks.sort(key=lambda d: bool(d.include_domains))
+        dorks = dorks[:min(max(1, settings.search_max_queries_per_round), max(0, max_queries - len(executed)))]
         if not dorks:
             return []
-        executed.extend([d.query, d.include_domains] for d in dorks)
 
         findings: List[ToolFinding] = []
-        seen_urls: set[str] = set()
-
-        for backend in self._backends():
-            if not backend.is_available():
-                continue
-
-            async with backend.build_client() as client:
-                for dork in dorks:
-                    findings.extend(await backend.search(client, dork, seen_urls))
-
-            # Si un motor no devolvió nada (clave inválida, cuota agotada,
-            # caída), se pasa al siguiente en lugar de quedarse sin resultados.
-            if findings:
-                return findings
-
+        seen_urls = set(context.extra.setdefault("search_seen_urls", []))
+        diagnostics = context.extra.setdefault("search_diagnostics", [])
+        disabled = set(context.extra.setdefault("search_disabled_backends", []))
+        attempts = context.extra.setdefault("search_provider_attempts", {})
+        backends = [backend for backend in self._backends() if backend.is_available()]
+        clients = {}
+        try:
+            async with asyncio.timeout(max(1, settings.search_timeout_seconds)):
+                async with AsyncExitStack() as stack:
+                    for dork in dorks:
+                        executed.append([dork.query, dork.include_domains])
+                        for backend in backends:
+                            if backend.name in disabled:
+                                continue
+                            if attempts.get(backend.name, 0) >= max_queries:
+                                continue
+                            attempts[backend.name] = attempts.get(backend.name, 0) + 1
+                            try:
+                                if backend.name not in clients:
+                                    clients[backend.name] = await stack.enter_async_context(backend.build_client())
+                                result = await backend.search(clients[backend.name], dork, seen_urls)
+                            except (httpx.HTTPError, ValueError, TypeError, KeyError):
+                                result = SearchResults(status="request_error")
+                            status = getattr(result, "status", "ok")
+                            diagnostics.append({"engine": backend.name, "query": dork.query,
+                                                "status": status, "findings": len(result),
+                                                "usage": getattr(result, "usage", None)})
+                            findings.extend(result)
+                            if status in {"http_401", "http_402", "http_403", "http_429", "http_432"}:
+                                disabled.add(backend.name)
+                            if getattr(result, "matched", len(result)):
+                                break
+        except TimeoutError:
+            diagnostics.append({"engine": "coordinator", "status": "deadline_exceeded"})
+        context.extra["search_disabled_backends"] = sorted(disabled)
+        context.extra["search_seen_urls"] = sorted(seen_urls)
+        if settings.search_read_pages:
+            from app.tools.search_reader import enrich_search_findings
+            await enrich_search_findings(findings, context)
+        # Keep diagnostics reviewable even if a later provider supplied the evidence.
+        for finding in findings:
+            finding.metadata_info["search_provider_status"] = [dict(d) for d in diagnostics[-max_queries * 3:]]
         return findings
 
     # -- Generación de dorks ---------------------------------------------
@@ -250,54 +261,43 @@ class SearchDorkerTool(BaseTool):
         Dorks ordenados de mayor a menor poder discriminante, porque el tope de
         consultas recorta por el final.
         """
-        dorks: List[Dork] = []
-        name = (context.full_name or (context.discovered_names[0] if context.discovered_names else "")).strip()
-        uni = (context.university or "").strip()
-        username = (context.username or "").strip()
-        email = (context.email or "").strip()
-        dni = normalize_dni(context.dni)
-
-        # El correo es el identificador más discriminante: quien lo publica
-        # suele estar hablando de la persona concreta, no de un homónimo.
-        if email:
-            dorks.append(Dork(f'"{email}"', "Menciones públicas del correo"))
-
-        # One bounded query per phone, with alternate formats interpreted as OR.
+        groups: List[List[Dork]] = [[], [], [], [], []]
+        for email in context.all_emails()[:5]:
+            groups[0].append(Dork(f'"{email}"', "Menciones públicas del correo"))
         for phone in context.all_phones()[:settings.phone_max_numbers]:
             facts = analyze_phone(phone)
-            if not facts["valid"] or facts.get("extension"):
+            if facts["valid"] and not facts.get("extension"):
+                variants = list(dict.fromkeys([facts["e164"], facts["international"], facts["national"]]))
+                groups[1].append(Dork(" OR ".join(f'"{v}"' for v in variants), "Menciones públicas del teléfono", phone=phone))
+        dni = normalize_dni(context.dni)
+        if dni:
+            groups[2].append(Dork(f'"{dni}"', "DNI en documentos públicos", dni=dni))
+        for username in context.all_usernames()[:5]:
+            groups[3].append(Dork(f'"{username}"', "Menciones del alias"))
+        names = list(dict.fromkeys([context.full_name] if context.full_name else context.discovered_names))[:3]
+        for name in names:
+            name = name.strip()
+            if not name:
                 continue
-            variants = list(dict.fromkeys([facts["e164"], facts["international"], facts["national"]]))
-            query = " OR ".join(f'"{value}"' for value in variants)
-            dorks.append(Dork(query, "Menciones públicas del teléfono", phone=phone))
-
+            uni = (context.university or "").strip()
+            query = f'"{name}" "{uni}"' if uni else f'"{name}"'
+            groups[4].append(Dork(query, "Nombre y afiliación" if uni else "Menciones del nombre completo"))
+        # Give each identifier class a slot before extra phones/emails or site variants.
+        dorks = [group[i] for i in range(max(map(len, groups), default=0)) for group in groups if i < len(group)]
+        if context.university:
+            for name in names:
+                if name.strip():
+                    dorks.append(Dork(f'"{name.strip()}"', "Menciones del nombre completo"))
+        for name in names:
+            if name.strip():
+                dorks.append(Dork(f'"{name.strip()}"', "Perfiles del nombre", include_domains=PROFILE_DOMAINS))
+        for username in context.all_usernames()[:5]:
+            dorks.append(Dork(f'"{username}"', "Perfiles del alias", include_domains=PROFILE_DOMAINS))
         if dni:
-            dorks.append(Dork(f'"{dni}"', "Aparición del DNI en documentos públicos", dni=dni))
-
-        if name and uni:
-            dorks.append(
-                Dork(f'"{name}" "{uni}"', "Nombre junto a su afiliación institucional")
-            )
-        elif name:
-            dorks.append(Dork(f'"{name}"', "Menciones del nombre completo"))
-
-        if name:
-            dorks.append(
-                Dork(
-                    f'"{name}"',
-                    "Perfiles sociales y profesionales del nombre",
-                    include_domains=PROFILE_DOMAINS,
-                )
-            )
-
-        if dni:
-            dorks.append(Dork(f'"{dni}"', "Publicaciones abiertas de RENIEC", include_domains=["reniec.gob.pe"], dni=dni))
-            dorks.append(Dork(f'"{dni}"', "Documentos y datos abiertos institucionales", include_domains=["gob.pe", "datosabiertos.gob.pe"], dni=dni))
-
-        if username:
-            dorks.append(Dork(f'"{username}"', "Menciones del alias"))
-            dorks.append(Dork(f'"{username}"', "Perfiles sociales del alias", include_domains=PROFILE_DOMAINS))
-
+            dorks.extend([
+                Dork(f'"{dni}"', "Publicaciones abiertas de RENIEC", include_domains=["reniec.gob.pe"], dni=dni),
+                Dork(f'"{dni}"', "Datos abiertos institucionales", include_domains=["gob.pe", "datosabiertos.gob.pe"], dni=dni),
+            ])
         return dorks
 
     # -- Motor principal: Tavily ------------------------------------------
@@ -310,14 +310,11 @@ class SearchDorkerTool(BaseTool):
             "search_depth": settings.tavily_search_depth,
             "max_results": settings.tavily_max_results,
         }
-        # NO se envía `exact_match`. Está documentado, pero verificado contra la
-        # API real devuelve CERO resultados en todos los casos (con y sin
-        # comillas), dejando el dorking mudo sin ningún error visible. Las
-        # comillas dentro de la propia consulta sí se respetan, así que la
-        # exactitud se impone después, del lado del cliente, en
-        # `_matches_literally`.
+        payload["exact_match"] = settings.tavily_exact_match and not bool(dork.phone)
+        payload["include_usage"] = True
         if dork.include_domains:
             payload["include_domains"] = dork.include_domains
+            payload["include_domains_mode"] = "restrict"
         if settings.tavily_country:
             payload["country"] = settings.tavily_country
 
@@ -330,97 +327,94 @@ class SearchDorkerTool(BaseTool):
                 "Content-Type": "application/json",
             },
         )
-        if resp is None or resp.status_code != 200:
-            return []
+        return self._parse_api_response(resp, dork, seen_urls, "tavily")
 
+    async def _search_tinyfish(self, client: httpx.AsyncClient, dork: Dork, seen_urls: set[str]) -> SearchResults:
+        params = {"query": dork.query, "location": settings.tinyfish_location,
+                  "language": settings.tinyfish_language}
+        if dork.include_domains:
+            params["include_domains"] = ",".join(dork.include_domains)
+        resp = await http_client.get(client, "https://api.search.tinyfish.ai", params=params,
+                                     headers={"X-API-Key": settings.tinyfish_api_key.get_secret_value()})
+        return self._parse_api_response(resp, dork, seen_urls, "tinyfish")
+
+    def _parse_api_response(self, resp: httpx.Response | None, dork: Dork, seen_urls: set[str], engine: str) -> SearchResults:
+        if resp is None:
+            return SearchResults(status="request_error")
+        if resp.status_code != 200:
+            return SearchResults(status=f"http_{resp.status_code}")
         try:
             data = resp.json()
-        except Exception:
-            return []
-
-        findings: List[ToolFinding] = []
-        for item in data.get("results", []) or []:
-            url = item.get("url")
-            if not url or url in seen_urls:
+        except ValueError:
+            return SearchResults(status="invalid_json")
+        if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+            return SearchResults(status="invalid_payload")
+        usage = data.get("usage")
+        credits = usage.get("credits") if isinstance(usage, dict) else None
+        usage = {"credits": credits} if isinstance(credits, (int, float)) and math.isfinite(credits) else None
+        result = SearchResults(usage=usage)
+        for item in data["results"][:max(1, min(20, settings.tavily_max_results))]:
+            if not isinstance(item, dict):
                 continue
-
-            title = item.get("title") or ("" if dork.dni else url)
-            snippet = item.get("content") or ""
-            literal = _matches_literally(dork, title, snippet, url)
-
-            # Tavily busca por relevancia semántica, no por coincidencia literal:
-            # un dork del correo "jperez@untumbes.edu.pe" (inexistente) devuelve
-            # la portada de untumbes.edu.pe. En OSINT ese falso positivo es peor
-            # que no obtener nada, porque acaba en el expediente de una persona.
-            if not literal and (dork.phone or dork.dni or settings.tavily_require_literal_match):
-                continue
-
-            seen_urls.add(url)
-            finding = self._build_finding(
-                url=url,
-                title=title,
-                snippet=snippet,
-                dork=dork,
-                engine="tavily",
-                relevance=item.get("score"),
-                literal=literal,
-            )
+            finding = self._validated_finding(dork, item.get("url"), item.get("title"),
+                                              item.get("content") if engine == "tavily" else item.get("snippet"),
+                                              engine, item.get("score"))
             if finding:
-                findings.append(finding)
+                result.matched += 1
+                if finding.value not in seen_urls:
+                    seen_urls.add(finding.value)
+                    result.append(finding)
+        if not result.matched:
+            result.status = "no_verified_matches"
+        return result
 
-        return findings
+    def _validated_finding(self, dork: Dork, url: Any, title: Any, snippet: Any, engine: str, relevance: Any = None) -> ToolFinding | None:
+        if not isinstance(url, str) or not public_source_url(url):
+            return None
+        host = (urlsplit(url).hostname or "").lower().rstrip(".")
+        if dork.include_domains and not any(host == d or host.endswith("." + d) for d in dork.include_domains):
+            return None
+        title = title if isinstance(title, str) else ""
+        snippet = snippet if isinstance(snippet, str) else ""
+        literal = _matches_literally(dork, title, snippet, url)
+        if not literal and (dork.phone or dork.dni or settings.tavily_require_literal_match):
+            return None
+        return self._build_finding(url=url, title=title, snippet=snippet, dork=dork,
+                                   engine=engine, relevance=relevance, literal=literal)
 
     # -- Motor de respaldo: DuckDuckGo ------------------------------------
 
     async def _search_duckduckgo(
         self, client: httpx.AsyncClient, dork: Dork, seen_urls: set
     ) -> List[ToolFinding]:
-        findings: List[ToolFinding] = []
+        result = SearchResults()
         try:
-            resp = await client.post(
-                "https://html.duckduckgo.com/html/", data={"q": dork.as_text_query()}
-            )
+            resp = await client.post("https://html.duckduckgo.com/html/", data={"q": dork.as_text_query()})
             if resp.status_code != 200:
-                return []
-
+                return SearchResults(status=f"http_{resp.status_code}")
             soup = BeautifulSoup(resp.text, "html.parser")
-            for r in soup.find_all("div", class_="result")[:5]:
-                title_tag = r.find("a", class_="result__a")
+            for row in soup.find_all("div", class_="result")[:5]:
+                title_tag = row.find("a", class_="result__a")
                 if not title_tag:
                     continue
-
-                raw_url = title_tag.get("href", "")
-                actual_url = raw_url
-                # DuckDuckGo envuelve las URLs reales en un redirector `uddg=`.
-                if "uddg=" in raw_url:
-                    match = re.search(r"uddg=([^&]+)", raw_url)
+                url = title_tag.get("href", "")
+                if "uddg=" in url:
+                    match = re.search(r"uddg=([^&]+)", url)
                     if match:
-                        actual_url = unquote(match.group(1))
-
-                if not actual_url or actual_url in seen_urls:
-                    continue
-                snippet_tag = r.find("a", class_="result__snippet")
-                title = title_tag.get_text(strip=True)
-                snippet = snippet_tag.get_text(strip=True) if snippet_tag else ""
-                literal = _matches_literally(dork, title, snippet, actual_url)
-                if not literal and (dork.phone or dork.dni or settings.tavily_require_literal_match):
-                    continue
-                seen_urls.add(actual_url)
-                finding = self._build_finding(
-                    url=actual_url,
-                    title=title,
-                    snippet=snippet,
-                    dork=dork,
-                    engine="duckduckgo",
-                    relevance=None,
-                    literal=literal,
-                )
+                        url = unquote(match.group(1))
+                snippet_tag = row.find("a", class_="result__snippet")
+                finding = self._validated_finding(dork, url, title_tag.get_text(" ", strip=True),
+                                                 snippet_tag.get_text(" ", strip=True) if snippet_tag else "", "duckduckgo")
                 if finding:
-                    findings.append(finding)
-        except Exception:
-            return []
-
-        return findings
+                    result.matched += 1
+                    if finding.value not in seen_urls:
+                        seen_urls.add(finding.value)
+                        result.append(finding)
+        except httpx.HTTPError:
+            return SearchResults(status="request_error")
+        if not result.matched:
+            result.status = "no_verified_matches"
+        return result
 
     # -- Común ------------------------------------------------------------
 
@@ -442,7 +436,7 @@ class SearchDorkerTool(BaseTool):
         relevance: Optional[float],
         literal: bool = True,
     ) -> Optional[ToolFinding]:
-        if not url.startswith("http"):
+        if not public_source_url(url):
             return None
 
         platform = self._detect_platform(url)
@@ -451,6 +445,12 @@ class SearchDorkerTool(BaseTool):
         # confianza en lugar de asignar 0.60 plano a todo. Aun así se acota:
         # que un resultado sea relevante para la consulta no prueba que la
         # persona mencionada sea el objetivo y no un homónimo.
+        try:
+            relevance = float(relevance) if relevance is not None else None
+            if relevance is not None and not math.isfinite(relevance):
+                relevance = None
+        except (ValueError, TypeError, OverflowError):
+            relevance = None
         if relevance is not None:
             confidence = round(min(0.75, max(0.35, 0.35 + float(relevance) * 0.40)), 2)
         else:
@@ -483,7 +483,7 @@ class SearchDorkerTool(BaseTool):
                 "dni_query": dork.dni,
                 "dni_mention_status": "observed_in_search_result" if dork.dni else None,
                 "phone_query": dork.phone,
-                "phone_mention_status": "observed_in_search_result",
+                "phone_mention_status": "observed_in_search_result" if dork.phone else None,
                 "ownership_status": "unverified",
             },
             confidence=confidence,

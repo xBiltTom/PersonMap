@@ -334,6 +334,7 @@ class RuleEngine:
                 "layer": "heuristic",
                 "tool_execution_id": tool_execution_id,
                 "findings_count": len(findings),
+                "search_diagnostics": context.extra.get("search_diagnostics", []) if tool.name == "search_dorker" else [],
                 "duration_seconds": duration_seconds,
                 "message": f"[{tool.name}] completado: {len(findings)} hallazgos · {duration_seconds:.1f} s.",
                 "timestamp": time.time(),
