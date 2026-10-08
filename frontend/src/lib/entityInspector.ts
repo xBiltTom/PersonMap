@@ -310,6 +310,7 @@ function buildObservedFields(node: GraphNode, metadata: Metadata, isRoot: boolea
   add("username", metadata.resource_kind === "channel_id" || metadata.resource_kind === "profile_id" ? "ID del perfil" : "Usuario", firstString(metadata, ["username", "preferred_username"]));
   const verificationLabels: Record<string, string> = {
     candidate: "Perfil candidato; pendiente de verificar",
+    ocr_candidate: "DNI leído por OCR; requiere revisión visual",
     public_document_observed: "DNI observado en fuente pública; titular sin confirmar",
     numbering_plan_valid: "Formato válido; actividad y titular sin confirmar",
     verified: "Existencia del perfil verificada; titular por confirmar",
@@ -372,6 +373,12 @@ function buildObservedFields(node: GraphNode, metadata: Metadata, isRoot: boolea
     add("dni_publisher", "Publicador", metadata.publisher);
     add("dni_source_url", "Fuente pública", metadata.source_url, "url");
     add("dni_checked_at", "Observado", metadata.checked_at, "date");
+    if (typeof metadata.page === "number") add("dni_page", "Página del PDF", String(metadata.page));
+    if (metadata.extraction_method === "ocr") {
+      add("dni_ocr_method", "Lectura", "OCR local con Tesseract; verificar los dígitos en el original");
+      add("dni_ocr_language", "Idioma del OCR", metadata.ocr_language);
+      if (typeof metadata.ocr_word_confidence === "number") add("dni_ocr_confidence", "Puntuación de reconocimiento (no de identidad)", String(metadata.ocr_word_confidence));
+    }
     add("dni_record", "Registro observado", metadata.record_index);
     add("dni_association", "Asociación del nombre", metadata.name_association === "structured_same_record" ? "Mismo registro que el DNI; identidad sin corroborar" : "Sin asociación verificable");
   }

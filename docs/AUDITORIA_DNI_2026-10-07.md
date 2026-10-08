@@ -193,7 +193,8 @@ fuente. Las consultas siguen dentro del presupuesto global del buscador.
 Para PDF se usa `pdftotext` de Poppler, con timeout de cinco segundos, primeras
 treinta páginas y texto extraído limitado a 1 MB. El Dockerfile instala
 `poppler-utils`; las instalaciones locales necesitan tener `pdftotext`
-disponible. Un PDF escaneado necesita OCR y todavía no se procesa como texto.
+disponible. El respaldo para PDF escaneados se añadió posteriormente; véase
+[la documentación del OCR](OCR_PDF.md).
 Tampoco se rastrean automáticamente catálogos completos, ZIP, Excel o datasets
 que excedan los límites: puede configurarse un recurso público concreto, y
 la ausencia de coincidencia no demuestra que el DNI no aparezca en otras fuentes.

@@ -121,7 +121,18 @@ def parse_public_document(body: bytes, content_type: str, url: str, dni: str) ->
                                timeout=5, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 if result.stat().st_size > 1000000:
                     return [], 'text_too_large'
-                return _text_matches(result.read_text(errors='replace'), dni), 'pdf'
+                text = result.read_text(errors='replace')
+                pages = text.split('\f')
+                if pages and not pages[-1].strip():
+                    pages.pop()
+                for page, content in enumerate(pages, 1):
+                    rows = _text_matches(content, dni)
+                    if rows:
+                        for row in rows:
+                            row.update(page=page, extraction_method='pdf_text')
+                        return rows, 'pdf'
+                from app.tools.pdf_ocr import ocr_pdf
+                return ocr_pdf(source, Path(directory), pages or [''], dni)
             except (subprocess.SubprocessError, OSError):
                 return [], 'pdf_parse_error'
     text = body.decode('utf-8-sig', errors='replace')

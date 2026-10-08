@@ -61,7 +61,11 @@ def run_fingerprint() -> Dict[str, Any]:
             settings.username_scan_concurrency
         ),
         "social_engine_version": 4,
-        "dni_engine_version": 2,
+        "dni_engine_version": 3,
+        "pdf_ocr_enabled": settings.pdf_ocr_enabled,
+        "pdf_ocr_max_pages": settings.pdf_ocr_max_pages,
+        "pdf_ocr_timeout_seconds": settings.pdf_ocr_timeout_seconds,
+        "pdf_ocr_languages": settings.pdf_ocr_languages,
         "dni_max_public_sources": settings.dni_max_public_sources,
         "dni_public_sources_fingerprint": hashlib.sha256(json.dumps(settings.dni_public_source_urls, sort_keys=True).encode()).hexdigest(),
         "phone_engine_version": 2,

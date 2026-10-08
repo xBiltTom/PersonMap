@@ -66,17 +66,20 @@ class DniLookupTool(BaseTool):
                             outcomes[key]['status'] = 'unsupported_source'
                             continue
                         with ThreadPoolExecutor(max_workers=1) as pool:
-                            rows, kind = await asyncio.get_running_loop().run_in_executor(pool, parse_public_document, b''.join(chunks), response.headers.get('content-type', ''), source_url, dni)
+                            future = pool.submit(parse_public_document, b''.join(chunks), response.headers.get('content-type', ''), source_url, dni)
+                            while not future.done():
+                                await asyncio.sleep(0.05)
+                            rows, kind = future.result()
                     outcomes[key].update(status='observed' if rows else 'no_match', document_format=kind, final_url=source_url)
                     for row in rows:
                         metadata = {**row, 'source_url': source_url, 'source_kind': 'public_document',
                                     'publisher': publisher(source_url), 'document_format': kind,
-                                    'verification_status': 'public_document_observed', 'ownership_status': 'unverified',
+                                    'verification_status': 'ocr_candidate' if row.get('extraction_method') == 'ocr' else 'public_document_observed', 'ownership_status': 'unverified',
                                     'checked_at': datetime.now(timezone.utc).isoformat(), 'source_tool': self.name}
                         findings.append(ToolFinding(entity_type='document', platform=publisher(source_url),
                             value=f'DNI: {dni} | {source_url} | {row.get("record_index", "mention")}',
                             display_name=row.get('full_name') or f'DNI {dni}', metadata_info=metadata,
-                            confidence=0.65 if row.get('full_name') else 0.45, evidence_urls=[source_url]))
+                            confidence=0.35 if row.get('extraction_method') == 'ocr' else 0.65 if row.get('full_name') else 0.45, evidence_urls=[source_url]))
                 except (httpx.HTTPError, UnsafePublicURL, ValueError):
                     outcomes[key]['status'] = 'request_error'
         context.extra['dni_lookup_status'] = 'public_evidence_found' if findings else 'no_new_public_evidence'

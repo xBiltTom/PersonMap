@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     apis_net_pe_token: Optional[str] = None
     dni_public_source_urls: list[str] = []
     dni_max_public_sources: int = 4
+    pdf_ocr_enabled: bool = True
+    pdf_ocr_max_pages: int = 3
+    pdf_ocr_timeout_seconds: float = 20
+    pdf_ocr_languages: str = "auto"
 
     # --- Motor de búsqueda para dorking -------------------------------------
     # Tavily (https://tavily.com) es un buscador diseñado para agentes: devuelve

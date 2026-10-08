@@ -55,3 +55,6 @@ referencia-trazabilidad-arbol.png
 
 PLAN_IMPLEMENTACION_REFACTOR_UX_UI.md 
 PLAN_IMPLEMENTACION_UX_UI.md
+
+# Locally installed Tesseract language models
+.ocr-models/
