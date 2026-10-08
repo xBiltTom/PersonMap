@@ -73,6 +73,14 @@ export const ENTITY_TYPES: Record<string, EntityTypeMeta> = {
     node: "border-[#2c3d59] bg-[#111722] hover:border-sky-500/50",
     badge: "bg-sky-500/10 text-sky-300 border-sky-500/25",
   },
+  email_registration: {
+    label: "Registro por correo",
+    description: "Señal de registro en un servicio; no identifica un perfil ni su titular.",
+    Icon: Mail,
+    accent: "text-amber-400",
+    node: "border-amber-500/40 bg-[#1c1710]",
+    badge: "bg-amber-500/10 text-amber-300 border-amber-500/25",
+  },
   email: {
     label: "Correos",
     description: "Dirección de correo observada en una fuente.",

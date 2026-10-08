@@ -30,6 +30,7 @@ from app.core.config import settings
 from app.core.events import event_bus
 from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
+from app.tools.social_profiles import core_profile_candidates, parse_social_profile
 from app.tools.dataset_adapter import SiteCheck, build_catalog, catalog_stats
 
 HTML_ACCEPT = {
@@ -172,6 +173,12 @@ class UsernameFinderTool(BaseTool):
                     continue
                 if clean_user.lower() in scanned:
                     continue
+                candidates = context.extra.setdefault("candidate_urls", [])
+                provenance = context.extra.setdefault("derived_profile_candidates", {})
+                for candidate in core_profile_candidates(clean_user):
+                    if candidate not in candidates:
+                        candidates.append(candidate)
+                    provenance[candidate] = {"source_tool": self.name, "alias": clean_user, "status": "derived"}
                 scanned.add(clean_user.lower())
                 remaining -= 1
 
@@ -309,6 +316,7 @@ class UsernameFinderTool(BaseTool):
                 evidence_urls=[url],
                 metadata_info={
                     "username": username,
+                    "verification_status": "candidate",
                     "platform": site.name,
                     "category": site.category or "social",
                     "sensitive_platform": site.sensitive,
@@ -402,6 +410,18 @@ class UsernameFinderTool(BaseTool):
         genéricas que responden 200 a cualquier cosa.
         """
         body = resp.text
+        host = resp.url.host
+        if resp.status_code == 200 and host in {"api.x.com", "api.twitter.com"}:
+            try:
+                return resp.json().get("reason") == "taken"
+            except (ValueError, AttributeError):
+                return False
+        if host in {"www.tiktok.com", "tiktok.com"} and resp.url.path == "/oembed":
+            try:
+                author = parse_social_profile(resp.json().get("author_url", ""))
+                return resp.status_code == 200 and author is not None and author.platform == "tiktok" and author.username.lower() == username.lower()
+            except (ValueError, AttributeError, TypeError):
+                return False
 
         if resp.status_code != site.expected_code:
             return False

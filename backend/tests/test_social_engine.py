@@ -64,10 +64,10 @@ def test_verifier_waits_for_urls_and_reruns_when_they_arrive():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("html,status", [
-    ("<title>Log in</title>", "not_profile"),
+    ("<title>Log in</title>", "blocked"),
     ("<title>Page not found</title>", "not_profile"),
     ("<title>Just a moment</title>", "blocked"),
-    ("<title>Welcome to GitHub</title>", "not_profile"),
+    ("<title>Welcome to GitHub</title>", "inconclusive"),
 ])
 async def test_200_is_not_evidence_of_a_profile(html, status):
     context = TargetContext()
@@ -164,7 +164,7 @@ async def test_verification_is_concurrent_bounded_and_does_not_repeat_completed_
         peak = max(peak, inside)
         await asyncio.sleep(0.01)
         inside -= 1
-        return httpx.Response(200, text=PROFILE_HTML, headers={"content-type": "text/html"})
+        return httpx.Response(200, text=PROFILE_HTML.replace("audituser", request.url.path.strip("/")), headers={"content-type": "text/html"})
     def client_factory(**kwargs):
         assert kwargs["public_only"] is True
         assert kwargs["follow_redirects"] is False

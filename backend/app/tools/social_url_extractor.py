@@ -17,6 +17,8 @@ class SocialUrlExtractorTool(BaseTool):
         for raw in context.extra.get("candidate_urls", []):
             if not isinstance(raw, str):
                 continue
+            if raw in context.extra.get("derived_profile_candidates", {}):
+                continue  # A constructed URL is not an observed account.
             profile = parse_social_profile(raw)
             if not profile or profile.url in seen:
                 continue
@@ -33,7 +35,9 @@ class SocialUrlExtractorTool(BaseTool):
                     "platform": profile.platform,
                     "username": profile.username,
                     "url": profile.url,
-                    "usernames": [profile.username],
+                    "usernames": [profile.username] if profile.resource_kind == "username" else [],
+                    "resource_kind": profile.resource_kind,
+                    "profile_url": profile.url,
                     "verification_status": "candidate",
                 },
             ))

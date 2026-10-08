@@ -1,4 +1,7 @@
 import re
+import json
+from bs4 import BeautifulSoup
+from app.tools.social_profiles import parse_social_profile
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote_plus
 
@@ -25,16 +28,17 @@ class GoogleAccountOSINTTool(BaseTool):
 
     name = "google_account_osint"
     description = (
-        "OSINT pasivo del ecosistema Google para cuentas Gmail/Workspace: detecta "
-        "existencia de cuenta, nombre real de Google, canal de YouTube "
-        "y perfil de Google Scholar sin cookies ni API keys."
+        "Busca canales candidatos de YouTube por nombre o alias, sin API keys; "
+        "para correos Google/educativos también consulta señales de cuenta y Scholar."
     )
     category = ToolCategory.EMAIL
-    required_inputs = ["email"]
+    required_inputs = ["email", "username", "full_name"]
 
     GOOGLE_DOMAINS = {"gmail.com", "googlemail.com", "google.com"}
 
     def can_run(self, context: TargetContext) -> bool:
+        if context.full_name or context.all_usernames():
+            return True
         for email in context.all_emails():
             if "@" not in email:
                 continue
@@ -60,22 +64,23 @@ class GoogleAccountOSINTTool(BaseTool):
                 if not is_google:
                     continue
 
-                username_part = email.split("@")[0]
-
                 # 1. Gmail existence check (silent — no email sent to target)
                 exists_f = await self._check_gmail_existence(client, email)
                 if exists_f:
                     findings.append(exists_f)
-
-                # 2. YouTube channel search by username/name
-                yt_findings = await self._search_youtube_channel(client, username_part, context)
-                findings.extend(yt_findings)
 
                 # 3. Google Scholar profile (if name available)
                 if context.full_name:
                     scholar_findings = await self._search_scholar(client, context)
                     findings.extend(scholar_findings)
 
+            query = context.full_name or next(iter(context.all_usernames()), "")
+            if not query and emails:
+                query = emails[0].split("@", 1)[0]
+            searched = context.extra.setdefault("youtube_search_queries", [])
+            if query and query not in searched and len(searched) < 3:
+                searched.append(query)
+                findings.extend(await self._search_youtube_channel(client, query, context))
         return findings
 
     async def _check_gmail_existence(
@@ -155,31 +160,40 @@ class GoogleAccountOSINTTool(BaseTool):
             if resp is None or resp.status_code != 200:
                 return []
 
-            body = resp.text
-            channel_handles = re.findall(r'"url":"(/@[a-zA-Z0-9_.-]+)"', body)
-            seen: set = set()
-            for handle in channel_handles[:3]:
-                full_url = f"https://www.youtube.com{handle}"
-                if full_url in seen:
-                    continue
-                seen.add(full_url)
-                handle_name = handle.lstrip("/@")
-                conf = 0.65 if username_part.lower() in handle_name.lower() else 0.40
-                findings.append(ToolFinding(
-                    entity_type="social_account",
-                    platform="youtube",
-                    value=full_url,
-                    display_name=f"YouTube: {handle}",
-                    confidence=conf,
-                    metadata_info={
-                        "source_tool": "google_account_osint",
-                        "technique": "youtube_channel_search",
-                        "query": query,
-                        "username": handle_name,
-                        "url": full_url,
-                    },
-                    evidence_urls=[full_url],
-                ))
+            # Parse actual channel-result renderers, not URLs from navigation or ads.
+            soup = BeautifulSoup(resp.text, "html.parser")
+            data = None
+            for script in soup.find_all("script"):
+                text = script.string or script.get_text()
+                match = re.search(r"(?:var\s+ytInitialData\s*=|window\[\"ytInitialData\"\]\s*=)\s*", text)
+                if match:
+                    try:
+                        data, _ = json.JSONDecoder().raw_decode(text[match.end():])
+                        break
+                    except ValueError:
+                        continue
+            if not isinstance(data, dict):
+                return []
+            sections = data.get("contents", {}).get("twoColumnSearchResultsRenderer", {}).get("primaryContents", {}).get("sectionListRenderer", {}).get("contents", [])
+            seen = set()
+            for section in sections:
+                for item in section.get("itemSectionRenderer", {}).get("contents", []):
+                    channel = item.get("channelRenderer", {})
+                    channel_id = channel.get("channelId", "")
+                    profile = parse_social_profile(f"https://youtube.com/channel/{channel_id}")
+                    if not profile or profile.url in seen or len(seen) >= 3:
+                        continue
+                    title_data = channel.get("title", {})
+                    title = title_data.get("simpleText") or "".join(run.get("text", "") for run in title_data.get("runs", []))
+                    seen.add(profile.url)
+                    findings.append(ToolFinding(
+                        entity_type="social_account", platform="youtube", value=profile.url,
+                        display_name=title or channel_id, confidence=0.4,
+                        metadata_info={"source_tool": self.name, "technique": "youtube_channel_search",
+                                       "query": query, "channel_id": channel_id, "resource_kind": "channel_id",
+                                       "url": profile.url, "verification_status": "candidate"},
+                        evidence_urls=[str(resp.url)],
+                    ))
         except Exception:
             pass
         return findings

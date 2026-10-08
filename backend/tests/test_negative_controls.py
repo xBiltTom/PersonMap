@@ -101,7 +101,7 @@ async def test_platform_that_registers_any_email_is_discarded(monkeypatch):
     async def only_the_real_one(client, email):
         if email == "jorgewueder@outlook.es":
             return {"platform": "Twitter/X", "registered": True, "url": "https://x.com"}
-        return None
+        return {"registered": False}
 
     _only_these_probes(monkeypatch, tool, _check_spotify=any_email, _check_twitter=only_the_real_one)
 

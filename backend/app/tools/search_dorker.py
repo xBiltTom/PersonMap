@@ -21,7 +21,7 @@ funcionando al 100% sin configurar nada.
 import re
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 import httpx
 from bs4 import BeautifulSoup
@@ -47,6 +47,9 @@ PLATFORM_DOMAINS: Dict[str, str] = {
     "x.com": "x_twitter",
     "tiktok.com": "tiktok",
     "youtube.com": "youtube",
+    "snapchat.com": "snapchat",
+    "threads.com": "threads",
+    "bsky.app": "bluesky",
     "reddit.com": "reddit",
     "t.me": "telegram",
     "medium.com": "medium",
@@ -65,6 +68,8 @@ PROFILE_DOMAINS = [
     "facebook.com",
     "x.com",
     "tiktok.com",
+    "youtube.com",
+    "snapchat.com",
 ]
 
 
@@ -259,6 +264,7 @@ class SearchDorkerTool(BaseTool):
 
         if username:
             dorks.append(Dork(f'"{username}"', "Menciones del alias"))
+            dorks.append(Dork(f'"{username}"', "Perfiles sociales del alias", include_domains=PROFILE_DOMAINS))
 
         return dorks
 
@@ -361,16 +367,21 @@ class SearchDorkerTool(BaseTool):
 
                 if not actual_url or actual_url in seen_urls:
                     continue
-                seen_urls.add(actual_url)
-
                 snippet_tag = r.find("a", class_="result__snippet")
+                title = title_tag.get_text(strip=True)
+                snippet = snippet_tag.get_text(strip=True) if snippet_tag else ""
+                literal = _matches_literally(dork, title, snippet, actual_url)
+                if not literal and settings.tavily_require_literal_match:
+                    continue
+                seen_urls.add(actual_url)
                 finding = self._build_finding(
                     url=actual_url,
-                    title=title_tag.get_text(strip=True),
-                    snippet=snippet_tag.get_text(strip=True) if snippet_tag else "",
+                    title=title,
+                    snippet=snippet,
                     dork=dork,
                     engine="duckduckgo",
                     relevance=None,
+                    literal=literal,
                 )
                 if finding:
                     findings.append(finding)
@@ -382,9 +393,9 @@ class SearchDorkerTool(BaseTool):
     # -- Común ------------------------------------------------------------
 
     def _detect_platform(self, url: str) -> str:
-        low = url.lower()
+        low = (urlsplit(url).hostname or "").lower()
         for domain, platform in PLATFORM_DOMAINS.items():
-            if domain in low:
+            if low == domain or low.endswith("." + domain):
                 return platform
         return "web_search"
 

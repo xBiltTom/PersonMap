@@ -1,0 +1,133 @@
+{
+  "routes": [
+    {
+      "url": "https://x.com/audituser",
+      "extractor": {
+        "platform": "twitter",
+        "username": "audituser",
+        "url": "https://x.com/audituser"
+      },
+      "verifier": {
+        "platform": "twitter",
+        "username": "audituser",
+        "url": "https://x.com/audituser"
+      }
+    },
+    {
+      "url": "https://instagram.com/audit.user",
+      "extractor": {
+        "platform": "instagram",
+        "username": "audit.user",
+        "url": "https://instagram.com/audit.user"
+      },
+      "verifier": {
+        "platform": "instagram",
+        "username": "audit.user",
+        "url": "https://instagram.com/audit.user"
+      }
+    },
+    {
+      "url": "https://facebook.com/audit.user",
+      "extractor": {
+        "platform": "facebook",
+        "username": "audit.user",
+        "url": "https://facebook.com/audit.user"
+      },
+      "verifier": {
+        "platform": "facebook",
+        "username": "audit.user",
+        "url": "https://facebook.com/audit.user"
+      }
+    },
+    {
+      "url": "https://facebook.com/profile.php?id=123456789012345",
+      "extractor": {
+        "platform": "facebook",
+        "username": "profile.php",
+        "url": "https://facebook.com/profile.php"
+      },
+      "verifier": {
+        "platform": "facebook",
+        "username": "profile.php",
+        "url": "https://facebook.com/profile.php"
+      }
+    },
+    {
+      "url": "https://facebook.com/profile.php?id=987654321098765",
+      "extractor": {
+        "platform": "facebook",
+        "username": "profile.php",
+        "url": "https://facebook.com/profile.php"
+      },
+      "verifier": {
+        "platform": "facebook",
+        "username": "profile.php",
+        "url": "https://facebook.com/profile.php"
+      }
+    },
+    {
+      "url": "https://tiktok.com/@audit.user",
+      "extractor": {
+        "platform": "tiktok",
+        "username": "audit.user",
+        "url": "https://tiktok.com/@audit.user"
+      },
+      "verifier": {
+        "platform": "tiktok",
+        "username": "audit.user",
+        "url": "https://tiktok.com/@audit.user"
+      }
+    },
+    {
+      "url": "https://youtube.com/@audituser",
+      "extractor": {
+        "platform": "youtube",
+        "username": "audituser",
+        "url": "https://youtube.com/@audituser"
+      },
+      "verifier": {
+        "platform": "youtube",
+        "username": "audituser",
+        "url": "https://youtube.com/@audituser"
+      }
+    },
+    {
+      "url": "https://youtube.com/@audit.user",
+      "extractor": null,
+      "verifier": null
+    },
+    {
+      "url": "https://youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx",
+      "extractor": null,
+      "verifier": null
+    },
+    {
+      "url": "https://youtube.com/c/audituser/about",
+      "extractor": null,
+      "verifier": null
+    },
+    {
+      "url": "https://snapchat.com/@audituser",
+      "extractor": null,
+      "verifier": null
+    },
+    {
+      "url": "https://snapchat.com/add/audituser",
+      "extractor": null,
+      "verifier": null
+    }
+  ],
+  "matches": {
+    "x_reason_taken_compact": true,
+    "x_reason_taken_spaced": false,
+    "tiktok_accepts_another_author": true,
+    "facebook_profile_and_asset_markers": false,
+    "snapchat_digit_after_three_letters_accepted": false,
+    "snapchat_digit_after_four_letters_accepted": true,
+    "instagram_login_with_generic_og_status": {
+      "status": "not_profile",
+      "http_status": 200,
+      "final_url": "https://instagram.com/audituser"
+    }
+  }
+}

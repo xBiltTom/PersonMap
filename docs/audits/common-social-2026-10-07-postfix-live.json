@@ -1,0 +1,74 @@
+{
+  "method": "Public GET only; no login or email probes",
+  "outcomes": {
+    "https://x.com/pm6c7e45c57dab": {
+      "status": "not_found",
+      "http_status": 404,
+      "final_url": "https://x.com/pm6c7e45c57dab"
+    },
+    "https://x.com/NASA": {
+      "status": "verified",
+      "http_status": 200,
+      "final_url": "https://x.com/NASA"
+    },
+    "https://instagram.com/instagram": {
+      "status": "inconclusive",
+      "http_status": 200,
+      "final_url": "https://www.instagram.com/instagram"
+    },
+    "https://facebook.com/facebook": {
+      "status": "error",
+      "http_status": 400,
+      "final_url": "https://www.facebook.com/facebook"
+    },
+    "https://youtube.com/@pm6c7e45c57dab": {
+      "status": "not_found",
+      "http_status": 404,
+      "final_url": "https://www.youtube.com/@pm6c7e45c57dab"
+    },
+    "https://snapchat.com/@teamsnapchat": {
+      "status": "verified",
+      "http_status": 200,
+      "final_url": "https://www.snapchat.com/@teamsnapchat"
+    },
+    "https://youtube.com/@YouTube": {
+      "status": "verified",
+      "http_status": 200,
+      "final_url": "https://www.youtube.com/@YouTube"
+    },
+    "https://snapchat.com/@pm6c7e45c57dab": {
+      "status": "not_found",
+      "http_status": 404,
+      "final_url": "https://www.snapchat.com/@pm6c7e45c57dab"
+    },
+    "https://tiktok.com/@tiktok": {
+      "status": "inconclusive",
+      "http_status": 200,
+      "final_url": "https://www.tiktok.com/@tiktok"
+    }
+  },
+  "profiles": [
+    {
+      "url": "https://x.com/NASA",
+      "signals": [
+        "og_profile",
+        "profile_username",
+        "username_in_metadata"
+      ]
+    },
+    {
+      "url": "https://youtube.com/@YouTube",
+      "signals": [
+        "og_profile",
+        "username_in_metadata"
+      ]
+    },
+    {
+      "url": "https://snapchat.com/@teamsnapchat",
+      "signals": [
+        "snapchat_user_info",
+        "username_in_metadata"
+      ]
+    }
+  ]
+}

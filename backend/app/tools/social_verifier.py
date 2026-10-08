@@ -2,12 +2,13 @@
 
 import asyncio
 import logging
+import json
 import re
 import time
 from collections import Counter
 from functools import lru_cache
 from typing import Dict
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, quote
 
 import httpx
 from bs4 import BeautifulSoup
@@ -145,6 +146,10 @@ class SocialVerifierTool(BaseTool):
             if requested is None:
                 self._record(context, url, "not_profile")
                 return None
+            if requested.platform == "tiktok":
+                embedded = await self._tiktok_embed(client, requested, url, context)
+                if embedded is not None:
+                    return embedded
             current = url
             for _ in range(6):
                 _safe_url(current)
@@ -173,13 +178,20 @@ class SocialVerifierTool(BaseTool):
             bio = self._get_meta(soup, "og:description") or self._get_meta(soup, "description") or ""
             image = self._get_meta(soup, "og:image") or ""
             final_profile = _candidate_profile(str(resp.url))
-            title_lower = title.lower()
+            visible_title = soup.title.get_text(" ", strip=True) if soup.title else ""
+            title_lower = f"{title} {visible_title}".lower()
+            if any(marker in title_lower for marker in ("log in", "login", "sign in", "iniciar sesión")):
+                self._record(context, url, "blocked", **details)
+                return None
             if any(marker in title_lower for marker in ("just a moment", "access denied", "captcha", "verify you are human", "security check")):
                 self._record(context, url, "blocked", **details)
                 return None
+            yt_identity = self._get_meta(soup, "channelId") if requested.platform == "youtube" else None
+            yt_alias = bool(final_profile and requested.platform == final_profile.platform == "youtube"
+                            and requested.resource_kind == "channel_id" and yt_identity == requested.username)
             if (not requested or not final_profile
                     or requested.platform != final_profile.platform
-                    or requested.username.lower() != final_profile.username.lower()
+                    or (requested.username.lower() != final_profile.username.lower() and not yt_alias)
                     or any(marker in title_lower for marker in ("log in", "login", "sign in", "page not found", "user not found", "profile not found", "page isn't available", "page doesn’t exist", "iniciar sesión", "página no encontrada"))):
                 self._record(context, url, "not_profile", **details)
                 return None
@@ -187,16 +199,31 @@ class SocialVerifierTool(BaseTool):
             og_type = (self._get_meta(soup, "og:type") or "").lower()
             profile_username = self._get_meta(soup, "profile:username") or ""
             signals = []
-            if og_type == "profile" and title:
+            if requested.platform == "snapchat":
+                script = soup.find("script", id="__NEXT_DATA__")
+                if script:
+                    try:
+                        data = json.loads(script.string or script.get_text())
+                        user = data.get("props", {}).get("pageProps", {}).get("userProfile", {}).get("userInfo", {})
+                        if isinstance(user.get("username"), str) and user["username"].lower() == username.lower():
+                            signals.append("snapchat_user_info")
+                    except (ValueError, AttributeError, TypeError):
+                        pass
+            if yt_identity and re.fullmatch(r"UC[A-Za-z0-9_-]{22}", yt_identity) and (requested.resource_kind != "channel_id" or requested.username == yt_identity):
+                signals.append("youtube_channel_id")
+            if og_type == "profile" and title and (profile_username.lower() == username.lower() or username.lower() in f"{title} {bio}".lower()):
                 signals.append("og_profile")
             if profile_username.lower() == username.lower():
                 signals.append("profile_username")
-            if re.search(r"(?<![\w])" + re.escape(username) + r"(?![\w])", f"{title} {bio}", re.IGNORECASE) and (bio or image):
+            if re.search(r"(?<![\w])" + re.escape(username) + r"(?![\w])", f"{title} {visible_title} {bio}", re.IGNORECASE) and (bio or image):
                 signals.append("username_in_metadata")
             if not signals:
-                self._record(context, url, "not_profile", **details)
+                self._record(context, url, "inconclusive", **details)
                 return None
             declared_url = self._get_meta(soup, "og:url")
+            if not declared_url:
+                link = soup.find("link", rel="canonical")
+                declared_url = str(link.get("href", "")) if link else None
             canonical = final_profile.url
             canonical_accepted = False
             if declared_url:
@@ -210,6 +237,9 @@ class SocialVerifierTool(BaseTool):
             score, breakdown = self._compute_verification_score(title, bio, context.full_name, context.university, context.email)
             metadata = {
                 "source_tool": self.name, "username": username,
+                "resource_kind": final_profile.resource_kind, "profile_url": canonical,
+                "channel_id": yt_identity,
+                "candidate_origin": context.extra.get("derived_profile_candidates", {}).get(url),
                 "og_title": title, "bio": bio,
                 # Preview images are not profile avatars.
                 "og_image": image, "canonical_url": canonical,
@@ -231,8 +261,33 @@ class SocialVerifierTool(BaseTool):
             logger.debug("Social verification request failed (%s)", type(exc).__name__)
         return None
 
+    async def _tiktok_embed(self, client, profile, url, context):
+        endpoint = "https://www.tiktok.com/oembed?url=" + quote(profile.url, safe="")
+        try:
+            # Automatic redirects stay disabled on the pinned public client.
+            resp = await client.get(endpoint, follow_redirects=False)
+            if resp.status_code != 200:
+                return None  # Private/underage profiles may not support embedding.
+            data = resp.json()
+            author = parse_social_profile(data.get("author_url", ""))
+            if not author or author.platform != "tiktok" or author.username.lower() != profile.username.lower():
+                return None
+            self._record(context, url, "verified", http_status=200, final_url=author.url, adapter="tiktok_oembed")
+            return ToolFinding(
+                entity_type="social_account", platform="tiktok", value=author.url,
+                display_name=str(data.get("author_name") or profile.username), confidence=0.5,
+                evidence_urls=[url, endpoint],
+                metadata_info={"source_tool": self.name, "username": author.username,
+                               "profile_url": author.url, "canonical_url": author.url,
+                               "requested_url": url, "verification_status": "verified",
+                               "profile_signals": ["tiktok_oembed_author"],
+                               "candidate_origin": context.extra.get("derived_profile_candidates", {}).get(url)},
+            )
+        except (httpx.HTTPError, ValueError, AttributeError, TypeError):
+            return None
+
     def _get_meta(self, soup: BeautifulSoup, property_name: str) -> str | None:
-        tag = soup.find("meta", property=property_name) or soup.find("meta", attrs={"name": property_name})
+        tag = soup.find("meta", property=property_name) or soup.find("meta", attrs={"name": property_name}) or soup.find("meta", attrs={"itemprop": property_name})
         return str(tag["content"]).strip() if tag and tag.get("content") else None
 
     def _compute_verification_score(

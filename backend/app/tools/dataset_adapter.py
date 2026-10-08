@@ -39,10 +39,10 @@ necesitan las mediciones del artículo.
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import replace, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import quote
+from urllib.parse import urlsplit, quote
 
 DATA_DIR = Path(__file__).parent / "data"
 WMN_FILE = DATA_DIR / "wmn-data.json"
@@ -428,6 +428,16 @@ def build_catalog(limit: Optional[int] = None) -> List[SiteCheck]:
         catalog.append(site)
         used_maigret.add(_platform_key(site.url))
 
+    # Runtime corrections; preserve the upstream snapshots and their licences.
+    corrected = []
+    for site in catalog:
+        host = urlsplit(site.url).hostname or ""
+        if host.endswith("snapchat.com"):
+            site = replace(site, regex_check=r"^[a-zA-Z][a-zA-Z0-9_.-]{1,13}[a-zA-Z0-9]$")
+        if host.endswith("facebook.com"):
+            site = replace(site, absence=tuple(x for x in site.absence if x != "rsrcTags"))
+        corrected.append(site)
+    catalog = corrected
     catalog.sort(key=_sort_key)
     return catalog[:limit] if limit else catalog
 

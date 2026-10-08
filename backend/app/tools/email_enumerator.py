@@ -65,26 +65,29 @@ class EmailEnumeratorTool(BaseTool):
                         continue
                     if getattr(check, "__name__", "") in self.SUBMITS_A_SIGNUP:
                         control = "untested"
-                    elif await self._accepts_invented_email(client, check, clean_email):
-                        continue
                     else:
-                        control = "passed"
+                        result = await self._accepts_invented_email(client, check, clean_email)
+                        if result is True:
+                            continue
+                        control = "passed" if result is False else "untested"
 
                     platform = res["platform"]
                     profile_url = res.get("url", f"https://{platform.lower().replace(' ', '')}.com")
                     findings.append(
                         ToolFinding(
-                            entity_type="social_account",
+                            entity_type="email_registration",
                             platform=platform,
                             value=f"{platform} ({clean_email})",
-                            display_name=f"{platform}: Cuenta Activa",
-                            confidence=0.90,
+                            display_name=f"{platform}: Señal de registro por correo",
+                            confidence=0.65 if control == "passed" else 0.5,
                             metadata_info={
                                 "email": clean_email,
                                 "platform": platform,
                                 "registered": True,
                                 "category": res.get("category", "services"),
-                                "url": profile_url,
+                                "service_url": profile_url,
+                                "verification_status": "registration_signal",
+                                "profile_status": "unresolved",
                                 "source_tool": "email_enumerator",
                                 "negative_control": control,
                             },
@@ -105,13 +108,12 @@ class EmailEnumeratorTool(BaseTool):
         client: httpx.AsyncClient,
         check: Callable[[httpx.AsyncClient, str], Awaitable[Optional[Dict[str, Any]]]],
         email: str,
-    ) -> bool:
+    ) -> Optional[bool]:
         """
         Control negativo: ¿la plataforma también da por registrado un correo inventado?
 
-        Una cuenta registrada con el correo de la persona se le atribuye al 99 %,
-        así que un falso "registrado" es lo peor que puede enseñarse: una cuenta
-        que no existe, presentada como suya. Un correo de prueba sintético
+        Una respuesta positiva solo es una señal de registro, no identifica un perfil.
+        Un fallo del control se conserva como desconocido. Un correo de prueba sintético
         (`test_student_osint@gmail.com`) llegó a salir registrado en Quora; un
         endpoint que responde "registrado" a cualquier correo lo hace también con
         uno inventado, y así se descubre.
@@ -119,8 +121,8 @@ class EmailEnumeratorTool(BaseTool):
         try:
             res = await check(client, self._invented_email(email))
         except Exception:
-            return False
-        return isinstance(res, dict) and bool(res.get("registered"))
+            return None
+        return res["registered"] if isinstance(res, dict) and isinstance(res.get("registered"), bool) else None
 
     # --- INDIVIDUAL PASSIVE PROBES ---
 

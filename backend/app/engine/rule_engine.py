@@ -247,7 +247,10 @@ class RuleEngine:
                     ),
                     "timestamp": time.time(),
                 })
-            else:
+            elif not any(
+                tool.can_run(context) and self._get_tool_run_key(tool, context) not in executed_runs
+                for tool in tool_registry.get_all()
+            ):
                 break
 
         return SweepResult(

@@ -92,6 +92,7 @@ export function entityToGraphNode(entity: EntityData): GraphNode {
 const ENTITY_TYPE_LABELS: Record<string, string> = {
   target: "Punto de partida",
   social_account: "Cuenta",
+  email_registration: "Señal de registro por correo",
   sensitive_account: "Cuenta sensible",
   email: "Correo",
   domain: "Dominio",
@@ -222,7 +223,10 @@ function buildLinks(node: GraphNode, metadata: Metadata): InspectorLink[] {
   // URLs que identifican el recurso observado, no la fuente del hallazgo.
   add(firstString(metadata, ["profile_url", "canonical_url"]), "Perfil original", "profile");
   add(node.data.value, node.data.entity_type === "document" ? "Documento original" : "Recurso observado", "profile");
-  add(metadata.url, "Recurso observado", "profile");
+  const registration = node.data.entity_type === "email_registration" ||
+    (metadata.source_tool === "email_enumerator" && metadata.registered === true);
+  add(metadata.url, registration ? "Sitio del servicio" : "Recurso observado", registration ? "website" : "profile");
+  add(metadata.service_url, "Sitio del servicio; perfil sin identificar", "website");
   add(metadata.website, "Web declarada", "website");
   add(metadata.blog, "Web declarada", "website");
   add(metadata.repository_url, "Repositorio", "repository");
@@ -303,7 +307,14 @@ function buildObservedFields(node: GraphNode, metadata: Metadata, isRoot: boolea
   };
 
   if (isRoot) add("full_name", "Nombre", metadata.full_name);
-  add("username", "Usuario", firstString(metadata, ["username", "preferred_username"]));
+  add("username", metadata.resource_kind === "channel_id" || metadata.resource_kind === "profile_id" ? "ID del perfil" : "Usuario", firstString(metadata, ["username", "preferred_username"]));
+  const verificationLabels: Record<string, string> = {
+    candidate: "Perfil candidato; pendiente de verificar",
+    verified: "Existencia del perfil verificada; titular por confirmar",
+    registration_signal: "Señal de registro por correo; perfil sin identificar",
+  };
+  const verification = stringValue(metadata.verification_status);
+  if (verification) add("verification_status", "Comprobación", verificationLabels[verification] ?? verification);
   add("name", "Nombre", firstString(metadata, ["name", "display_name", "google_display_name", "author_name"]));
   add("email", "Email", metadata.email, "email");
   addList("emails", "Correos alternativos", metadata.emails, "email");

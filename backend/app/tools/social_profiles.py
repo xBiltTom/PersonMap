@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit, unquote, quote
 
 
 PROFILE_ROUTES = {
@@ -17,7 +17,13 @@ PROFILE_ROUTES = {
     "t.me": ("telegram", r"/([A-Za-z0-9_]{5,32})"),
     "reddit.com": ("reddit", r"/u(?:ser)?/([A-Za-z0-9_-]+)"),
     "medium.com": ("medium", r"/@([A-Za-z0-9_.]+)"),
-    "youtube.com": ("youtube", r"/(?:@|c/|user/)([A-Za-z0-9_-]+)"),
+    "youtube.com": ("youtube", r"/(?:@|c/|user/)([\w.·-]+)"),
+    "snapchat.com": ("snapchat", r"/(?:@|add/)([A-Za-z][A-Za-z0-9_.-]{1,13}[A-Za-z0-9])"),
+    "threads.net": ("threads", r"/@([A-Za-z0-9_.]+)"),
+    "threads.com": ("threads", r"/@([A-Za-z0-9_.]+)"),
+    "bsky.app": ("bluesky", r"/profile/([A-Za-z0-9.-]+)"),
+    "keybase.io": ("keybase", r"/([A-Za-z0-9_]+)"),
+    "vk.com": ("vk", r"/([A-Za-z0-9_.]+)"),
     "tiktok.com": ("tiktok", r"/@([A-Za-z0-9_.]+)"),
     "steamcommunity.com": ("steam", r"/id/([A-Za-z0-9_-]+)"),
     "pinterest.com": ("pinterest", r"/([A-Za-z0-9_]+)"),
@@ -42,6 +48,7 @@ class SocialProfile:
     platform: str
     username: str
     url: str
+    resource_kind: str = "username"
 
 
 def normalize_web_url(raw: str, *, keep_query: bool = False) -> str | None:
@@ -65,7 +72,7 @@ def normalize_web_url(raw: str, *, keep_query: bool = False) -> str | None:
 
 
 def parse_social_profile(raw: str) -> SocialProfile | None:
-    normalized = normalize_web_url(raw)
+    normalized = normalize_web_url(raw, keep_query=True)
     if not normalized:
         return None
     parsed = urlsplit(normalized)
@@ -74,11 +81,33 @@ def parse_social_profile(raw: str) -> SocialProfile | None:
     if not route:
         return None
     platform, pattern = route
-    match = re.fullmatch(pattern, parsed.path, re.IGNORECASE)
+    if platform == "facebook":
+        params = dict(parse_qsl(parsed.query))
+        if parsed.path == "/profile.php":
+            identity = params.get("id", "")
+            if not re.fullmatch(r"[1-9][0-9]{0,24}", identity):
+                return None
+            return SocialProfile(platform, identity, f"https://facebook.com/profile.php?id={identity}", "profile_id")
+        people = re.fullmatch(r"/people/[^/]+/([1-9][0-9]{0,24})", parsed.path)
+        numeric = re.fullmatch(r"/([1-9][0-9]{0,24})", parsed.path)
+        if people or numeric:
+            identity = (people or numeric)[1]
+            return SocialProfile(platform, identity, f"https://facebook.com/profile.php?id={identity}", "profile_id")
+        if parsed.path.endswith(".php"):
+            return None
+    path = unquote(parsed.path)
+    if platform == "youtube":
+        channel = re.fullmatch(r"/channel/(UC[A-Za-z0-9_-]{22})(?:/(?:about|videos|featured))?", path)
+        if channel:
+            return SocialProfile(platform, channel[1], f"https://youtube.com/channel/{channel[1]}", "channel_id")
+        path = re.sub(r"/(?:about|videos|featured)$", "", path)
+    match = re.fullmatch(pattern, path, re.IGNORECASE)
     if not match or match[1].lower() in RESERVED_ROUTES:
         return None
     canonical_host = "x.com" if platform == "twitter" else host
-    canonical = urlunsplit(("https", canonical_host, parsed.path, "", ""))
+    if platform == "snapchat":
+        path = f"/@{match[1]}"
+    canonical = urlunsplit(("https", canonical_host, quote(path, safe="/@._-"), "", ""))
     return SocialProfile(platform, match[1], canonical)
 
 
@@ -91,3 +120,11 @@ def social_host(url: str) -> str:
     if re.fullmatch(r"[a-z]{2}\.linkedin\.com", host):
         host = "linkedin.com"
     return host
+
+
+def core_profile_candidates(username: str) -> list[str]:
+    """Derived URLs are requests to verify, never evidence of an account."""
+    templates = ["https://x.com/{}", "https://instagram.com/{}", "https://facebook.com/{}",
+                 "https://tiktok.com/@{}", "https://youtube.com/@{}", "https://snapchat.com/@{}"]
+    return [profile.url for template in templates
+            if (profile := parse_social_profile(template.format(quote(username, safe="")))) is not None]

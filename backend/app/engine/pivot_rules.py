@@ -85,7 +85,7 @@ def extract_and_apply_pivots(findings: List[ToolFinding], context: TargetContext
         urls_to_check = []
         if f.entity_type in ["social_account", "search_mention"] and f.value.startswith("http"):
             urls_to_check.append(f.value)
-        if metadata.get("url") and str(metadata["url"]).startswith("http"):
+        if f.entity_type != "email_registration" and metadata.get("url") and str(metadata["url"]).startswith("http"):
             urls_to_check.append(str(metadata["url"]))
         for link in metadata.get("linked_profiles", []):
             if link and str(link).startswith("http"):
