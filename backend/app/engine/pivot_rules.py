@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List, Set
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from app.core.config import settings
+from app.tools.dni_public import normalize_dni, public_source_url
 from app.tools.phone_numbers import phone_identity
 from app.tools.base import TargetContext, ToolFinding
 
@@ -59,6 +60,27 @@ def extract_and_apply_pivots(findings: List[ToolFinding], context: TargetContext
 
     for f in findings:
         metadata = f.metadata_info or {}
+
+        if metadata.get("dni_query") == normalize_dni(context.dni) and metadata.get("dni_mention_status") == "observed_in_search_result":
+            source = public_source_url(f.value)
+            dni_sources = context.extra.setdefault("dni_source_urls", [])
+            if source and source not in dni_sources and len(dni_sources) < settings.dni_max_public_sources:
+                dni_sources.append(source)
+                pivoted = True
+
+        # A candidate name must come from the exact DNI record, never a nearby snippet.
+        if (metadata.get("source_kind") == "public_document"
+                and metadata.get("dni") == normalize_dni(context.dni)
+                and metadata.get("name_association") == "structured_same_record"
+                and isinstance(metadata.get("full_name"), str)):
+            name = metadata["full_name"].strip()
+            candidates = context.extra.setdefault("dni_name_candidates", [])
+            candidate = {"name": name, "source_url": metadata.get("source_url"), "status": "candidate"}
+            if candidate not in candidates and len(candidates) < 3:
+                candidates.append(candidate)
+            if name and name not in context.discovered_names and len(context.discovered_names) < 3:
+                context.discovered_names.append(name)
+                pivoted = True
 
         # Published phone numbers remain associated with their source, not its owner.
         observed = context.extra.setdefault("phone_observations", {})

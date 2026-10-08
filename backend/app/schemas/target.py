@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator, field_validator
 
 
 class TargetCreate(BaseModel):
@@ -13,6 +13,17 @@ class TargetCreate(BaseModel):
     university: Optional[str] = None
     description: Optional[str] = None
     extra_data: Optional[Dict[str, Any]] = None
+
+    @field_validator("dni", mode="before")
+    @classmethod
+    def validate_dni(cls, value):
+        from app.tools.dni_public import normalize_dni
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        normalized = normalize_dni(value)
+        if normalized is None:
+            raise ValueError("El DNI debe contener exactamente ocho dígitos ASCII.")
+        return normalized
 
     @model_validator(mode="after")
     def check_at_least_one_identifier(self) -> "TargetCreate":

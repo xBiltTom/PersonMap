@@ -28,6 +28,7 @@ from bs4 import BeautifulSoup
 
 from app.core.config import settings
 from app.tools import http_client
+from app.tools.dni_public import normalize_dni, matches_dni
 from app.tools.phone_numbers import analyze_phone, matches_phone_text, extract_phone_observations
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
@@ -100,6 +101,8 @@ def _matches_literally(dork: "Dork", title: str, snippet: str, url: str) -> bool
 
     Un dork sin comillas no impone restricción: se acepta el resultado.
     """
+    if dork.dni:
+        return any(matches_dni(dork.dni, text) for text in (title, snippet))
     if dork.phone:
         return matches_phone_text(dork.phone, title, snippet)
     terms = QUOTED_TERM_RE.findall(dork.query)
@@ -136,6 +139,7 @@ class Dork:
     rationale: str
     include_domains: List[str] = field(default_factory=list)
     phone: Optional[str] = None
+    dni: Optional[str] = None
 
     def as_text_query(self) -> str:
         """Consulta en texto plano, para motores sin filtro de dominio nativo."""
@@ -174,7 +178,7 @@ class SearchDorkerTool(BaseTool):
     required_inputs = ["full_name", "username", "email", "dni", "phone"]
 
     def can_run(self, context: TargetContext) -> bool:
-        return super().can_run(context) or bool(context.all_phones())
+        return super().can_run(context) or bool(context.all_phones()) or bool(context.discovered_names)
 
     def _backends(self) -> List["SearchBackend"]:
         """
@@ -247,11 +251,11 @@ class SearchDorkerTool(BaseTool):
         consultas recorta por el final.
         """
         dorks: List[Dork] = []
-        name = (context.full_name or "").strip()
+        name = (context.full_name or (context.discovered_names[0] if context.discovered_names else "")).strip()
         uni = (context.university or "").strip()
         username = (context.username or "").strip()
         email = (context.email or "").strip()
-        dni = (context.dni or "").strip()
+        dni = normalize_dni(context.dni)
 
         # El correo es el identificador más discriminante: quien lo publica
         # suele estar hablando de la persona concreta, no de un homónimo.
@@ -268,7 +272,7 @@ class SearchDorkerTool(BaseTool):
             dorks.append(Dork(query, "Menciones públicas del teléfono", phone=phone))
 
         if dni:
-            dorks.append(Dork(f'"{dni}"', "Aparición del DNI en documentos públicos"))
+            dorks.append(Dork(f'"{dni}"', "Aparición del DNI en documentos públicos", dni=dni))
 
         if name and uni:
             dorks.append(
@@ -285,6 +289,10 @@ class SearchDorkerTool(BaseTool):
                     include_domains=PROFILE_DOMAINS,
                 )
             )
+
+        if dni:
+            dorks.append(Dork(f'"{dni}"', "Publicaciones abiertas de RENIEC", include_domains=["reniec.gob.pe"], dni=dni))
+            dorks.append(Dork(f'"{dni}"', "Documentos y datos abiertos institucionales", include_domains=["gob.pe", "datosabiertos.gob.pe"], dni=dni))
 
         if username:
             dorks.append(Dork(f'"{username}"', "Menciones del alias"))
@@ -336,7 +344,7 @@ class SearchDorkerTool(BaseTool):
             if not url or url in seen_urls:
                 continue
 
-            title = item.get("title") or url
+            title = item.get("title") or ("" if dork.dni else url)
             snippet = item.get("content") or ""
             literal = _matches_literally(dork, title, snippet, url)
 
@@ -344,7 +352,7 @@ class SearchDorkerTool(BaseTool):
             # un dork del correo "jperez@untumbes.edu.pe" (inexistente) devuelve
             # la portada de untumbes.edu.pe. En OSINT ese falso positivo es peor
             # que no obtener nada, porque acaba en el expediente de una persona.
-            if not literal and (dork.phone or settings.tavily_require_literal_match):
+            if not literal and (dork.phone or dork.dni or settings.tavily_require_literal_match):
                 continue
 
             seen_urls.add(url)
@@ -395,7 +403,7 @@ class SearchDorkerTool(BaseTool):
                 title = title_tag.get_text(strip=True)
                 snippet = snippet_tag.get_text(strip=True) if snippet_tag else ""
                 literal = _matches_literally(dork, title, snippet, actual_url)
-                if not literal and (dork.phone or settings.tavily_require_literal_match):
+                if not literal and (dork.phone or dork.dni or settings.tavily_require_literal_match):
                     continue
                 seen_urls.add(actual_url)
                 finding = self._build_finding(
@@ -472,6 +480,8 @@ class SearchDorkerTool(BaseTool):
                 "source_tool": "search_dorker",
                 "phones": [item["phone"] for item in extract_phone_observations(f"{title}\n{snippet}",
                            analyze_phone(dork.phone).get("country_iso", "PE") if dork.phone else "PE")],
+                "dni_query": dork.dni,
+                "dni_mention_status": "observed_in_search_result" if dork.dni else None,
                 "phone_query": dork.phone,
                 "phone_mention_status": "observed_in_search_result",
                 "ownership_status": "unverified",

@@ -1,0 +1,69 @@
+{
+  "http": "simulated",
+  "input_validation": {
+    "12345678": {
+      "tool_can_run": true,
+      "api_schema_accepts": true
+    },
+    "abc12345678xyz": {
+      "tool_can_run": true,
+      "api_schema_accepts": true
+    },
+    "1234-5678": {
+      "tool_can_run": true,
+      "api_schema_accepts": true
+    },
+    "１２３４５６７８": {
+      "tool_can_run": true,
+      "api_schema_accepts": true
+    },
+    "123456789": {
+      "tool_can_run": false,
+      "api_schema_accepts": true
+    }
+  },
+  "search_matching": {
+    "inside_longer_number": true,
+    "number_assembled_from_spaces": true,
+    "query_in_url_only": true,
+    "explicit_dni": true
+  },
+  "provider_responses": {
+    "mismatched_document": {
+      "display_name": "PERSONA DE PRUEBA",
+      "confidence": 0.99,
+      "evidence_urls": [],
+      "source": "apis_net_pe_v1",
+      "pivoted_name": null,
+      "discovered_names": []
+    },
+    "error_body_with_name": {
+      "display_name": "ERROR DE PRUEBA",
+      "confidence": 0.99,
+      "evidence_urls": [],
+      "source": "apis_net_pe_v1",
+      "pivoted_name": null,
+      "discovered_names": []
+    },
+    "only_one_surname": {
+      "display_name": "APELLIDO DE PRUEBA",
+      "confidence": 0.99,
+      "evidence_urls": [],
+      "source": "apis_net_pe_v1",
+      "pivoted_name": null,
+      "discovered_names": []
+    },
+    "all_providers_fail": {
+      "display_name": "DNI 12345678",
+      "confidence": 0.85,
+      "evidence_urls": [],
+      "source": "format_validated",
+      "pivoted_name": null,
+      "discovered_names": []
+    }
+  },
+  "split_given_names": "PRIMERO APELLIDO",
+  "dni_only_queries": [
+    "\"12345678\""
+  ]
+}

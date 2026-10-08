@@ -50,6 +50,7 @@ from app.engine.rule_engine import SweepResult, rule_engine
 from app.engine.trace import PendingObservation, trace_recorder
 from app.models.entity import Entity
 from app.models.target import Target
+from app.engine.pivot_rules import extract_and_apply_pivots
 from app.tools.base import TargetContext, ToolFinding
 from app.tools.registry import tool_registry
 
@@ -459,12 +460,14 @@ class HybridEngine:
                                 for finding in new_findings
                             )
 
+                extract_and_apply_pivots(new_findings, sweep.context)
                 findings.extend(new_findings)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
                     "content": json.dumps({
                         "findings_count": len(new_findings),
+                        "dni_name_candidates": sweep.context.extra.get("dni_name_candidates", []),
                         "sample": [
                             {"platform": f.platform, "value": f.value, "confidence": f.confidence}
                             for f in new_findings[:10]
@@ -503,6 +506,7 @@ class HybridEngine:
             phone=args.get("phone") or context.phone,
             dni=args.get("dni") or context.dni,
             university=args.get("university") or context.university,
+            discovered_names=list(context.discovered_names),
             discovered_phones=list(context.discovered_phones),
             discovered_emails=list(context.discovered_emails),
             discovered_usernames=list(context.discovered_usernames),

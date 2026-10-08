@@ -31,6 +31,9 @@ FROM python:3.12-slim
 LABEL org.opencontainers.image.title="PersonMap Backend"
 LABEL org.opencontainers.image.description="OSINT footprint audit platform — FastAPI backend"
 
+# Public PDF publications are read locally without OCR or external services.
+RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils && rm -rf /var/lib/apt/lists/*
+
 # Usuario no-root para reducir la superficie de ataque
 RUN addgroup --system app && adduser --system --ingroup app app
 

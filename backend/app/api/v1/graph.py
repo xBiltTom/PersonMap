@@ -58,7 +58,7 @@ async def get_investigation_graph(id: UUID, db: AsyncSession = Depends(get_db)):
 
     target = investigation.target
     root_id = f"target-{target.id}"
-    root_label = target.full_name or target.username or target.email or target.phone or "Identidad Objetivo"
+    root_label = target.full_name or target.username or target.email or target.phone or target.dni or "Identidad Objetivo"
     membership = _group_membership(investigation)
     nodes = [
         GraphNode(

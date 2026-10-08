@@ -310,6 +310,7 @@ function buildObservedFields(node: GraphNode, metadata: Metadata, isRoot: boolea
   add("username", metadata.resource_kind === "channel_id" || metadata.resource_kind === "profile_id" ? "ID del perfil" : "Usuario", firstString(metadata, ["username", "preferred_username"]));
   const verificationLabels: Record<string, string> = {
     candidate: "Perfil candidato; pendiente de verificar",
+    public_document_observed: "DNI observado en fuente pública; titular sin confirmar",
     numbering_plan_valid: "Formato válido; actividad y titular sin confirmar",
     verified: "Existencia del perfil verificada; titular por confirmar",
     registration_signal: "Señal de registro por correo; perfil sin identificar",
@@ -366,6 +367,14 @@ function buildObservedFields(node: GraphNode, metadata: Metadata, isRoot: boolea
   add("works_count", "Publicaciones", numberValue(metadata.works_count));
   add("citations", "Citas", numberValue(metadata.citations));
   add("dni", "Documento", metadata.dni);
+  if (metadata.source_kind === "public_document") {
+    add("dni_name", "Nombre publicado (candidato)", metadata.full_name);
+    add("dni_publisher", "Publicador", metadata.publisher);
+    add("dni_source_url", "Fuente pública", metadata.source_url, "url");
+    add("dni_checked_at", "Observado", metadata.checked_at, "date");
+    add("dni_record", "Registro observado", metadata.record_index);
+    add("dni_association", "Asociación del nombre", metadata.name_association === "structured_same_record" ? "Mismo registro que el DNI; identidad sin corroborar" : "Sin asociación verificable");
+  }
   add("identifier", "Valor observado", node.data.value, toSafeExternalUrl(node.data.value) ? "url" : "text");
   return fields;
 }
@@ -381,6 +390,7 @@ function buildDescriptions(metadata: Metadata): InspectorDescription[] {
   add("Descripción", metadata.description);
   add("Resumen", metadata.summary);
   add("Extracto encontrado", metadata.snippet);
+  add("Fragmento del documento", metadata.excerpt);
   return descriptions;
 }
 

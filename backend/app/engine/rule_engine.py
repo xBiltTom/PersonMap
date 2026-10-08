@@ -58,13 +58,15 @@ class RuleEngine:
             elif req == "dni":
                 parts.append(f"d:{context.dni or ''}")
             elif req == "full_name":
-                parts.append(f"n:{context.full_name or ''}")
+                parts.append(f"n:{context.full_name or ''};c:" + ",".join(context.discovered_names))
             elif req == "candidate_urls":
                 urls = context.extra.get("candidate_urls", [])
                 parts.append("urls:" + ",".join(sorted(str(u) for u in urls)))
             else:
                 val = getattr(context, req, None) or context.extra.get(req, "")
                 parts.append(f"{req}:{val}")
+        if tool.name == "dni_lookup":
+            parts.append("public:" + ",".join(sorted(context.extra.get("dni_source_urls", []))))
         return "|".join(parts)
 
     async def collect_findings(
@@ -205,6 +207,7 @@ class RuleEngine:
 
             # Heuristic Pivot Analysis
             pivot_before = {
+                "names": len(context.discovered_names),
                 "phones": len(context.all_phones()),
                 "emails": len(context.all_emails()),
                 "usernames": len(context.all_usernames()),
@@ -213,6 +216,7 @@ class RuleEngine:
             }
             has_pivots = extract_and_apply_pivots(round_findings, context)
             pivot_after = {
+                "names": len(context.discovered_names),
                 "phones": len(context.all_phones()),
                 "emails": len(context.all_emails()),
                 "usernames": len(context.all_usernames()),

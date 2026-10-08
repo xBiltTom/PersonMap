@@ -16,6 +16,8 @@ Se persiste dentro de `investigation.metrics`, junto al resto, de modo que
 cualquier análisis agregado pueda agrupar o descartar por configuración.
 """
 
+import hashlib
+import json
 from typing import Any, Dict
 
 from app.core.config import settings
@@ -59,6 +61,9 @@ def run_fingerprint() -> Dict[str, Any]:
             settings.username_scan_concurrency
         ),
         "social_engine_version": 4,
+        "dni_engine_version": 2,
+        "dni_max_public_sources": settings.dni_max_public_sources,
+        "dni_public_sources_fingerprint": hashlib.sha256(json.dumps(settings.dni_public_source_urls, sort_keys=True).encode()).hexdigest(),
         "phone_engine_version": 2,
         "phone_max_numbers": settings.phone_max_numbers,
         "phone_network_fields": settings.phone_twilio_fields,

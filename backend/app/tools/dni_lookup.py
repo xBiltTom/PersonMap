@@ -1,158 +1,83 @@
-"""
-Consulta de DNI/RUC Perú (RENIEC/SUNAT) con tres capas de fallback.
+"""Observe DNI mentions in openly accessible publications, including RENIEC."""
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 
-El ecosistema de mirrors del padrón RENIEC es inestable por diseño: los
-proveedores rotan sus endpoints, añaden autenticación y deprecan versiones sin
-aviso. Una sola URL deja la herramienta muda ante cualquier cambio.
-
-Estrategia de intento encadenado:
-  1. apis.net.pe **v2** con Bearer token (más estable, más campos) si
-     `APIS_NET_PE_TOKEN` está configurado.
-  2. apis.net.pe **v1** pública (sin token, puede exigir autenticación en
-     algún momento).
-  3. apisperu.com (mirror independiente, sin key, responde un esquema similar).
-
-Si todos los intentos fallan, se registra el DNI con formato válido y
-confianza 0.85 para que el expediente no quede vacío y la procedencia quede
-documentada.
-"""
-
-from typing import Any, Dict, List, Optional
+import httpx
 
 from app.core.config import settings
 from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
-
-# Límite publicado por apis.net.pe para el plan gratuito: 30 req/min.
-# Se declara junto al endpoint para que el motivo viva al lado del número.
-_APIS_NET_PE_HOST = "api.apis.net.pe"
-http_client.register_host_rate_limit(_APIS_NET_PE_HOST, max_requests=25, per_seconds=60.0)
-
-_APISPERU_HOST = "dniruc.apisperu.com"
-http_client.register_host_rate_limit(_APISPERU_HOST, max_requests=20, per_seconds=60.0)
-
-# Campos que se consideran «nombre» en las distintas respuestas de los mirrors.
-_NOMBRE_KEYS = ("nombre", "nombres", "primerNombre", "segundoNombre")
-_APE_PAT_KEYS = ("apellidoPaterno", "ape_paterno")
-_APE_MAT_KEYS = ("apellidoMaterno", "ape_materno")
+from app.tools.dni_public import normalize_dni, public_source_url, publisher, parse_public_document
+from app.tools.public_network import UnsafePublicURL
 
 
-def _extract_full_name(data: Dict[str, Any]) -> str:
-    """Construye nombre completo a partir de las claves presentes."""
-    nombre = next((data.get(k) for k in _NOMBRE_KEYS if data.get(k)), "")
-    ape_pat = next((data.get(k) for k in _APE_PAT_KEYS if data.get(k)), "")
-    ape_mat = next((data.get(k) for k in _APE_MAT_KEYS if data.get(k)), "")
-    return f"{nombre} {ape_pat} {ape_mat}".strip()
+async def _public_request(request: httpx.Request) -> None:
+    if not public_source_url(str(request.url)):
+        raise UnsafePublicURL('Not a public publication URL')
 
 
 class DniLookupTool(BaseTool):
-    name = "dni_lookup"
-    description = (
-        "Verifica y consulta información pública asociada a documentos de identidad "
-        "(DNI Perú / RUC 10) en portales públicos gubernamentales."
-    )
+    name = 'dni_lookup'
+    description = 'Verifica menciones de DNI en páginas y datasets públicos (incluido RENIEC), conservando fuente y contexto.'
     category = ToolCategory.DOCUMENT
-    required_inputs = ["dni"]
+    required_inputs = ['dni']
 
     def can_run(self, context: TargetContext) -> bool:
-        if not super().can_run(context):
-            return False
-        dni_clean = "".join(filter(str.isdigit, context.dni or ""))
-        return len(dni_clean) == 8
+        return normalize_dni(context.dni) is not None
 
-    async def execute(self, context: TargetContext) -> List[ToolFinding]:
-        if not context.dni or not context.dni.strip():
+    async def execute(self, context: TargetContext) -> list[ToolFinding]:
+        dni = normalize_dni(context.dni)
+        if not dni:
+            context.extra['dni_lookup_status'] = 'invalid_input'
             return []
-
-        dni = context.dni.strip()
-        dni_clean = "".join(filter(str.isdigit, dni))
-        if len(dni_clean) != 8:
-            return []
-
-        full_name: Optional[str] = None
-        source_used: Optional[str] = None
-
-        async with http_client.build_client(timeout=8.0, rotate_ua=False) as client:
-            full_name, source_used = await self._try_apis_net_pe(client, dni_clean)
-            if full_name is None:
-                full_name, source_used = await self._try_apisperu(client, dni_clean)
-
-        return [self._build_finding(dni_clean, full_name, source_used)]
-
-    # ------------------------------------------------------------------
-    # Intentos individuales
-    # ------------------------------------------------------------------
-
-    async def _try_apis_net_pe(
-        self, client: Any, dni: str
-    ) -> tuple[Optional[str], Optional[str]]:
-        """
-        Intenta apis.net.pe. Usa v2 con Bearer si hay token configurado,
-        o v1 pública si no.
-        """
-        token = settings.apis_net_pe_token
-        if token:
-            url = f"https://{_APIS_NET_PE_HOST}/v2/reniec/dni?numero={dni}"
-            headers = {"Authorization": f"Bearer {token}"}
-            source = "apis_net_pe_v2"
-        else:
-            url = f"https://{_APIS_NET_PE_HOST}/v1/dni?numero={dni}"
-            headers = {}
-            source = "apis_net_pe_v1"
-
-        try:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                name = _extract_full_name(data)
-                if name:
-                    return name, source
-            # 401/403 con v1 es una señal clara de que ahora requiere token:
-            # no reintentamos para no bloquear el presupuesto de concurrencia.
-        except Exception:
-            pass
-        return None, None
-
-    async def _try_apisperu(
-        self, client: Any, dni: str
-    ) -> tuple[Optional[str], Optional[str]]:
-        """Mirror secundario independiente (apisperu.com)."""
-        url = f"https://{_APISPERU_HOST}/api/dni/{dni}"
-        try:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                data = resp.json()
-                name = _extract_full_name(data)
-                if name:
-                    return name, "apisperu_com"
-        except Exception:
-            pass
-        return None, None
-
-    # ------------------------------------------------------------------
-    # Constructor de hallazgo
-    # ------------------------------------------------------------------
-
-    def _build_finding(
-        self,
-        dni: str,
-        full_name: Optional[str],
-        source: Optional[str],
-    ) -> ToolFinding:
-        metadata: Dict[str, Any] = {
-            "dni": dni,
-            "source": source or "format_validated",
-        }
-        if full_name:
-            metadata["full_name"] = full_name
-
-        return ToolFinding(
-            entity_type="document",
-            platform="reniec_peru",
-            value=f"DNI: {dni}",
-            display_name=full_name or f"DNI {dni}",
-            metadata_info=metadata,
-            # Confianza alta si obtuvimos nombre real; menor si solo validamos formato.
-            confidence=0.99 if full_name else 0.85,
-            evidence_urls=[],
-        )
+        candidates = [*settings.dni_public_source_urls, *context.extra.get('dni_source_urls', [])]
+        sources = list(dict.fromkeys(url for raw in candidates if isinstance(raw, str) and (url := public_source_url(raw))))
+        outcomes = context.extra.setdefault('dni_public_results', {})
+        findings = []
+        limit = max(0, settings.dni_max_public_sources)
+        async with http_client.build_client(timeout=10, public_only=True, max_retries=0, follow_redirects=True, max_redirects=3, event_hooks={'request': [_public_request]}) as client:
+            for url in sources:
+                key = dni + '|' + url
+                if key in outcomes or len(outcomes) >= limit:
+                    continue
+                outcomes[key] = {'status': 'started', 'source_url': url}
+                try:
+                    async with client.stream('GET', url) as response:
+                        if response.status_code != 200:
+                            outcomes[key]['status'] = 'http_error'
+                            outcomes[key]['http_status'] = response.status_code
+                            continue
+                        size = response.headers.get('content-length', '')
+                        if size.isdecimal() and int(size) > 2000000:
+                            outcomes[key]['status'] = 'too_large'
+                            continue
+                        chunks, length = [], 0
+                        async for chunk in response.aiter_bytes():
+                            length += len(chunk)
+                            if length > 2000000:
+                                break
+                            chunks.append(chunk)
+                        if length > 2000000:
+                            outcomes[key]['status'] = 'too_large'
+                            continue
+                        source_url = str(response.url)
+                        if not public_source_url(source_url):
+                            outcomes[key]['status'] = 'unsupported_source'
+                            continue
+                        with ThreadPoolExecutor(max_workers=1) as pool:
+                            rows, kind = await asyncio.get_running_loop().run_in_executor(pool, parse_public_document, b''.join(chunks), response.headers.get('content-type', ''), source_url, dni)
+                    outcomes[key].update(status='observed' if rows else 'no_match', document_format=kind, final_url=source_url)
+                    for row in rows:
+                        metadata = {**row, 'source_url': source_url, 'source_kind': 'public_document',
+                                    'publisher': publisher(source_url), 'document_format': kind,
+                                    'verification_status': 'public_document_observed', 'ownership_status': 'unverified',
+                                    'checked_at': datetime.now(timezone.utc).isoformat(), 'source_tool': self.name}
+                        findings.append(ToolFinding(entity_type='document', platform=publisher(source_url),
+                            value=f'DNI: {dni} | {source_url} | {row.get("record_index", "mention")}',
+                            display_name=row.get('full_name') or f'DNI {dni}', metadata_info=metadata,
+                            confidence=0.65 if row.get('full_name') else 0.45, evidence_urls=[source_url]))
+                except (httpx.HTTPError, UnsafePublicURL, ValueError):
+                    outcomes[key]['status'] = 'request_error'
+        context.extra['dni_lookup_status'] = 'public_evidence_found' if findings else 'no_new_public_evidence'
+        return findings
