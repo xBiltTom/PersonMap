@@ -28,6 +28,7 @@ from bs4 import BeautifulSoup
 
 from app.core.config import settings
 from app.tools import http_client
+from app.tools.phone_numbers import analyze_phone, matches_phone_text, extract_phone_observations
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
 HEADERS = {
@@ -99,6 +100,8 @@ def _matches_literally(dork: "Dork", title: str, snippet: str, url: str) -> bool
 
     Un dork sin comillas no impone restricción: se acepta el resultado.
     """
+    if dork.phone:
+        return matches_phone_text(dork.phone, title, snippet)
     terms = QUOTED_TERM_RE.findall(dork.query)
     if not terms:
         return True
@@ -132,6 +135,7 @@ class Dork:
     query: str
     rationale: str
     include_domains: List[str] = field(default_factory=list)
+    phone: Optional[str] = None
 
     def as_text_query(self) -> str:
         """Consulta en texto plano, para motores sin filtro de dominio nativo."""
@@ -167,7 +171,10 @@ class SearchDorkerTool(BaseTool):
         "con DuckDuckGo como motor de respaldo."
     )
     category = ToolCategory.SEARCH
-    required_inputs = ["full_name", "username", "email", "dni"]
+    required_inputs = ["full_name", "username", "email", "dni", "phone"]
+
+    def can_run(self, context: TargetContext) -> bool:
+        return super().can_run(context) or bool(context.all_phones())
 
     def _backends(self) -> List["SearchBackend"]:
         """
@@ -207,7 +214,12 @@ class SearchDorkerTool(BaseTool):
             return []
 
         max_queries = max(1, settings.tavily_max_queries)
-        dorks = dorks[:max_queries]
+        executed = context.extra.setdefault("search_queries_executed", [])
+        dorks = [d for d in dorks if [d.query, d.include_domains] not in executed]
+        dorks = dorks[:max(0, max_queries - len(executed))]
+        if not dorks:
+            return []
+        executed.extend([d.query, d.include_domains] for d in dorks)
 
         findings: List[ToolFinding] = []
         seen_urls: set[str] = set()
@@ -245,6 +257,15 @@ class SearchDorkerTool(BaseTool):
         # suele estar hablando de la persona concreta, no de un homónimo.
         if email:
             dorks.append(Dork(f'"{email}"', "Menciones públicas del correo"))
+
+        # One bounded query per phone, with alternate formats interpreted as OR.
+        for phone in context.all_phones()[:settings.phone_max_numbers]:
+            facts = analyze_phone(phone)
+            if not facts["valid"] or facts.get("extension"):
+                continue
+            variants = list(dict.fromkeys([facts["e164"], facts["international"], facts["national"]]))
+            query = " OR ".join(f'"{value}"' for value in variants)
+            dorks.append(Dork(query, "Menciones públicas del teléfono", phone=phone))
 
         if dni:
             dorks.append(Dork(f'"{dni}"', "Aparición del DNI en documentos públicos"))
@@ -323,7 +344,7 @@ class SearchDorkerTool(BaseTool):
             # un dork del correo "jperez@untumbes.edu.pe" (inexistente) devuelve
             # la portada de untumbes.edu.pe. En OSINT ese falso positivo es peor
             # que no obtener nada, porque acaba en el expediente de una persona.
-            if not literal and settings.tavily_require_literal_match:
+            if not literal and (dork.phone or settings.tavily_require_literal_match):
                 continue
 
             seen_urls.add(url)
@@ -374,7 +395,7 @@ class SearchDorkerTool(BaseTool):
                 title = title_tag.get_text(strip=True)
                 snippet = snippet_tag.get_text(strip=True) if snippet_tag else ""
                 literal = _matches_literally(dork, title, snippet, actual_url)
-                if not literal and settings.tavily_require_literal_match:
+                if not literal and (dork.phone or settings.tavily_require_literal_match):
                     continue
                 seen_urls.add(actual_url)
                 finding = self._build_finding(
@@ -449,6 +470,11 @@ class SearchDorkerTool(BaseTool):
                 "literal_match": literal,
                 "url": url,
                 "source_tool": "search_dorker",
+                "phones": [item["phone"] for item in extract_phone_observations(f"{title}\n{snippet}",
+                           analyze_phone(dork.phone).get("country_iso", "PE") if dork.phone else "PE")],
+                "phone_query": dork.phone,
+                "phone_mention_status": "observed_in_search_result",
+                "ownership_status": "unverified",
             },
             confidence=confidence,
             evidence_urls=[url],

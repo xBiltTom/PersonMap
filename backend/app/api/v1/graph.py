@@ -16,6 +16,8 @@ router = APIRouter()
 
 EDGE_STYLES = {
     "discovered_from": {"stroke": "#38bdf8", "strokeDasharray": "2,7", "strokeWidth": 1},
+    "publishes_phone": {"stroke": "#f59e0b", "strokeWidth": 2},
+    "mentions_phone": {"stroke": "#f59e0b", "strokeDasharray": "3,5", "strokeWidth": 1.5},
     "observed_email": {"stroke": "#38bdf8", "strokeWidth": 2},
     "shares_declared_email": {"stroke": "#38bdf8", "strokeWidth": 2},
     "explicit_profile_link": {"stroke": "#a855f7", "strokeWidth": 2},
@@ -56,7 +58,7 @@ async def get_investigation_graph(id: UUID, db: AsyncSession = Depends(get_db)):
 
     target = investigation.target
     root_id = f"target-{target.id}"
-    root_label = target.full_name or target.username or target.email or "Identidad Objetivo"
+    root_label = target.full_name or target.username or target.email or target.phone or "Identidad Objetivo"
     membership = _group_membership(investigation)
     nodes = [
         GraphNode(
@@ -67,7 +69,7 @@ async def get_investigation_graph(id: UUID, db: AsyncSession = Depends(get_db)):
                 label=root_label,
                 entity_type="target",
                 value=root_label,
-                display_name=target.full_name or target.username or "Identidad Objetivo",
+                display_name=root_label,
                 is_root=True,
                 metadata_info={
                     "full_name": target.full_name,

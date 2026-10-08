@@ -70,6 +70,11 @@ def build_tool_schemas() -> List[Dict[str, Any]]:
                 },
             },
         })
+    for schema in schemas:
+        if schema["function"]["name"] == "search_dorker":
+            parameters = schema["function"]["parameters"]
+            parameters["required"] = []
+            parameters["anyOf"] = [{"required": [field]} for field in ("full_name", "username", "email", "dni", "phone")]
     return schemas
 
 
@@ -115,6 +120,7 @@ def build_call_context(
         dni=args.get("dni") or base.dni or target.dni,
         university=args.get("university") or base.university or target.university,
         description=target.description,
+        discovered_phones=list(base.discovered_phones),
         discovered_emails=list(base.discovered_emails),
         discovered_usernames=list(base.discovered_usernames),
         discovered_names=list(base.discovered_names),
@@ -162,7 +168,12 @@ async def dispatch_tool_call(
     ctx = build_call_context(args, target, base_context)
     if investigation_id:
         ctx.extra["investigation_id"] = investigation_id
-    findings = await tool.execute(ctx)
+    try:
+        findings = await tool.execute(ctx)
+    finally:
+        if base_context is not None:
+            # Keep per-investigation caches and budgets even when call inputs differ.
+            base_context.extra.update(ctx.extra)
 
     for f in findings:
         f.metadata_info["source_tool"] = (

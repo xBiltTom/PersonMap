@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.core.events import event_bus
 from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
+from app.tools.phone_numbers import extract_phone_observations
 from app.tools.telegram_profiles import observe_telegram_page
 from app.tools.dataset_adapter import build_catalog
 from app.tools.public_network import UnsafePublicURL, public_address
@@ -257,6 +258,7 @@ class SocialVerifierTool(BaseTool):
                 "declared_canonical_url": declared_url,
                 "canonical_accepted": canonical_accepted,
                 "extracted_usernames": usernames, "extracted_emails": emails,
+                "extracted_phones": [item["phone"] for item in extract_phone_observations(bio)],
                 "verification_status": "verified", "profile_signals": signals,
                 "verification_breakdown": breakdown,
             }

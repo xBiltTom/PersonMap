@@ -1,4 +1,5 @@
 from typing import Optional
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -86,6 +87,12 @@ class Settings(BaseSettings):
     tool_concurrency_share: float = 0.6
 
     # Enrichment of discovered profile URLs, bounded per investigation.
+    phone_max_numbers: int = 3
+    # Select paid packages explicitly; an empty list keeps all lookups local.
+    phone_twilio_fields: list[str] = []
+    phone_twilio_api_key: Optional[str] = None
+    phone_twilio_api_secret: Optional[SecretStr] = None
+
     social_verify_concurrency: int = 8
     social_verify_max_urls: int = 300
     social_verify_url_timeout: float = 20.0

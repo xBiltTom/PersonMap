@@ -503,6 +503,7 @@ class HybridEngine:
             phone=args.get("phone") or context.phone,
             dni=args.get("dni") or context.dni,
             university=args.get("university") or context.university,
+            discovered_phones=list(context.discovered_phones),
             discovered_emails=list(context.discovered_emails),
             discovered_usernames=list(context.discovered_usernames),
             extra=dict(context.extra),
@@ -544,6 +545,7 @@ class HybridEngine:
             f"RESULTADO DEL BARRIDO HEURÍSTICO ({sweep.rounds} ronda(s))\n"
             f"- Hallazgos por tipo: {json.dumps(by_type, ensure_ascii=False)}\n"
             f"- Plataformas con presencia detectada: {', '.join(top_platforms) or 'ninguna'}\n"
+            f"- Teléfonos conocidos tras pivotar: {', '.join(ctx.all_phones()) or 'ninguno'}\n"
             f"- Correos conocidos tras pivotar: {', '.join(ctx.all_emails()) or 'ninguno'}\n"
             f"- Alias conocidos tras pivotar: {', '.join(ctx.all_usernames()) or 'ninguno'}\n"
             f"- Nombres descubiertos: {', '.join(ctx.discovered_names) or 'ninguno'}\n"

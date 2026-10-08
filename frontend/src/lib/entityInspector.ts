@@ -310,6 +310,7 @@ function buildObservedFields(node: GraphNode, metadata: Metadata, isRoot: boolea
   add("username", metadata.resource_kind === "channel_id" || metadata.resource_kind === "profile_id" ? "ID del perfil" : "Usuario", firstString(metadata, ["username", "preferred_username"]));
   const verificationLabels: Record<string, string> = {
     candidate: "Perfil candidato; pendiente de verificar",
+    numbering_plan_valid: "Formato válido; actividad y titular sin confirmar",
     verified: "Existencia del perfil verificada; titular por confirmar",
     registration_signal: "Señal de registro por correo; perfil sin identificar",
   };
@@ -323,6 +324,33 @@ function buildObservedFields(node: GraphNode, metadata: Metadata, isRoot: boolea
   addList("emails", "Correos alternativos", metadata.emails, "email");
   addList("extracted_emails", "Correos extraídos", metadata.extracted_emails, "email");
   add("phone", "Teléfono", firstString(metadata, ["phone", "e164", "national"]));
+  add("national", "Formato nacional", metadata.national);
+  add("international", "Formato internacional", metadata.international);
+  add("extension", "Extensión", metadata.extension);
+  add("country_iso", "País del número", metadata.country_iso);
+  add("numbering_region", "Región del plan de numeración", metadata.numbering_region);
+  add("original_carrier", "Operador original del rango", metadata.original_carrier);
+  const lineTypes: Record<string, string> = { mobile: "Móvil", fixed_line: "Fijo", fixed_or_mobile: "Fijo o móvil", toll_free: "Gratuito", premium_rate: "Tarificación especial", voip: "VoIP", unknown: "Sin determinar" };
+  const lineType = stringValue(metadata.line_type);
+  if (lineType) add("line_type", "Tipo de línea", lineTypes[lineType] ?? humanize(lineType));
+  addList("timezones", "Zonas horarias del plan de numeración", metadata.timezones);
+  const network = isRecord(metadata.network_lookup) ? metadata.network_lookup : {};
+  const packages = isRecord(network.packages) ? network.packages : {};
+  const networkType = isRecord(packages.line_type_intelligence) ? packages.line_type_intelligence : {};
+  const networkStatus = isRecord(packages.line_status) ? packages.line_status : {};
+  if (networkType.status === "reported") {
+    add("network_carrier", "Operador reportado por proveedor", networkType.carrier_name);
+    add("network_line_type", "Tipo reportado por proveedor", networkType.line_type);
+  }
+  if (networkStatus.status === "reported") add("network_status", "Estado reportado por proveedor", networkStatus.line_status);
+  add("network_checked_at", "Consulta de red", network.checked_at, "date");
+  if (metadata.source_kind === "local_numbering_plan") {
+    if (networkType.status !== "reported") add("current_carrier_status", "Operador actual", "Sin comprobar");
+    if (networkStatus.status !== "reported") add("active_status", "Actividad de la línea", "Sin dato de red");
+  }
+  if (metadata.contact_links_origin === "derived") {
+    add("messaging_registration_status", "WhatsApp / Telegram", "Enlaces generados; registro sin comprobar");
+  }
   addList("phones", "Teléfonos alternativos", metadata.phones);
   add("location", "Ubicación", metadata.location, "location");
   add("university", "Universidad", metadata.university);

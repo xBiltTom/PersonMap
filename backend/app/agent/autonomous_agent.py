@@ -6,12 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.events import event_bus
 from app.agent.llm_client import complete_with_retries, describe_llm_error
-from app.agent.tool_dispatch import build_tool_schemas, dispatch_tool_call, resolve_tool_name
+from app.agent.tool_dispatch import build_call_context, build_tool_schemas, dispatch_tool_call, resolve_tool_name
 from app.engine.persistence import build_relationships, persist_findings
 from app.engine.trace import PendingObservation, trace_recorder
 from app.models.entity import Entity
 from app.models.target import Target
-from app.tools.base import ToolFinding
+from app.tools.base import TargetContext, ToolFinding
+from app.engine.pivot_rules import extract_and_apply_pivots
 
 
 # Construido una vez al importar; refleja TODAS las herramientas registradas.
@@ -48,6 +49,7 @@ class AutonomousOSINTAgent:
             entities = await rule_engine.execute_investigation(investigation_id, target, db)
             return AgentRun(entities, {"agent_fallback_to_rules": True, "agent_tools_executed": 0})
 
+        agent_context = build_call_context({}, target)
         all_findings: List[ToolFinding] = []
         trace_observations: List[PendingObservation] = []
         turns = 0
@@ -167,9 +169,11 @@ class AutonomousOSINTAgent:
                         db=db,
                         turn_index=turn,
                         observations=trace_observations,
+                        base_context=agent_context,
                     )
                     tools_executed += 1
                     all_findings.extend(tool_findings)
+                    extract_and_apply_pivots(tool_findings, agent_context)
 
                     # Return result to LLM
                     summary_result = [
@@ -179,7 +183,7 @@ class AutonomousOSINTAgent:
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": json.dumps({"findings_count": len(tool_findings), "sample": summary_result}),
+                        "content": json.dumps({"findings_count": len(tool_findings), "sample": summary_result, "known_phones": agent_context.all_phones()[:settings.phone_max_numbers]}),
                     })
 
                 if db:
@@ -297,6 +301,7 @@ class AutonomousOSINTAgent:
         db: AsyncSession | None = None,
         turn_index: int | None = None,
         observations: List[PendingObservation] | None = None,
+        base_context: TargetContext | None = None,
     ) -> List[ToolFinding]:
         """
         Delega en el despachador compartido, conservando el prefijo `agent:` de
@@ -343,6 +348,7 @@ class AutonomousOSINTAgent:
                 args,
                 target,
                 source_prefix="agent",
+                base_context=base_context,
                 investigation_id=investigation_id,
             )
         except Exception as err:

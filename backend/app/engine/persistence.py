@@ -213,6 +213,20 @@ def detect_relationships(a: Entity, b: Entity) -> List[Tuple[str, bool, dict]]:
     if _links_to(meta_a, b) or _links_to(meta_b, a):
         relationships.append(("explicit_profile_link", True, {"linked_profile": b.value if _links_to(meta_a, b) else a.value}))
 
+    # Publishing a phone is an observable relationship, not identity evidence.
+    from app.tools.phone_numbers import phone_identity
+    for phone_entity, source_entity in ((a, b), (b, a)):
+        if phone_entity.entity_type != "phone" or source_entity.entity_type == "phone":
+            continue
+        source_meta = source_entity.metadata_info or {}
+        values = [raw for key in ("phones", "extracted_phones")
+                  for raw in (source_meta.get(key, []) if isinstance(source_meta.get(key, []), list) else [])
+                  if isinstance(raw, str)]
+        identity = phone_identity(phone_entity.value)
+        if identity and any(phone_identity(raw) == identity for raw in values):
+            rel_type = "mentions_phone" if source_entity.entity_type == "search_mention" else "publishes_phone"
+            relationships.append((rel_type, False, {"phone": identity, "source_url": source_entity.value}))
+
     return relationships
 
 

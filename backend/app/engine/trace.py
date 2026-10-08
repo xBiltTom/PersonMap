@@ -30,6 +30,8 @@ def safe_input_summary(tool: Any, context: Optional[TargetContext] = None) -> Di
     summary: Dict[str, Any] = {"required_inputs": required_inputs}
     if context is not None:
         pivot_types: List[str] = []
+        if context.discovered_phones:
+            pivot_types.append("phone")
         if context.discovered_emails:
             pivot_types.append("email")
         if context.discovered_usernames:

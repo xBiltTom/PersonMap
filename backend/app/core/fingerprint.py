@@ -59,6 +59,9 @@ def run_fingerprint() -> Dict[str, Any]:
             settings.username_scan_concurrency
         ),
         "social_engine_version": 4,
+        "phone_engine_version": 2,
+        "phone_max_numbers": settings.phone_max_numbers,
+        "phone_network_fields": settings.phone_twilio_fields,
         "social_verify_concurrency": settings.tool_concurrency_budget(settings.social_verify_concurrency),
         "social_verify_max_urls": settings.social_verify_max_urls,
         "social_verify_url_timeout": settings.social_verify_url_timeout,

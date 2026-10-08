@@ -26,10 +26,22 @@ class TargetContext(BaseModel):
     university: Optional[str] = None
     description: Optional[str] = None
 
+    discovered_phones: List[str] = Field(default_factory=list)
     discovered_emails: List[str] = Field(default_factory=list)
     discovered_usernames: List[str] = Field(default_factory=list)
     discovered_names: List[str] = Field(default_factory=list)
     extra: Dict[str, Any] = Field(default_factory=dict)
+
+    def all_phones(self) -> List[str]:
+        from app.tools.phone_numbers import phone_identity
+        phones = []
+        for raw in [self.phone, *self.discovered_phones]:
+            if not isinstance(raw, str) or not raw.strip():
+                continue
+            value = phone_identity(raw) or raw.strip()
+            if value not in phones:
+                phones.append(value)
+        return phones
 
     def all_emails(self) -> List[str]:
         emails = []

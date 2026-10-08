@@ -54,7 +54,7 @@ class RuleEngine:
             elif req == "email":
                 parts.append("e:" + ",".join(sorted(context.all_emails())))
             elif req == "phone":
-                parts.append(f"p:{context.phone or ''}")
+                parts.append("p:" + ",".join(sorted(context.all_phones())))
             elif req == "dni":
                 parts.append(f"d:{context.dni or ''}")
             elif req == "full_name":
@@ -205,6 +205,7 @@ class RuleEngine:
 
             # Heuristic Pivot Analysis
             pivot_before = {
+                "phones": len(context.all_phones()),
                 "emails": len(context.all_emails()),
                 "usernames": len(context.all_usernames()),
                 "urls": len(context.extra.get("candidate_urls", [])),
@@ -212,6 +213,7 @@ class RuleEngine:
             }
             has_pivots = extract_and_apply_pivots(round_findings, context)
             pivot_after = {
+                "phones": len(context.all_phones()),
                 "emails": len(context.all_emails()),
                 "usernames": len(context.all_usernames()),
                 "urls": len(context.extra.get("candidate_urls", [])),

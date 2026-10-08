@@ -13,6 +13,8 @@ export function isProvenanceEdge(edge: GraphEdge): boolean {
 export function getFriendlyRelationLabel(relationType: string, customLabel?: string | null): string {
   const labels: Record<string, string> = {
     discovered_from: "hallazgo derivado",
+    publishes_phone: "teléfono publicado",
+    mentions_phone: "teléfono mencionado en búsqueda",
     shares_declared_email: "correo declarado en común",
     explicit_profile_link: "enlace de perfil declarado",
     same_username: "alias coincidente observado",

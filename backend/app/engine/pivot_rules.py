@@ -2,6 +2,8 @@ import re
 from pathlib import Path
 from typing import List, Set
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from app.core.config import settings
+from app.tools.phone_numbers import phone_identity
 from app.tools.base import TargetContext, ToolFinding
 
 
@@ -57,6 +59,28 @@ def extract_and_apply_pivots(findings: List[ToolFinding], context: TargetContext
 
     for f in findings:
         metadata = f.metadata_info or {}
+
+        # Published phone numbers remain associated with their source, not its owner.
+        observed = context.extra.setdefault("phone_observations", {})
+        raw_phones = [raw for key in ("phones", "extracted_phones")
+                      for raw in (metadata.get(key, []) if isinstance(metadata.get(key, []), list) else [])]
+        for raw in raw_phones[:10]:
+            if not isinstance(raw, str):
+                continue
+            identity = phone_identity(raw)
+            if not identity:
+                continue
+            if identity not in context.all_phones():
+                if len(context.all_phones()) >= settings.phone_max_numbers:
+                    continue
+                context.discovered_phones.append(identity)
+                pivoted = True
+            sources = [f.value] if f.value.startswith("http") else f.evidence_urls
+            for source in sources[:3]:
+                item = {"raw": raw, "source_url": source, "source_tool": metadata.get("source_tool"), "relationship": "phone_in_search_result" if f.entity_type == "search_mention" else "published_phone"}
+                entries = observed.setdefault(identity, [])
+                if item not in entries and len(entries) < 10:
+                    entries.append(item)
 
         # 1. New emails discovered (with strict validation & noise rejection)
         candidate_emails = metadata.get("emails", []) + metadata.get("extracted_emails", [])

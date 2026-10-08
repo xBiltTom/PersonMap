@@ -1,70 +1,52 @@
 from typing import List
-import phonenumbers
-from phonenumbers import geocoder, carrier
+import time
+from app.core.events import event_bus
+
+from app.core.config import settings
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
+from app.tools.phone_network import lookup_phone_network
+from app.tools.phone_numbers import analyze_phone, phone_identity
 
 
 class PhoneLookupTool(BaseTool):
     name = "phone_lookup"
-    description = (
-        "Analiza números telefónicos para determinar país, región, operadora móvil "
-        "y generar enlaces directos a servicios de mensajería (WhatsApp / Telegram)."
-    )
+    description = "Analiza formato, país, tipo de línea y operador original; no confirma actividad ni titularidad"
     category = ToolCategory.PHONE
     required_inputs = ["phone"]
 
+    def can_run(self, context: TargetContext) -> bool:
+        return bool(context.all_phones())
+
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
-        if not context.phone or not context.phone.strip():
-            return []
-
-        raw_phone = context.phone.strip()
-        findings: List[ToolFinding] = []
-
-        try:
-            # Default to Peru (PE) if no country code provided
-            default_region = "PE"
-            parsed = phonenumbers.parse(raw_phone, default_region)
-
-            if phonenumbers.is_valid_number(parsed):
-                e164 = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
-                national = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.NATIONAL)
-                region_name = geocoder.description_for_number(parsed, "es") or "Perú"
-                carrier_name = carrier.name_for_number(parsed, "es") or "Operador móvil"
-                clean_digits = "".join(filter(str.isdigit, e164))
-
-                wa_url = f"https://wa.me/{clean_digits}"
-                tg_url = f"https://t.me/+{clean_digits}"
-
-                findings.append(
-                    ToolFinding(
-                        entity_type="phone",
-                        platform="telephony",
-                        value=e164,
-                        display_name=f"{national} ({carrier_name})",
-                        metadata_info={
-                            "e164": e164,
-                            "national": national,
-                            "region": region_name,
-                            "carrier": carrier_name,
-                            "whatsapp_link": wa_url,
-                            "telegram_link": tg_url,
-                        },
-                        confidence=0.95,
-                        evidence_urls=[wa_url],
-                    )
-                )
-        except Exception:
-            # Record basic formatted phone
-            findings.append(
-                ToolFinding(
-                    entity_type="phone",
-                    platform="telephony",
-                    value=raw_phone,
-                    display_name=raw_phone,
-                    metadata_info={"raw": raw_phone, "valid": False},
-                    confidence=0.50,
-                    evidence_urls=[],
-                )
-            )
-
+        findings = []
+        outcomes = context.extra.setdefault("phone_lookup_results", {})
+        for identity in context.all_phones()[:settings.phone_max_numbers]:
+            raw = context.phone if context.phone and (phone_identity(context.phone) or context.phone.strip()) == identity else identity
+            facts = analyze_phone(raw)
+            if identity in outcomes:
+                continue
+            if len(outcomes) >= settings.phone_max_numbers:
+                break
+            outcomes[identity] = facts
+            if not facts["valid"]:
+                investigation_id = context.extra.get("investigation_id")
+                if investigation_id:
+                    await event_bus.publish(investigation_id, {
+                        "type": "log", "phase": "phone_validation", "tool": self.name,
+                        "message": f"[{self.name}] Número no válido según el plan de numeración: {facts['validation_reason']}",
+                        "timestamp": time.time(),
+                    })
+                continue
+            network = await lookup_phone_network(facts["e164"]) if not facts.get("extension") else {"status": "unsupported_extension"}
+            metadata = {"network_lookup": network, **facts, "source_tool": self.name, "verification_status": "numbering_plan_valid"}
+            # These are generated shortcuts, not evidence that an account exists.
+            if not facts.get("extension") and facts["line_type"] in {"mobile", "fixed_or_mobile", "fixed_line"}:
+                digits = facts["e164"].lstrip('+')
+                metadata.update(whatsapp_link=f"https://wa.me/{digits}", telegram_link=f"https://t.me/+{digits}",
+                                contact_links_origin="derived", messaging_registration_status="unknown")
+            evidence = context.extra.get("phone_observations", {}).get(identity, [])
+            metadata["phone_observations"] = evidence
+            findings.append(ToolFinding(entity_type="phone", platform="telephony", value=identity,
+                                        display_name=facts["national"], metadata_info=metadata, confidence=0.5,
+                                        evidence_urls=list(dict.fromkeys(item["source_url"] for item in evidence if item.get("source_url")))))
         return findings

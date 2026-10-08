@@ -1,0 +1,263 @@
+{
+  "method": "Offline; numbering-plan examples and existing test fixture; no subscriber lookup",
+  "library_version": "9.0.38",
+  "cases": [
+    {
+      "case": "PE_mobile",
+      "input": "+51912345678",
+      "findings": [
+        {
+          "entity_type": "phone",
+          "platform": "telephony",
+          "value": "+51912345678",
+          "display_name": "912 345 678 (Entel)",
+          "metadata_info": {
+            "e164": "+51912345678",
+            "national": "912 345 678",
+            "region": "Perú",
+            "carrier": "Entel",
+            "whatsapp_link": "https://wa.me/51912345678",
+            "telegram_link": "https://t.me/+51912345678"
+          },
+          "confidence": 0.95,
+          "evidence_urls": [
+            "https://wa.me/51912345678"
+          ]
+        }
+      ],
+      "available_library_data": {
+        "valid": true,
+        "possible_reason": 0,
+        "country_iso": "PE",
+        "line_type": 1,
+        "geocoder": "Perú",
+        "carrier": "Entel",
+        "timezones": [
+          "America/Lima"
+        ]
+      }
+    },
+    {
+      "case": "PE_fixed",
+      "input": "+5111234567",
+      "findings": [
+        {
+          "entity_type": "phone",
+          "platform": "telephony",
+          "value": "+5111234567",
+          "display_name": "(01) 1234567 (Operador móvil)",
+          "metadata_info": {
+            "e164": "+5111234567",
+            "national": "(01) 1234567",
+            "region": "Lima/Callao",
+            "carrier": "Operador móvil",
+            "whatsapp_link": "https://wa.me/5111234567",
+            "telegram_link": "https://t.me/+5111234567"
+          },
+          "confidence": 0.95,
+          "evidence_urls": [
+            "https://wa.me/5111234567"
+          ]
+        }
+      ],
+      "available_library_data": {
+        "valid": true,
+        "possible_reason": 0,
+        "country_iso": "PE",
+        "line_type": 0,
+        "geocoder": "Lima/Callao",
+        "carrier": "",
+        "timezones": [
+          "America/Lima"
+        ]
+      }
+    },
+    {
+      "case": "US_mobile",
+      "input": "+12015550123",
+      "findings": [
+        {
+          "entity_type": "phone",
+          "platform": "telephony",
+          "value": "+12015550123",
+          "display_name": "(201) 555-0123 (Operador móvil)",
+          "metadata_info": {
+            "e164": "+12015550123",
+            "national": "(201) 555-0123",
+            "region": "New Jersey",
+            "carrier": "Operador móvil",
+            "whatsapp_link": "https://wa.me/12015550123",
+            "telegram_link": "https://t.me/+12015550123"
+          },
+          "confidence": 0.95,
+          "evidence_urls": [
+            "https://wa.me/12015550123"
+          ]
+        }
+      ],
+      "available_library_data": {
+        "valid": true,
+        "possible_reason": 0,
+        "country_iso": "US",
+        "line_type": 2,
+        "geocoder": "New Jersey",
+        "carrier": "",
+        "timezones": [
+          "America/New_York"
+        ]
+      }
+    },
+    {
+      "case": "international_toll_free",
+      "input": "+80012345678",
+      "findings": [
+        {
+          "entity_type": "phone",
+          "platform": "telephony",
+          "value": "+80012345678",
+          "display_name": "1234 5678 (Operador móvil)",
+          "metadata_info": {
+            "e164": "+80012345678",
+            "national": "1234 5678",
+            "region": "Perú",
+            "carrier": "Operador móvil",
+            "whatsapp_link": "https://wa.me/80012345678",
+            "telegram_link": "https://t.me/+80012345678"
+          },
+          "confidence": 0.95,
+          "evidence_urls": [
+            "https://wa.me/80012345678"
+          ]
+        }
+      ],
+      "available_library_data": {
+        "valid": true,
+        "possible_reason": 0,
+        "country_iso": "001",
+        "line_type": 3,
+        "geocoder": "",
+        "carrier": "",
+        "timezones": [
+          "Etc/Unknown"
+        ]
+      }
+    },
+    {
+      "case": "invalid_parsable",
+      "input": "+51999",
+      "findings": [],
+      "available_library_data": {
+        "valid": false,
+        "possible_reason": 2,
+        "country_iso": "PE",
+        "line_type": 99,
+        "geocoder": "",
+        "carrier": "",
+        "timezones": [
+          "Etc/Unknown"
+        ]
+      }
+    },
+    {
+      "case": "parse_error",
+      "input": "abc",
+      "findings": [
+        {
+          "entity_type": "phone",
+          "platform": "telephony",
+          "value": "abc",
+          "display_name": "abc",
+          "metadata_info": {
+            "raw": "abc",
+            "valid": false
+          },
+          "confidence": 0.5,
+          "evidence_urls": []
+        }
+      ]
+    },
+    {
+      "case": "digits_with_country_without_plus",
+      "input": "51987654321",
+      "findings": [
+        {
+          "entity_type": "phone",
+          "platform": "telephony",
+          "value": "+51987654321",
+          "display_name": "987 654 321 (Claro)",
+          "metadata_info": {
+            "e164": "+51987654321",
+            "national": "987 654 321",
+            "region": "Perú",
+            "carrier": "Claro",
+            "whatsapp_link": "https://wa.me/51987654321",
+            "telegram_link": "https://t.me/+51987654321"
+          },
+          "confidence": 0.95,
+          "evidence_urls": [
+            "https://wa.me/51987654321"
+          ]
+        }
+      ],
+      "available_library_data": {
+        "valid": true,
+        "possible_reason": 0,
+        "country_iso": "PE",
+        "line_type": 1,
+        "geocoder": "Perú",
+        "carrier": "Claro",
+        "timezones": [
+          "America/Lima"
+        ]
+      }
+    },
+    {
+      "case": "national_PE",
+      "input": "987 654 321",
+      "findings": [
+        {
+          "entity_type": "phone",
+          "platform": "telephony",
+          "value": "+51987654321",
+          "display_name": "987 654 321 (Claro)",
+          "metadata_info": {
+            "e164": "+51987654321",
+            "national": "987 654 321",
+            "region": "Perú",
+            "carrier": "Claro",
+            "whatsapp_link": "https://wa.me/51987654321",
+            "telegram_link": "https://t.me/+51987654321"
+          },
+          "confidence": 0.95,
+          "evidence_urls": [
+            "https://wa.me/51987654321"
+          ]
+        }
+      ],
+      "available_library_data": {
+        "valid": true,
+        "possible_reason": 0,
+        "country_iso": "PE",
+        "line_type": 1,
+        "geocoder": "Perú",
+        "carrier": "Claro",
+        "timezones": [
+          "America/Lima"
+        ]
+      }
+    }
+  ],
+  "phone_only_search": {
+    "can_run": false,
+    "queries": []
+  },
+  "discovered_phone_pivot": {
+    "phone": null,
+    "extra": {
+      "candidate_urls": [
+        "https://example.com/profile"
+      ],
+      "avatar_urls": []
+    }
+  }
+}
