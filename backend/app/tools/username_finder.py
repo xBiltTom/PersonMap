@@ -53,6 +53,9 @@ class UsernameFinderTool(BaseTool):
     category = ToolCategory.USERNAME
     required_inputs = ["username"]
 
+    def can_run(self, context: TargetContext) -> bool:
+        return bool(context.all_usernames())
+
     DATA_DIR = Path(__file__).parent / "data"
     GENERIC_USERS_FILE = DATA_DIR / "generic_usernames.txt"
 
@@ -288,6 +291,8 @@ class UsernameFinderTool(BaseTool):
             # Con cadena de presencia la comprobación es específica del sitio;
             # sin ella solo se ha visto un código de estado, que es más débil.
             confidence = 0.90 if site.presence else 0.85
+            if control is None:
+                confidence = 0.65  # Inconclusive controls have lower priority.
 
             return ToolFinding(
                 # Las plataformas de contenido adulto tienen tipo propio, no por
@@ -301,6 +306,7 @@ class UsernameFinderTool(BaseTool):
                 value=pretty_url,
                 display_name=f"{site.name}: @{username}",
                 confidence=confidence,
+                evidence_urls=[url],
                 metadata_info={
                     "username": username,
                     "platform": site.name,
@@ -373,6 +379,12 @@ class UsernameFinderTool(BaseTool):
             return None
         if resp is None:
             return None
+        # A blocked or unavailable control does not demonstrate absence.
+        if resp.status_code in {401, 403, 429, 999} or resp.status_code >= 500:
+            return None
+        title = resp.text.lower()
+        if any(marker in title for marker in ("just a moment", "verify you are human", "captcha", "access denied")):
+            return None
         return self._matches(site, resp, control)
 
     def _matches(
@@ -391,12 +403,12 @@ class UsernameFinderTool(BaseTool):
         """
         body = resp.text
 
+        if resp.status_code != site.expected_code:
+            return False
         if site.check_type == "response_url":
             # El sitio redirige a una página de error en vez de dar 404.
             if str(resp.url).rstrip("/") != site.build_url(username).rstrip("/"):
                 return False
-        elif resp.status_code != site.expected_code:
-            return False
 
         # Cadenas que delatan que el perfil NO existe.
         if any(marker in body for marker in site.absence):

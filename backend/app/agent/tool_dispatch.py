@@ -52,6 +52,11 @@ def build_tool_schemas() -> List[Dict[str, Any]]:
             }
             for field in tool.required_inputs
         }
+        if "candidate_urls" in properties:
+            properties["candidate_urls"] = {
+                "type": "array", "items": {"type": "string"},
+                "description": "URLs públicas candidatas de perfiles",
+            }
 
         schemas.append({
             "type": "function",
@@ -94,6 +99,12 @@ def build_call_context(
         )
     if args.get("url"):
         candidate_urls.append(str(args["url"]))
+    supplied_urls = args.get("candidate_urls", [])
+    if isinstance(supplied_urls, str):
+        supplied_urls = [supplied_urls]  # Compatibility with older calls.
+    if isinstance(supplied_urls, list):
+        candidate_urls.extend(u for u in supplied_urls if isinstance(u, str) and u.strip())
+    candidate_urls = list(dict.fromkeys(candidate_urls))
 
     base = base_context or TargetContext()
     return TargetContext(

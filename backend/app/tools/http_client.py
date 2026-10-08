@@ -33,6 +33,7 @@ from typing import Any, Deque, Optional
 import httpx
 
 from app.core.config import settings
+from app.tools.public_network import PublicNetworkBackend, UnsafePublicURL
 
 # A small pool of realistic, currently-common User-Agents across browsers/OS.
 # Rotating these (instead of one hardcoded string reused by every request)
@@ -173,15 +174,27 @@ class ResilientTransport(httpx.AsyncHTTPTransport):
         base_delay: float = 0.35,
         jitter: float = 0.20,
         rotate_ua: bool = True,
+        public_only: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
+        self.public_only = public_only
+        if public_only:
+            # httpx owns the pool. Adapt its socket backend so new connections,
+            # including redirects, connect only to validated public IPs.
+            self._pool._network_backend = PublicNetworkBackend(self._pool._network_backend)
         self.max_retries = max_retries
         self.base_delay = base_delay
         self.jitter = jitter
         self.rotate_ua = rotate_ua
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if self.public_only and (
+            request.url.scheme not in {"http", "https"}
+            or request.url.port not in {None, 80, 443}
+            or request.url.username or request.url.password
+        ):
+            raise UnsafePublicURL("Invalid public HTTP(S) URL")
         host = request.url.host or ""
         sem = _get_global_semaphore()
         host_sem = _get_host_semaphore(host)
@@ -236,6 +249,7 @@ def build_client(
     headers: Optional[dict] = None,
     max_retries: int = 2,
     rotate_ua: bool = True,
+    public_only: bool = False,
     **kwargs: Any,
 ) -> httpx.AsyncClient:
     """
@@ -257,7 +271,7 @@ def build_client(
     A tool that genuinely needs to reach a host with a broken chain must opt
     out explicitly at its own call site and document why.
     """
-    transport = ResilientTransport(verify=verify, max_retries=max_retries, rotate_ua=rotate_ua)
+    transport = ResilientTransport(verify=verify, max_retries=max_retries, rotate_ua=rotate_ua, public_only=public_only)
     merged_headers = build_headers(headers)
     return httpx.AsyncClient(
         transport=transport,

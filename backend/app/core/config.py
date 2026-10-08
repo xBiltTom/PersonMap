@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     # Fracción máxima del presupuesto global que puede tomar una sola tool.
     tool_concurrency_share: float = 0.6
 
+    # Enrichment of discovered profile URLs, bounded per investigation.
+    social_verify_concurrency: int = 8
+    social_verify_max_urls: int = 300
+    social_verify_url_timeout: float = 20.0
+
     # Reverse image / avatar search (optional, both are pluggable backends).
     # Leave unset to keep this feature disabled (graceful no-op), same pattern
     # as the optional LLM integration below.

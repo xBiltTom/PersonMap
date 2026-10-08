@@ -72,9 +72,11 @@ def dedupe_findings(findings: List[ToolFinding]) -> List[ToolFinding]:
     deduped: Dict[Tuple[str, str, str], ToolFinding] = {}
     provenance: Dict[Tuple[str, str, str], List[str]] = {}
     layers: Dict[Tuple[str, str, str], List[str]] = {}
+    observations: Dict[Tuple[str, str, str], List[ToolFinding]] = {}
 
     for f in findings:
         key = finding_dedupe_key(f)
+        observations.setdefault(key, []).append(f)
 
         tool = normalize_source_tool((f.metadata_info or {}).get("source_tool"))
         tools = provenance.setdefault(key, [])
@@ -96,7 +98,22 @@ def dedupe_findings(findings: List[ToolFinding]) -> List[ToolFinding]:
             deduped[key] = f
 
     for key, winner in deduped.items():
-        merged = {**(winner.metadata_info or {}), "source_tools": provenance[key]}
+        # Enumeration often has a higher priority than enrichment. Preserve
+        # metadata from both, or the verified bio/emails disappear on save.
+        merged = {}
+        for observation in sorted(observations[key], key=lambda item: item.confidence):
+            for field, value in observation.metadata_info.items():
+                if value is None or value == "" or value == [] or value == {}:
+                    continue
+                if isinstance(value, list) and isinstance(merged.get(field), list):
+                    merged[field] = merged[field] + [item for item in value if item not in merged[field]]
+                else:
+                    merged[field] = value
+        if any(item.metadata_info.get("verification_status") == "verified" for item in observations[key]):
+            merged["verification_status"] = "verified"
+        merged["source_tool"] = winner.metadata_info.get("source_tool")
+        merged["source_tools"] = provenance[key]
+        winner.evidence_urls = list(dict.fromkeys(url for item in observations[key] for url in item.evidence_urls))
         if layers[key]:
             merged["engine_layers"] = layers[key]
         winner.metadata_info = merged

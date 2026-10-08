@@ -42,6 +42,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote
 
 DATA_DIR = Path(__file__).parent / "data"
 WMN_FILE = DATA_DIR / "wmn-data.json"
@@ -147,11 +148,13 @@ class SiteCheck:
             return True
 
     def build_url(self, username: str) -> str:
-        return self.url.replace("{username}", username).replace("{account}", username)
+        encoded = quote(username, safe="")
+        return self.url.replace("{username}", encoded).replace("{account}", encoded)
 
     def build_pretty_url(self, username: str) -> str:
         template = self.pretty_url or self.url
-        return template.replace("{username}", username).replace("{account}", username)
+        encoded = quote(username, safe="")
+        return template.replace("{username}", encoded).replace("{account}", encoded)
 
 
 # Subdominios de servicio que no distinguen plataforma. Sin quitarlos, el mismo
@@ -350,6 +353,11 @@ def _sort_key(site: SiteCheck) -> Tuple[int, int, str]:
 
     if site.rank < NO_RANK:
         return (tier, site.rank, site.name.lower())
+
+    # Important unranked social providers must survive the default 500-site
+    # budget. Keep ranked entries ordered and WMN ahead of the long tail.
+    if _platform_key(site.url) in {"x.com", "twitter.com", "instagram.com", "reddit.com", "tiktok.com", "facebook.com", "youtube.com", "github.com", "t.me"}:
+        return (tier, NO_RANK - 1, site.name.lower())
 
     prioritised = bool(set(site.tags) & PRIORITY_TAGS) or site.category in PRIORITY_TAGS
     base = NO_RANK if prioritised else NO_RANK_UNPRIORITISED

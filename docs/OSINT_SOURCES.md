@@ -22,6 +22,36 @@ De ahí que cada fase del plan empiece re-verificando esta tabla.
 
 Estados: 🟢 operativa · 🟡 degradada · 🔴 muerta · ⚪ evaluada, no adoptada
 
+### Motor social: revisión interna del 2026-10-07
+
+La extracción de URLs reconoce dominios y rutas completas de perfil y registra
+`verification_status=candidate`: observar una URL no demuestra que exista una
+cuenta. El verificador se ejecuta cuando llegan URLs nuevas, sigue redirecciones
+con controles de destino público y exige metadatos de perfil. Conserva la URL
+solicitada, final y canónica declarada; una canónica de otra cuenta o plataforma
+no sustituye el recurso observado. La verificación de existencia no atribuye
+la cuenta al objetivo.
+
+Los estados de consulta son `verified`, `not_found`, `not_profile`, `blocked`,
+`unsafe_url` y `error`. Se conservan en el contexto de investigación y se publica
+un resumen operacional con cantidades por estado. Los controles negativos con
+429, bloqueos o errores del servidor quedan `untested` y tienen menor prioridad
+interna. Correos y menciones de alias se extraen por separado. La deduplicación
+conserva los metadatos y URLs de evidencia del enriquecimiento.
+
+`SOCIAL_VERIFY_CONCURRENCY` (8), `SOCIAL_VERIFY_MAX_URLS` (300) y
+`SOCIAL_VERIFY_URL_TIMEOUT` (20 segundos por URL, sin contar la espera de turno)
+acotan el enriquecimiento. Se consultan como máximo dos veces las URLs con
+fallos transitorios y no se repiten perfiles ya resueltos dentro del expediente.
+La conexión usa la IP pública validada por DNS, manteniendo el Host y nombre
+TLS originales, también al seguir redirecciones.
+
+X se prioriza dentro del presupuesto de 500 entradas. LinkedIn sigue excluido
+del barrido de alias porque su entrada no tiene validación de contenido; sus
+URLs públicas pueden descubrirse mediante búsquedas y pasar al verificador.
+Esta revisión usa pruebas locales y HTTP simulado; no actualiza el estado de
+disponibilidad en vivo de las fuentes de la tabla siguiente.
+
 ---
 
 ## Fuentes en uso
