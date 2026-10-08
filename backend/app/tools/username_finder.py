@@ -25,12 +25,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 import httpx
+from bs4 import BeautifulSoup
+from app.tools.telegram_profiles import observe_telegram_page
 
 from app.core.config import settings
 from app.core.events import event_bus
 from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
-from app.tools.social_profiles import core_profile_candidates, parse_social_profile
+from app.tools.social_profiles import core_profile_candidates, parse_social_profile, social_host, TELEGRAM_HOSTS
 from app.tools.dataset_adapter import SiteCheck, build_catalog, catalog_stats
 
 HTML_ACCEPT = {
@@ -317,6 +319,8 @@ class UsernameFinderTool(BaseTool):
                 metadata_info={
                     "username": username,
                     "verification_status": "candidate",
+                    "telegram_peer_type": observe_telegram_page(BeautifulSoup(resp.text, "html.parser"), username).peer_type
+                    if (parsed_profile := parse_social_profile(pretty_url)) and parsed_profile.platform == "telegram" else None,
                     "platform": site.name,
                     "category": site.category or "social",
                     "sensitive_platform": site.sensitive,
@@ -393,6 +397,8 @@ class UsernameFinderTool(BaseTool):
         title = resp.text.lower()
         if any(marker in title for marker in ("just a moment", "verify you are human", "captcha", "access denied")):
             return None
+        if social_host(site.build_url(control)) in TELEGRAM_HOSTS and resp.status_code == 200:
+            return True if self._matches(site, resp, control) else None
         return self._matches(site, resp, control)
 
     def _matches(
@@ -411,6 +417,10 @@ class UsernameFinderTool(BaseTool):
         """
         body = resp.text
         host = resp.url.host
+        profile = parse_social_profile(str(resp.url))
+        if social_host(site.build_url(username)) in TELEGRAM_HOSTS:
+            return (resp.status_code == 200 and profile is not None and profile.platform == "telegram" and profile.username.lower() == username.lower()
+                    and observe_telegram_page(BeautifulSoup(body, "html.parser"), username).status == "verified")
         if resp.status_code == 200 and host in {"api.x.com", "api.twitter.com"}:
             try:
                 return resp.json().get("reason") == "taken"

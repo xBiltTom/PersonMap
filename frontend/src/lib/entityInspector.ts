@@ -315,6 +315,9 @@ function buildObservedFields(node: GraphNode, metadata: Metadata, isRoot: boolea
   };
   const verification = stringValue(metadata.verification_status);
   if (verification) add("verification_status", "Comprobación", verificationLabels[verification] ?? verification);
+  const telegramTypes: Record<string, string> = { user: "Usuario", bot: "Bot", group: "Grupo", channel: "Canal", unknown: "Tipo sin determinar" };
+  const telegramType = stringValue(metadata.telegram_peer_type);
+  if (telegramType) add("telegram_peer_type", "Recurso de Telegram", telegramTypes[telegramType] ?? telegramType);
   add("name", "Nombre", firstString(metadata, ["name", "display_name", "google_display_name", "author_name"]));
   add("email", "Email", metadata.email, "email");
   addList("emails", "Correos alternativos", metadata.emails, "email");

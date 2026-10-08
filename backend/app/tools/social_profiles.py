@@ -43,6 +43,38 @@ RESERVED_ROUTES = {
 }
 
 
+TELEGRAM_HOSTS = {"t.me", "telegram.me", "telegram.dog"}
+TELEGRAM_RESERVED = {
+    "addemoji", "addlist", "addstickers", "addstyle", "addtheme", "auction",
+    "auth", "boost", "call", "confirmphone", "contact", "giftcode", "invoice",
+    "joinchat", "login", "m", "nft", "proxy", "setlanguage", "share", "socks",
+    "web", "a", "k", "z", "c", "s", "iv", "msg", "passport", "bg",
+}
+TELEGRAM_USERNAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{4,31}")
+
+
+def valid_telegram_username(username: str) -> bool:
+    return bool(TELEGRAM_USERNAME.fullmatch(username)) and username.lower() not in TELEGRAM_RESERVED
+
+
+def _telegram_profile(host: str, path: str):
+    # Public aliases, previews and message links identify the same public peer.
+    if host.endswith(".t.me") and host.count(".") == 2:
+        username = host[:-5]
+        if path and not re.fullmatch(r"/\d+(?:/\d+)?", path):
+            return None
+    elif host in TELEGRAM_HOSTS:
+        match = re.fullmatch(r"/(?:s/)?([A-Za-z0-9_]+)(?:/\d+(?:/\d+)?)?", path)
+        if not match:
+            return None
+        username = match[1]
+    else:
+        return None
+    if not valid_telegram_username(username):
+        return None
+    return SocialProfile("telegram", username, f"https://t.me/{username}")
+
+
 @dataclass(frozen=True)
 class SocialProfile:
     platform: str
@@ -76,6 +108,9 @@ def parse_social_profile(raw: str) -> SocialProfile | None:
     if not normalized:
         return None
     parsed = urlsplit(normalized)
+    telegram_host = (parsed.hostname or "").removeprefix("www.")
+    if telegram_host in TELEGRAM_HOSTS or telegram_host.endswith(".t.me"):
+        return _telegram_profile(telegram_host, unquote(parsed.path))
     host = social_host(normalized)
     route = PROFILE_ROUTES.get(host)
     if not route:
@@ -125,6 +160,7 @@ def social_host(url: str) -> str:
 def core_profile_candidates(username: str) -> list[str]:
     """Derived URLs are requests to verify, never evidence of an account."""
     templates = ["https://x.com/{}", "https://instagram.com/{}", "https://facebook.com/{}",
-                 "https://tiktok.com/@{}", "https://youtube.com/@{}", "https://snapchat.com/@{}"]
+                 "https://tiktok.com/@{}", "https://youtube.com/@{}", "https://snapchat.com/@{}",
+                 "https://t.me/{}"]
     return [profile.url for template in templates
             if (profile := parse_social_profile(template.format(quote(username, safe="")))) is not None]

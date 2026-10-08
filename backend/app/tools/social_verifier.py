@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.core.events import event_bus
 from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
+from app.tools.telegram_profiles import observe_telegram_page
 from app.tools.dataset_adapter import build_catalog
 from app.tools.public_network import UnsafePublicURL, public_address
 from app.tools.social_profiles import PROFILE_ROUTES, SocialProfile, normalize_web_url, parse_social_profile, social_host
@@ -47,7 +48,7 @@ def _candidate_profile(url):
     normalized = normalize_web_url(url, keep_query=True)
     if not normalized:
         return None
-    if social_host(normalized) in PROFILE_ROUTES:
+    if social_host(normalized) in PROFILE_ROUTES or social_host(normalized) in {"telegram.me", "telegram.dog"} or social_host(normalized).endswith(".t.me"):
         return None  # Catalog templates cannot override reserved provider routes.
     for pattern, site in _catalog_routes():
         match = pattern.fullmatch(normalized)
@@ -150,7 +151,7 @@ class SocialVerifierTool(BaseTool):
                 embedded = await self._tiktok_embed(client, requested, url, context)
                 if embedded is not None:
                     return embedded
-            current = url
+            current = requested.url if requested.platform == "telegram" else url
             for _ in range(6):
                 _safe_url(current)
                 resp = await client.get(current, follow_redirects=False)
@@ -199,6 +200,14 @@ class SocialVerifierTool(BaseTool):
             og_type = (self._get_meta(soup, "og:type") or "").lower()
             profile_username = self._get_meta(soup, "profile:username") or ""
             signals = []
+            telegram = None
+            if requested.platform == "telegram":
+                telegram = observe_telegram_page(soup, username)
+                if telegram.status != "verified":
+                    self._record(context, url, telegram.status, reason=telegram.reason, **details)
+                    return None
+                title, bio = telegram.title, telegram.bio
+                signals.extend(telegram.signals)
             if requested.platform == "snapchat":
                 script = soup.find("script", id="__NEXT_DATA__")
                 if script:
@@ -239,6 +248,7 @@ class SocialVerifierTool(BaseTool):
                 "source_tool": self.name, "username": username,
                 "resource_kind": final_profile.resource_kind, "profile_url": canonical,
                 "channel_id": yt_identity,
+                "telegram_peer_type": telegram.peer_type if telegram else None,
                 "candidate_origin": context.extra.get("derived_profile_candidates", {}).get(url),
                 "og_title": title, "bio": bio,
                 # Preview images are not profile avatars.

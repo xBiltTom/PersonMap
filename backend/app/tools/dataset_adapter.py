@@ -44,6 +44,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit, quote
 
+from app.tools.social_profiles import TELEGRAM_HOSTS, valid_telegram_username
+
 DATA_DIR = Path(__file__).parent / "data"
 WMN_FILE = DATA_DIR / "wmn-data.json"
 MAIGRET_FILE = DATA_DIR / "maigret-data.json"
@@ -139,6 +141,8 @@ class SiteCheck:
         que solo admite identificadores numéricos nunca va a tener a "jperez", y
         preguntárselo solo puede devolver ruido.
         """
+        if (urlsplit(self.url).hostname or "").removeprefix("www.") in TELEGRAM_HOSTS:
+            return valid_telegram_username(username)
         if not self.regex_check:
             return True
         try:
@@ -436,6 +440,10 @@ def build_catalog(limit: Optional[int] = None) -> List[SiteCheck]:
             site = replace(site, regex_check=r"^[a-zA-Z][a-zA-Z0-9_.-]{1,13}[a-zA-Z0-9]$")
         if host.endswith("facebook.com"):
             site = replace(site, absence=tuple(x for x in site.absence if x != "rsrcTags"))
+        if host in TELEGRAM_HOSTS:
+            # Generic contact OG tags and noindex also occur for real users.
+            # Telegram now has a dedicated parser shared by both detectors.
+            site = replace(site, regex_check=r"^[a-zA-Z][a-zA-Z0-9_]{4,31}$", absence=())
         corrected.append(site)
     catalog = corrected
     catalog.sort(key=_sort_key)

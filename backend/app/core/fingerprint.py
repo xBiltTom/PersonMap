@@ -58,7 +58,7 @@ def run_fingerprint() -> Dict[str, Any]:
         "username_scan_concurrency": settings.tool_concurrency_budget(
             settings.username_scan_concurrency
         ),
-        "social_engine_version": 3,
+        "social_engine_version": 4,
         "social_verify_concurrency": settings.tool_concurrency_budget(settings.social_verify_concurrency),
         "social_verify_max_urls": settings.social_verify_max_urls,
         "social_verify_url_timeout": settings.social_verify_url_timeout,

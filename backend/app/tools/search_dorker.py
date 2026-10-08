@@ -52,6 +52,8 @@ PLATFORM_DOMAINS: Dict[str, str] = {
     "bsky.app": "bluesky",
     "reddit.com": "reddit",
     "t.me": "telegram",
+    "telegram.me": "telegram",
+    "telegram.dog": "telegram",
     "medium.com": "medium",
     "scholar.google.com": "google_scholar",
     "researchgate.net": "researchgate",
@@ -70,6 +72,7 @@ PROFILE_DOMAINS = [
     "tiktok.com",
     "youtube.com",
     "snapchat.com",
+    "t.me",
 ]
 
 

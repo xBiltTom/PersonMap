@@ -1,0 +1,55 @@
+{
+  "method": "Bounded public GET only; canonical aliases share one request",
+  "outcomes": {
+    "https://t.me/durov": {
+      "status": "verified",
+      "http_status": 200,
+      "final_url": "https://t.me/durov"
+    },
+    "https://t.me/pm_audit_1602dc26a1ea97e6": {
+      "status": "inconclusive",
+      "reason": "generic_contact_or_missing_peer_header",
+      "http_status": 200,
+      "final_url": "https://t.me/pm_audit_1602dc26a1ea97e6"
+    },
+    "https://t.me/BotFather": {
+      "status": "verified",
+      "http_status": 200,
+      "final_url": "https://t.me/BotFather"
+    },
+    "https://t.me/telegram": {
+      "status": "verified",
+      "http_status": 200,
+      "final_url": "https://t.me/telegram"
+    }
+  },
+  "profiles": [
+    {
+      "url": "https://t.me/telegram",
+      "peer_type": "channel",
+      "signals": [
+        "telegram_named_peer_header",
+        "telegram_matching_resolve_link",
+        "username_in_metadata"
+      ]
+    },
+    {
+      "url": "https://t.me/BotFather",
+      "peer_type": "bot",
+      "signals": [
+        "telegram_named_peer_header",
+        "telegram_matching_resolve_link",
+        "username_in_metadata"
+      ]
+    },
+    {
+      "url": "https://t.me/durov",
+      "peer_type": "channel",
+      "signals": [
+        "telegram_named_peer_header",
+        "telegram_matching_resolve_link",
+        "username_in_metadata"
+      ]
+    }
+  ]
+}
