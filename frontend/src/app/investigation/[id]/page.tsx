@@ -83,7 +83,9 @@ export default function InvestigationDetailPage({
   const loadData = useCallback(async () => {
     try {
       const data = await getInvestigation(id);
-      setInvestigation(data);
+      // Concurrent tools can finish together; a slower older response must not undo newer evidence.
+      setInvestigation((current) => current?.id === data.id && data.execution_mode === "external"
+        && (current.revision ?? 0) > (data.revision ?? 0) ? current : data);
       setError(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "No se pudo cargar la investigación");

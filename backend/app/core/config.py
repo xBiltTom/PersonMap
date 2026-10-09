@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     mcp_api_key: Optional[SecretStr] = None
     mcp_allowed_hosts: list[str] = ["localhost:*", "127.0.0.1:*", "[::1]:*"]
     frontend_url: str = "http://localhost:3000"
+    mcp_max_parallel_tools: int = 3
+    mcp_username_fast_sites: int = 200
 
     # --- Presupuesto de concurrencia HTTP ------------------------------------
     # Compartido por todas las tools a través de app.tools.http_client.
@@ -139,6 +141,7 @@ class Settings(BaseSettings):
     tavily_require_literal_match: bool = True
     tavily_exact_match: bool = True
     search_max_queries_per_round: int = 5
+    search_query_concurrency: int = 3
     search_timeout_seconds: float = 90
     search_read_pages: bool = False
     search_max_pages: int = 2

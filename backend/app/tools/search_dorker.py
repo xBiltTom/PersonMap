@@ -128,6 +128,7 @@ class Dork:
     include_domains: List[str] = field(default_factory=list)
     phone: Optional[str] = None
     dni: Optional[str] = None
+    origin: str = "template"
 
     def as_text_query(self) -> str:
         """Consulta en texto plano, para motores sin filtro de dominio nativo."""
@@ -166,7 +167,7 @@ class SearchDorkerTool(BaseTool):
     required_inputs = ["full_name", "username", "email", "dni", "phone"]
 
     def can_run(self, context: TargetContext) -> bool:
-        return super().can_run(context) or bool(context.all_phones()) or bool(context.discovered_names) or bool(context.all_emails()) or bool(context.all_usernames())
+        return bool(context.extra.get("search_queries")) or super().can_run(context) or bool(context.all_phones()) or bool(context.discovered_names) or bool(context.all_emails()) or bool(context.all_usernames())
 
     def _backends(self) -> List["SearchBackend"]:
         return [
@@ -197,55 +198,72 @@ class SearchDorkerTool(BaseTool):
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
         dorks = self._generate_dorks(context)
         if not dorks:
+            context.extra["search_last_status"] = "no_queries"
             return []
+        dorks = list({(d.query, tuple(sorted(d.include_domains))): d for d in dorks}.values())
 
         max_queries = max(1, settings.tavily_max_queries)
         executed = context.extra.setdefault("search_queries_executed", [])
-        dorks = [d for d in dorks if [d.query, d.include_domains] not in executed]
+        used = context.extra.setdefault("search_queries_used", len(executed))
+        if not context.extra.get("search_force"):
+            dorks = [d for d in dorks if [d.query, d.include_domains] not in executed]
         # Prefer newly discovered identifiers over secondary domain variants on later rounds.
-        if executed:
+        if executed and not context.extra.get("search_queries"):
             dorks.sort(key=lambda d: bool(d.include_domains))
-        dorks = dorks[:min(max(1, settings.search_max_queries_per_round), max(0, max_queries - len(executed)))]
+        dorks = dorks[:min(max(1, settings.search_max_queries_per_round), max(0, max_queries - used))]
         if not dorks:
+            context.extra["search_last_status"] = "budget_exhausted" if used >= max_queries else "already_covered"
             return []
+        context.extra["search_last_status"] = "completed"
 
         findings: List[ToolFinding] = []
-        seen_urls = set(context.extra.setdefault("search_seen_urls", []))
+        previous_urls = set(context.extra.setdefault("search_seen_urls", []))
+        seen_urls = set() if context.extra.get("search_force") else set(previous_urls)
         diagnostics = context.extra.setdefault("search_diagnostics", [])
         disabled = set(context.extra.setdefault("search_disabled_backends", []))
         attempts = context.extra.setdefault("search_provider_attempts", {})
         backends = [backend for backend in self._backends() if backend.is_available()]
         clients = {}
+        semaphore = asyncio.Semaphore(max(1, min(5, settings.search_query_concurrency)))
+
+        async def search_one(dork):
+            async with semaphore:
+                if [dork.query, dork.include_domains] not in executed:
+                    executed.append([dork.query, dork.include_domains])
+                context.extra["search_queries_used"] += 1
+                for backend in backends:
+                    if backend.name in disabled or attempts.get(backend.name, 0) >= max_queries:
+                        continue
+                    # Reservation occurs without awaiting, so concurrent queries share one budget.
+                    attempts[backend.name] = attempts.get(backend.name, 0) + 1
+                    try:
+                        result = await backend.search(clients[backend.name], dork, seen_urls)
+                    except (httpx.HTTPError, ValueError, TypeError, KeyError):
+                        result = SearchResults(status="request_error")
+                    status = getattr(result, "status", "ok")
+                    diagnostics.append({"engine": backend.name, "query": dork.query,
+                                        "status": status, "findings": len(result),
+                                        "usage": getattr(result, "usage", None)})
+                    findings.extend(result)
+                    if status in {"http_401", "http_402", "http_403", "http_429", "http_432"}:
+                        disabled.add(backend.name)
+                    if getattr(result, "matched", len(result)):
+                        break
+
         try:
             async with asyncio.timeout(max(1, settings.search_timeout_seconds)):
                 async with AsyncExitStack() as stack:
-                    for dork in dorks:
-                        executed.append([dork.query, dork.include_domains])
-                        for backend in backends:
-                            if backend.name in disabled:
-                                continue
-                            if attempts.get(backend.name, 0) >= max_queries:
-                                continue
-                            attempts[backend.name] = attempts.get(backend.name, 0) + 1
-                            try:
-                                if backend.name not in clients:
-                                    clients[backend.name] = await stack.enter_async_context(backend.build_client())
-                                result = await backend.search(clients[backend.name], dork, seen_urls)
-                            except (httpx.HTTPError, ValueError, TypeError, KeyError):
-                                result = SearchResults(status="request_error")
-                            status = getattr(result, "status", "ok")
-                            diagnostics.append({"engine": backend.name, "query": dork.query,
-                                                "status": status, "findings": len(result),
-                                                "usage": getattr(result, "usage", None)})
-                            findings.extend(result)
-                            if status in {"http_401", "http_402", "http_403", "http_429", "http_432"}:
-                                disabled.add(backend.name)
-                            if getattr(result, "matched", len(result)):
-                                break
+                    for backend in backends:
+                        clients[backend.name] = await stack.enter_async_context(backend.build_client())
+                    # TaskGroup cancels and joins outstanding requests on deadline or error.
+                    async with asyncio.TaskGroup() as group:
+                        for dork in dorks:
+                            group.create_task(search_one(dork))
         except TimeoutError:
+            context.extra["search_last_status"] = "deadline_exceeded"
             diagnostics.append({"engine": "coordinator", "status": "deadline_exceeded"})
         context.extra["search_disabled_backends"] = sorted(disabled)
-        context.extra["search_seen_urls"] = sorted(seen_urls)
+        context.extra["search_seen_urls"] = sorted(previous_urls | seen_urls)
         if settings.search_read_pages:
             from app.tools.search_reader import enrich_search_findings
             await enrich_search_findings(findings, context)
@@ -261,6 +279,10 @@ class SearchDorkerTool(BaseTool):
         Dorks ordenados de mayor a menor poder discriminante, porque el tope de
         consultas recorta por el final.
         """
+        if context.extra.get("search_queries"):
+            from app.schemas.workspace import SearchQuery
+            queries = [SearchQuery.model_validate(q) for q in context.extra["search_queries"]]
+            return [Dork(q.query, q.rationale, q.include_domains, origin="agent") for q in queries]
         groups: List[List[Dork]] = [[], [], [], [], []]
         for email in context.all_emails()[:5]:
             groups[0].append(Dork(f'"{email}"', "Menciones públicas del correo"))
@@ -472,6 +494,7 @@ class SearchDorkerTool(BaseTool):
             metadata_info={
                 "snippet": snippet,
                 "query": dork.query,
+                "query_origin": dork.origin,
                 "rationale": dork.rationale,
                 "engine": engine,
                 "relevance_score": relevance,

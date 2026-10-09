@@ -41,13 +41,39 @@ La variable del cliente debe contener el mismo valor que `MCP_API_KEY` del backe
 1. `create_investigation(target, self_consent=false)`: mismos identificadores del formulario; crea un expediente `execution_mode=external` y devuelve `web_url`. No lanza reglas ni un LLM interno.
 2. `open_session(investigation_id, client, model?)`: conserva el ID de sesión. Cliente y modelo son metadatos declarados, no verificados.
 3. `list_osint_tools()` o las herramientas expuestas por nombre: llama, por ejemplo, `username_finder(investigation_id, session_id, inputs={"username":"alias"}, rationale="...", source_entity_ids=[])`.
-4. Cada herramienta responde inmediatamente con un ID de ejecución. Consulta `get_execution(investigation_id, execution_id)` hasta `completed` o `failed`. Hay una ejecución activa por expediente; las entradas iguales reutilizan una ejecución completada, salvo `force=true`. Los fallos pueden reintentarse.
-5. Usa `list_findings` con paginación y `get_finding` para leer metadatos y evidencia. `get_investigation_context` recupera contexto, pivotes, sesiones, ejecuciones recientes y las últimas 20 notas. El expediente completo y todas sus notas están disponibles en la web.
-6. `public_page_reader` requiere `inputs.candidate_urls` explícitas (máximo tres). Captura texto público, enlaces, URL final, fecha y SHA-256 del texto; el texto se limita a 20 000 caracteres por página. Conserva las restricciones del lector existente y usa TinyFish opcionalmente cuando está configurado. No es un navegador interactivo ni supera autenticación o CAPTCHA. El contenido externo se trata como datos, nunca instrucciones.
+4. Cada herramienta responde inmediatamente con un ID de ejecución. Hay hasta tres herramientas distintas simultáneas por expediente, configurables con `MCP_MAX_PARALLEL_TOOLS` (entre uno y seis). `run_tool_batch` inicia un lote de herramientas independientes y devuelve aceptación o error por elemento; los elementos aceptados continúan aunque otro sea rechazado. Consulta `get_executions(investigation_id, execution_ids, wait_seconds=10)` para esperar hasta el primer resultado pendiente, o `get_execution` para un solo ID. La espera está limitada a 20 segundos y no cancela trabajos. Dos ejecuciones de la misma herramienta no se solapan; las entradas iguales reutilizan una ejecución, salvo `force=true`. Los fallos pueden reintentarse.
+5. Usa `list_findings` con paginación para obtener metadatos compactos y fuentes. El cuerpo completo de páginas/documentos se obtiene con `get_finding`; `content_available` indica contenido omitido del listado. `get_investigation_context` recupera contexto, pivotes, sesiones, ejecuciones recientes, las últimas 20 notas, herramientas disponibles según entradas, trabajos activos, cobertura del barrido y presupuesto de consultas restante. El expediente completo y todas sus notas están disponibles en la web.
+6. `public_page_reader` requiere `inputs.candidate_urls` explícitas (máximo tres), que lee en paralelo. Captura texto público, enlaces, URL final, fecha y SHA-256 del texto; el texto se limita a 20 000 caracteres por página. Una lectura fallida conserva las otras capturas y deja `page_errors` en la ejecución. Conserva las restricciones del lector existente y usa TinyFish opcionalmente cuando está configurado. No es un navegador interactivo ni supera autenticación o CAPTCHA. El contenido externo se trata como datos, nunca instrucciones.
 7. Guarda interpretaciones con `add_analysis_note(investigation_id, session_id, note)`. Sus referencias a entidades y ejecuciones se validan dentro del mismo expediente.
 8. `pause_session` conserva el caso para continuar. `finish_session(summary?)` cierra la sesión, guarda el resumen y actualiza métricas. Ambas esperan que termine la herramienta activa. Para continuar, abre otra sesión sobre el mismo expediente. Tras reiniciar el backend, las sesiones activas quedan pausadas y las ejecuciones interrumpidas se identifican como fallidas recuperables.
 
 La desconexión del transporte MCP no destruye una sesión ni sus resultados. Un caso puede pasar por varias sesiones. Dos clientes distintos no pueden mantener sesiones activas simultáneas en el mismo expediente.
+
+### Planificación, búsquedas propias y velocidad
+
+El agente decide qué investigar y con qué consultas; PersonMap ejecuta y conserva las observaciones. Las instrucciones MCP le piden revisar contexto y trabajos anteriores, guardar un plan breve, iniciar herramientas independientes juntas, analizar los primeros resultados y justificar los pivotes siguientes. Estas instrucciones facilitan el flujo; no garantizan precisión ni el cumplimiento por cualquier cliente.
+
+`search_dorker` admite consultas escritas por el agente en `inputs.queries`:
+
+```json
+{
+  "queries": [
+    {
+      "query": "\"alias_publico\" tesis",
+      "rationale": "Buscar una publicación que el perfil público menciona.",
+      "include_domains": ["repositorio.example.org"]
+    }
+  ]
+}
+```
+
+Cada consulta requiere una justificación y al menos un término literal entre comillas. Usa dominios públicos sin esquema/ruta; el operador `site:` se expresa mediante `include_domains`. Los términos entrecomillados se validan como anclas literales conjuntas: para alternativas, envía consultas separadas. Se mantienen los controles de dominios, coincidencias locales y procedencia; el resultado es una mención observada, no identidad confirmada. Sin `queries` se conservan las plantillas existentes.
+
+Las consultas independientes se ejecutan en paralelo (`SEARCH_QUERY_CONCURRENCY=3`, limitado entre uno y cinco), con Tavily → TinyFish opcional → DuckDuckGo por consulta. Comparten los presupuestos existentes, en lugar de multiplicarlos por concurrencia. Una respuesta de cuota/error puede alcanzar también peticiones ya iniciadas; el proveedor se desactiva para consultas posteriores. La ejecución devuelve diagnósticos incluso cuando no hay hallazgos, para distinguir indisponibilidad de ausencia de coincidencias. `force` consume presupuesto de búsqueda y no lo reinicia.
+
+`username_finder` por MCP usa `inputs.scan_mode="fast"` de forma predeterminada: hasta `MCP_USERNAME_FAST_SITES=200` sitios y un alias por llamada, respetando el límite total de alias del expediente. `scan_mode="deep"` amplía hasta el catálogo configurado en `USERNAME_SCAN_MAX_SITES`, continuando desde la cobertura anterior. El motor interno conserva su barrido completo configurado. La cobertura y los presupuestos de búsqueda se persisten para continuar tras pausar o reiniciar. La cobertura guardada corresponde al orden del catálogo configurado: mantén su versión y tamaño durante un experimento.
+
+Un barrido rápido tiene menor cobertura. La concurrencia reduce esperas de trabajos independientes, pero la latencia real sigue dependiendo de las fuentes, reintentos y límites HTTP por host. El guardado de evidencias y la reconstrucción del grafo se serializan por expediente para conservar IDs y observaciones.
 
 ### Notas de análisis
 
@@ -73,6 +99,8 @@ REST y MCP usan `WorkspaceService` para crear casos y guardar notas; las llamada
 
 Los eventos se publican después del commit. La página actualiza mapa, hallazgos, trazabilidad y notas ante eventos de herramientas/sesiones; `revision` también refresca relaciones aunque no cambie el número de nodos. El listado de expedientes sigue `/api/v1/workspace/events`. Un expediente externo mantiene abierto su SSE al terminar una sesión para detectar continuaciones.
 
+La web agrupa eventos cercanos durante 200 ms antes de actualizar y descarta respuestas de un expediente externo con una revisión anterior a la ya visible. Esto evita consultas repetidas y retrocesos visuales cuando terminan varias herramientas juntas.
+
 La traza duradera conserva herramientas, observaciones, sesiones y notas; el progreso fino sigue siendo efímero. El EventBus es local al proceso (un worker). No hay cola de trabajos distribuida ni reanudación automática de una petición HTTP interrumpida: se reintenta una ejecución marcada como fallida. Las herramientas tienen un límite de diez minutos por llamada.
 
 ## Evaluación
@@ -80,6 +108,8 @@ La traza duradera conserva herramientas, observaciones, sesiones y notas; el pro
 `external` se registra como motor separado: no se clasifica según las claves LLM del servidor. La comparativa incluye una columna para MCP. Las métricas actuales son operacionales; cantidad de entidades y grupos no demuestra precisión ni mejora de identidad. Registra las sesiones, el cliente y el modelo declarado junto al presupuesto, herramientas, fuentes y referencias conocidas al diseñar el experimento.
 
 `execution_time_seconds` suma la duración de las sesiones y excluye los intervalos entre ellas. `elapsed_wall_seconds` mide el tiempo desde la creación del expediente; `tool_execution_seconds` suma la duración de las herramientas. Estos tiempos no distinguen automáticamente trabajo del agente de espera humana dentro de una sesión abierta.
+
+`external_peak_parallel_tools` registra el máximo de herramientas simultáneas y `external_scan_coverage` la cobertura por alias. Al solaparse trabajos, la suma de sus duraciones puede superar el tiempo de sesión. La huella registra los límites de concurrencia y la configuración del barrido rápido para que el cambio de cobertura no se confunda con una mejora de velocidad a igualdad de condiciones.
 
 ## Verificación
 

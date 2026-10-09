@@ -47,7 +47,7 @@ async def test_http_mcp_requires_token_and_exposes_registry(mcp_app):
             assert initialized.json()["result"]["serverInfo"]["name"] == "PersonMap"
             response = await rpc(client, "tools/list")
             tools = {t["name"]: t for t in response.json()["result"]["tools"]}
-            assert {"create_investigation", "username_finder", "social_verifier", "public_page_reader", "add_analysis_note", "finish_session"} <= tools.keys()
+            assert {"create_investigation", "username_finder", "social_verifier", "public_page_reader", "add_analysis_note", "finish_session", "run_tool_batch", "get_executions"} <= tools.keys()
             assert tools["username_finder"]["inputSchema"]["required"] == ["investigation_id", "session_id"]
             assert tools["add_analysis_note"]["annotations"]["readOnlyHint"] is False
             assert tools["get_finding"]["annotations"]["readOnlyHint"] is True

@@ -28,7 +28,7 @@ from app.models.investigation_session import InvestigationSession
 from app.models.tool_execution import ToolExecution
 from app.schemas.investigation import InvestigationCreate
 from app.schemas.target import TargetCreate
-from app.schemas.workspace import NoteCreate, SessionCreate, ToolRequest
+from app.schemas.workspace import NoteCreate, SearchQuery, SessionCreate, ToolInputs, ToolRequest
 from app.services.workspace import EXTERNAL_TOOLS, WorkspaceService
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
@@ -77,9 +77,9 @@ class FixtureTool(BaseTool):
     required_inputs = ["username"]
 
     async def execute(self, context: TargetContext):
-        if context.extra.get("fixture_already_scanned"):
+        if context.extra.get("username_finder_fixture_scanned"):
             return []
-        context.extra["fixture_already_scanned"] = True
+        context.extra["username_finder_fixture_scanned"] = True
         return [ToolFinding(entity_type="social_account", platform="github", value="https://github.com/fixture",
                             metadata_info={"username": "fixture", "bio": "Public fixture biography"},
                             evidence_urls=["https://example.test/source"])]
@@ -221,3 +221,99 @@ async def test_session_conflicts_reference_isolation_and_restart_recovery(isolat
         assert (await db.get(Investigation, one.id)).status == "paused"
         assert (await db.get(InvestigationSession, uuid.UUID(session["id"]))).status == "paused"
     assert (await service.open_session(one.id, SessionCreate(client="codex")))["id"] != session["id"]
+
+
+@pytest.mark.asyncio
+async def test_parallel_batch_preserves_evidence_runtime_and_web_state(isolated_workspace, monkeypatch):
+    from fastapi import HTTPException
+    service, _ = isolated_workspace
+    monkeypatch.setattr(settings, "mcp_max_parallel_tools", 3)
+    async with service.session_factory() as db:
+        inv = await service.create(InvestigationCreate(target=TargetCreate(username="fixture"), execution_mode="external"), db)
+    session = await service.open_session(inv.id, SessionCreate(client="codex"))
+    session_id = uuid.UUID(session["id"])
+    release = asyncio.Event()
+    ready = asyncio.Event()
+    started = set()
+
+    class ConcurrentTool(FixtureTool):
+        def __init__(self, name):
+            self.name = name
+        async def execute(self, context):
+            started.add(self.name)
+            if len(started) == 3:
+                ready.set()
+            await release.wait()
+            context.extra[f"{self.name}_cache"] = {"done": 1}
+            if self.name == "username_finder":
+                assert context.extra["username_scan_mode"] == "fast"
+                context.extra["username_finder_coverage"] = {"fixture": 2}
+                context.extra["username_finder_scanned"] = {"fixture"}
+            if self.name == "search_dorker":
+                q = context.extra["search_queries"][0]
+                assert q["include_domains"] == ["github.com"]
+                context.extra["search_queries_executed"] = [[q["query"], q["include_domains"]]]
+                context.extra["search_queries_used"] = 1
+            return [ToolFinding(entity_type="social_account", platform="github", value="https://github.com/fixture",
+                                metadata_info={f"from_{self.name}": True, "page_text": "Captured public body", "page_excerpt": "Public excerpt"},
+                                evidence_urls=[f"https://example.test/{self.name}"])]
+
+    for name in ("username_finder", "social_verifier", "search_dorker", "email_checker"):
+        monkeypatch.setitem(EXTERNAL_TOOLS, name, ConcurrentTool(name))
+    requests = [ToolRequest(tool_name="username_finder"), ToolRequest(tool_name="social_verifier"),
+                ToolRequest(tool_name="search_dorker", inputs=ToolInputs(queries=[
+                    SearchQuery(query='"fixture" publication', rationale="Follow observed profile", include_domains=["github.com"])]))]
+    batch = await service.submit_batch(inv.id, session_id, requests)
+    assert all(item["accepted"] for item in batch["results"])
+    execution_ids = [uuid.UUID(item["execution"]["id"]) for item in batch["results"]]
+    await asyncio.wait_for(ready.wait(), 2)  # All three execute concurrently, not just queued.
+    pending = await service.executions(inv.id, execution_ids)
+    assert pending["running_count"] == 3
+    reused = await service.submit_tool(inv.id, session_id, requests[0])
+    assert reused["reused"] and uuid.UUID(reused["id"]) == execution_ids[0]
+    rejected = await service.submit_batch(inv.id, session_id, [ToolRequest(tool_name="email_checker")])
+    assert rejected["results"][0]["accepted"] is False and rejected["results"][0]["status_code"] == 409
+    with pytest.raises(HTTPException) as busy:
+        await service.close_session(inv.id, session_id, "finish")
+    assert busy.value.status_code == 409
+    await service.add_note(inv.id, NoteCreate(title="Work in progress", content="Reviewing evidence while tools run."), session_id)
+    waiting = asyncio.create_task(service.executions(inv.id, execution_ids, wait_seconds=2))
+    tasks = [service.tasks[execution_id] for execution_id in execution_ids]
+    release.set()
+    await asyncio.gather(*tasks)
+    await waiting
+    completed = await service.executions(inv.id, execution_ids)
+    assert completed["running_count"] == 0 and all(item["status"] == "completed" for item in completed["executions"])
+
+    web = await service.detail(inv.id)
+    assert len(web["entities"]) == 1
+    entity = web["entities"][0]
+    assert set(entity["metadata_info"]["source_tools"]) == {request.tool_name for request in requests}
+    assert len(entity["metadata_info"]["evidence_urls"]) == 3
+    assert web["analysis_notes"][0]["title"] == "Work in progress"
+    assert web["metrics"]["external_peak_parallel_tools"] == 3
+    async with service.session_factory() as db:
+        observations = list((await db.scalars(select(EntityObservation).where(EntityObservation.investigation_id == inv.id))).all())
+        assert len(observations) == 3 and len({item.entity_id for item in observations}) == 1
+    runtime = service.contexts[inv.id].extra
+    assert all(runtime[f"{name}_cache"]["done"] == 1 for name in started)
+    compact = (await service.findings(inv.id))["findings"][0]["metadata_info"]
+    assert "page_text" not in compact and compact["content_available"]
+    full = await service.findings(inv.id, entity_id=uuid.UUID(entity["id"]), include_content=True)
+    assert full["findings"][0]["metadata_info"]["page_text"] == "Captured public body"
+    await service.close_session(inv.id, session_id, "pause")
+    service.contexts.clear()  # Simulate losing in-memory caches on restart.
+    resumed = await service.context(inv.id)
+    assert resumed["scan_coverage"] == {"fixture": 2}
+    assert resumed["execution_policy"]["search_queries_remaining"] == settings.tavily_max_queries - 1
+    assert not resumed["execution_policy"]["active_tools"]
+
+    # When there is free capacity, overlapping the same tool is still rejected.
+    second = await service.open_session(inv.id, SessionCreate(client="codex"))
+    release.clear()
+    next_job = await service.submit_tool(inv.id, uuid.UUID(second["id"]), ToolRequest(tool_name="username_finder", inputs=ToolInputs(username="another")))
+    with pytest.raises(HTTPException) as same_tool:
+        await service.submit_tool(inv.id, uuid.UUID(second["id"]), ToolRequest(tool_name="username_finder", inputs=ToolInputs(username="different")))
+    assert same_tool.value.status_code == 409
+    release.set()
+    await service.tasks[uuid.UUID(next_job["id"])]

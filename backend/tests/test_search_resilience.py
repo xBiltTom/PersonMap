@@ -82,7 +82,7 @@ async def test_tinyfish_success_and_request_shape(monkeypatch):
     findings = await SearchDorkerTool().execute(TargetContext(username='alpha'))
     assert findings[0].metadata_info['engine'] == 'tinyfish'
     assert tiny.calls[0].request.headers['X-API-Key'] == 'fixture-tiny'
-    assert tiny.calls[-1].request.url.params['include_domains'].startswith('linkedin.com,')
+    assert any(call.request.url.params.get('include_domains', '').startswith('linkedin.com,') for call in tiny.calls)
     assert not backup.called
 
 @pytest.mark.parametrize('status', [401, 402, 429, 500])
@@ -97,7 +97,12 @@ async def test_tinyfish_errors_preserve_backup(status, monkeypatch):
     findings = await SearchDorkerTool().execute(ctx)
     assert findings[0].metadata_info['engine'] == 'duckduckgo'
     if status != 500:
-        assert tiny.call_count == 1
+        # Already in-flight queries can report the same quota error; subsequent work is disabled.
+        assert 1 <= tiny.call_count <= settings.search_query_concurrency
+        before = tiny.call_count
+        ctx.discovered_usernames.append('beta')
+        await SearchDorkerTool().execute(ctx)
+        assert tiny.call_count == before
     assert 'fixture-tiny' not in str(ctx.extra['search_diagnostics'])
 
 @pytest.mark.parametrize('payload', [[], {'results': {}}, {'results': [None, 5, {'url': 'https://github.com/alpha', 'title': 'alpha', 'score': 'broken'}]}])

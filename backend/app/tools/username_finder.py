@@ -123,6 +123,9 @@ class UsernameFinderTool(BaseTool):
         sites = self._load_sites()
         if not sites:
             return findings
+        fast = context.extra.get("username_scan_mode") == "fast"
+        if fast:
+            sites = sites[:max(1, settings.mcp_username_fast_sites)]
 
         investigation_id = context.extra.get("investigation_id")
         semaphore = asyncio.Semaphore(
@@ -139,6 +142,8 @@ class UsernameFinderTool(BaseTool):
         # Vive en `context.extra` y no en la instancia porque la herramienta es
         # un singleton del registry compartido por todas las investigaciones.
         scanned: Set[str] = context.extra.setdefault("username_finder_scanned", set())
+        # Coverage lets a later deep pass continue past the fast prefix.
+        coverage = context.extra.setdefault("username_finder_coverage", {})
 
         # Contadores acumulados de la investigación, para que la interfaz pueda
         # decir cuántos sitios se descartaron sin gastar una petición.
@@ -152,28 +157,19 @@ class UsernameFinderTool(BaseTool):
         # devuelve primero el que aportó la persona y después los descubiertos,
         # así que recortar por el final descarta siempre lo más especulativo.
         remaining = max(0, settings.username_scan_max_aliases - len(scanned))
-        if remaining <= 0:
-            if investigation_id and usernames:
-                await event_bus.publish(investigation_id, {
-                    "type": "log",
-                    "phase": "catalog_filter",
-                    "tool": self.name,
-                    "message": (
-                        f"[{self.name}] Tope de {settings.username_scan_max_aliases} "
-                        f"alias por investigación alcanzado; no se barren más."
-                    ),
-                    "timestamp": time.time(),
-                })
-            return findings
+        processed = 0
 
         async with http_client.build_client(timeout=6.0) as client:
             for username in usernames:
-                if remaining <= 0:
+                if fast and processed >= 1:
                     break
                 clean_user = username.strip()
                 if clean_user.lower() in self._generic_users or len(clean_user) < 3:
                     continue
-                if clean_user.lower() in scanned:
+                key = clean_user.lower()
+                # Old contexts with only a scanned set already covered the configured catalogue.
+                start = coverage.get(key, len(sites) if key in scanned else 0)
+                if start >= len(sites) or (key not in scanned and remaining <= 0):
                     continue
                 candidates = context.extra.setdefault("candidate_urls", [])
                 provenance = context.extra.setdefault("derived_profile_candidates", {})
@@ -181,12 +177,16 @@ class UsernameFinderTool(BaseTool):
                     if candidate not in candidates:
                         candidates.append(candidate)
                     provenance[candidate] = {"source_tool": self.name, "alias": clean_user, "status": "derived"}
-                scanned.add(clean_user.lower())
-                remaining -= 1
+                if key not in scanned:
+                    scanned.add(key)
+                    remaining -= 1
+                coverage.setdefault(key, start)
+                processed += 1
 
                 # El filtro previo por formato: no gasta red y quita ruido.
-                applicable = [s for s in sites if s.accepts_username(clean_user)]
-                skipped = len(sites) - len(applicable)
+                pending_sites = sites[start:]
+                applicable = [s for s in pending_sites if s.accepts_username(clean_user)]
+                skipped = len(pending_sites) - len(applicable)
                 stats["skipped_by_regex"] += skipped
 
                 if investigation_id and skipped:
@@ -216,6 +216,7 @@ class UsernameFinderTool(BaseTool):
                     for site in applicable
                 ]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
+                coverage[key] = len(sites)
                 stats["checked"] += len(applicable)
 
                 rejected = progress_counter["control_rejected"]
@@ -235,6 +236,8 @@ class UsernameFinderTool(BaseTool):
 
                 for res in results:
                     if isinstance(res, ToolFinding):
+                        res.metadata_info["scan_mode"] = "fast" if fast else "deep"
+                        res.metadata_info["catalogue_sites_covered"] = len(sites)
                         findings.append(res)
 
         return findings

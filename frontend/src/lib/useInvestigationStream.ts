@@ -85,6 +85,7 @@ export function useInvestigationStream(
   // 2. Stream SSE en tiempo real
   useEffect(() => {
     const eventSource = new EventSource(getInvestigationStreamUrl(investigationId));
+    let updateTimer: ReturnType<typeof setTimeout> | undefined;
 
     eventSource.onopen = () => {
       retriesRef.current = 0;
@@ -95,7 +96,8 @@ export function useInvestigationStream(
       try {
         const data: StreamLog = JSON.parse(event.data);
         if (["workspace_snapshot", "tool_start", "tool_complete", "tool_error", "analysis_note", "session_start", "session_pause", "session_complete"].includes(data.type)) {
-          onUpdatedRef.current?.();
+          clearTimeout(updateTimer);
+          updateTimer = setTimeout(() => onUpdatedRef.current?.(), 200);
         }
         if (data.message) {
           setLogs((prev) => {
@@ -138,6 +140,7 @@ export function useInvestigationStream(
     };
 
     return () => {
+      clearTimeout(updateTimer);
       eventSource.close();
     };
   }, [investigationId, reconnectKey]);

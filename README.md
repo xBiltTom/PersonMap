@@ -89,6 +89,8 @@ El backend también expone `/mcp` para que Codex, Claude Code u otros clientes c
 
 El cuaderno de **Análisis** permite persistir comentarios, resúmenes, hallazgos destacados, hipótesis y próximos pasos con fuentes y referencias. El lector de páginas públicas guarda texto y enlaces que un agente puede analizar. Las interpretaciones del agente se conservan como notas, separadas de las observaciones y relaciones documentadas.
 
+El agente puede escribir consultas propias con justificación y filtros de dominio, iniciar hasta tres herramientas independientes juntas y consultar sus estados en una sola llamada. El barrido MCP empieza con un modo rápido de hasta 200 sitios por alias; el modo profundo continúa desde la cobertura guardada. Los presupuestos y la cobertura sobreviven a una pausa o reinicio, y los listados compactos dejan el texto completo para la lectura de hallazgos individuales.
+
 Consulta [la guía de conexión y uso de MCP](docs/MCP.md) para preparar la credencial local, conectar clientes y ejecutar las pruebas.
 
 ## Fuentes y artefactos públicos
