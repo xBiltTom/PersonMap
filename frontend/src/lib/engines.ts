@@ -19,6 +19,11 @@ export interface EngineMeta {
 }
 
 export const ENGINE_META: Record<EngineId, EngineMeta> = {
+  external: {
+    label: "Agente externo · MCP",
+    description: "Herramientas dirigidas por un agente externo sobre este mismo expediente.",
+    badge: "bg-amber-500/10 text-amber-300 border-amber-500/30",
+  },
   rules: {
     label: "Motor por reglas",
     description:

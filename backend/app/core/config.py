@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # The MCP bridge shares this backend's process and database. No LLM key needed.
+    mcp_enabled: bool = True
+    mcp_api_key: Optional[SecretStr] = None
+    mcp_allowed_hosts: list[str] = ["localhost:*", "127.0.0.1:*", "[::1]:*"]
+    frontend_url: str = "http://localhost:3000"
 
     # --- Presupuesto de concurrencia HTTP ------------------------------------
     # Compartido por todas las tools a través de app.tools.http_client.

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, DateTime, ForeignKey, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import relationship
@@ -15,6 +15,8 @@ class Investigation(Base):
 
     # Strategy: "auto", "rule_based", "agentic"
     strategy = Column(String(50), default="auto", nullable=False)
+    execution_mode = Column(String(20), default="internal", server_default="internal", nullable=False)
+    revision = Column(Integer, default=0, server_default="0", nullable=False)
 
     # Status: "pending", "running", "completed", "failed"
     status = Column(String(50), default="pending", nullable=False, index=True)
@@ -35,6 +37,8 @@ class Investigation(Base):
     tool_executions = relationship("ToolExecution", back_populates="investigation", cascade="all, delete-orphan")
     entity_observations = relationship("EntityObservation", back_populates="investigation", cascade="all, delete-orphan")
     trace_events = relationship("InvestigationTraceEvent", back_populates="investigation", cascade="all, delete-orphan")
+    sessions = relationship("InvestigationSession", back_populates="investigation", cascade="all, delete-orphan")
+    analysis_notes = relationship("AnalysisNote", back_populates="investigation", cascade="all, delete-orphan")
 
 
 # Registra los modelos relacionados incluso cuando un endpoint importa solamente
@@ -46,3 +50,5 @@ from app.models.target import Target  # noqa: E402, F401
 from app.models.tool_execution import ToolExecution  # noqa: E402, F401
 from app.models.entity_observation import EntityObservation  # noqa: E402, F401
 from app.models.investigation_trace_event import InvestigationTraceEvent  # noqa: E402, F401
+from app.models.investigation_session import InvestigationSession  # noqa: E402, F401
+from app.models.analysis_note import AnalysisNote  # noqa: E402, F401

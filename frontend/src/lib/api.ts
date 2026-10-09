@@ -4,6 +4,8 @@
 // =====================================================================
 
 import type {
+  AnalysisNoteData,
+  AnalysisNotePayload,
   CreateInvestigationPayload,
   GraphResponse,
   HealthStatus,
@@ -100,6 +102,14 @@ export function listInvestigations(
 
 export function getInvestigation(id: string): Promise<InvestigationData> {
   return request<InvestigationData>(`/investigations/${id}`);
+}
+
+export function addAnalysisNote(id: string, note: AnalysisNotePayload): Promise<AnalysisNoteData> {
+  return request<AnalysisNoteData>(`/investigations/${id}/notes`, { method: "POST", body: JSON.stringify(note) });
+}
+
+export function getWorkspaceEventsUrl(): string {
+  return `${API_BASE}/workspace/events`;
 }
 
 export function getInvestigationTrace(id: string): Promise<InvestigationTraceResponse> {

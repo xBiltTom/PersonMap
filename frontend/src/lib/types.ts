@@ -124,6 +124,8 @@ export interface InvestigationData {
   id: string;
   target_id: string;
   strategy: string;
+  execution_mode?: "internal" | "external";
+  revision?: number;
   status: string;
   summary?: string | null;
   metrics: InvestigationMetrics;
@@ -132,6 +134,35 @@ export interface InvestigationData {
   target?: TargetData | null;
   entities?: EntityData[];
   correlation_groups?: CorrelationGroupData[];
+  analysis_notes?: AnalysisNoteData[];
+  sessions?: InvestigationSessionData[];
+}
+
+export type AnalysisNoteKind = "comment" | "summary" | "insight" | "hypothesis" | "next_step";
+export interface AnalysisNotePayload {
+  kind: AnalysisNoteKind;
+  title: string;
+  content: string;
+  evidence_urls?: string[];
+  entity_ids?: string[];
+  execution_ids?: string[];
+  details?: Record<string, unknown>;
+}
+export interface AnalysisNoteData extends AnalysisNotePayload {
+  id: string;
+  investigation_id: string;
+  session_id?: string | null;
+  author: string;
+  author_type: "agent" | "analyst";
+  created_at: string;
+}
+export interface InvestigationSessionData {
+  id: string;
+  client: string;
+  model?: string | null;
+  status: string;
+  started_at: string;
+  ended_at?: string | null;
 }
 
 // ---------------------------------------------------------------------
@@ -293,7 +324,7 @@ export interface InvestigationLogHistory {
 // ---------------------------------------------------------------------
 
 /** Los tres motores que puede reportar el backend en `engine_used`. */
-export type EngineId = "rules" | "agentic" | "hybrid";
+export type EngineId = "rules" | "agentic" | "hybrid" | "external";
 
 export interface EngineMetrics {
   count: number;
@@ -324,6 +355,7 @@ export interface MetricsComparison {
     rule_based: EngineMetrics;
     agentic: EngineMetrics;
     hybrid: EngineMetrics;
+    external?: EngineMetrics;
   };
   engine_labels?: Record<EngineId, string>;
   hybrid_contribution?: HybridContribution;

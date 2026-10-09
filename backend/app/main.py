@@ -6,6 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_v1_router
 from app.core.config import settings
 from app.core.database import init_db
+from app.mcp.auth import MCPTokenGate
+from app.mcp.server import mcp
+from app.services.workspace import workspace
 
 
 @asynccontextmanager
@@ -13,7 +16,12 @@ async def lifespan(app: FastAPI):
     # Initialize DB tables on startup
     await init_db()
     _warn_if_multiple_workers()
-    yield
+    await workspace.recover_sessions()
+    async with mcp.session_manager.run():
+        try:
+            yield
+        finally:
+            await workspace.shutdown()
 
 
 def _warn_if_multiple_workers() -> None:
@@ -68,4 +76,10 @@ async def health_check():
         "service": "person-map-backend",
         "ai_enabled": settings.ai_enabled,
         "llm_model": settings.llm_model if settings.ai_enabled else None,
+        "mcp_enabled": settings.mcp_enabled,
+        "mcp_configured": bool(settings.mcp_api_key),
     }
+
+
+# Last route: existing REST/health endpoints take precedence. The endpoint remains /mcp.
+app.mount("/", MCPTokenGate(mcp.streamable_http_app()), name="mcp")

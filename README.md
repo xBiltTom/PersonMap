@@ -83,6 +83,14 @@ PersonMap conserva tres estrategias independientes:
 
 La IA es opcional. Sin `LLM_MODEL` y `LLM_API_KEY`, el motor de reglas sigue funcionando. El uso de IA no convierte un hallazgo en una conclusión de identidad.
 
+## Agentes externos mediante MCP
+
+El backend también expone `/mcp` para que Codex, Claude Code u otros clientes compatibles dirijan las herramientas sobre los mismos expedientes de la web. El modo externo no depende de las claves LLM del servidor: guarda resultados por ejecución, conserva sesiones para continuar un caso y sincroniza mapa, hallazgos, trazabilidad y análisis mediante SSE.
+
+El cuaderno de **Análisis** permite persistir comentarios, resúmenes, hallazgos destacados, hipótesis y próximos pasos con fuentes y referencias. El lector de páginas públicas guarda texto y enlaces que un agente puede analizar. Las interpretaciones del agente se conservan como notas, separadas de las observaciones y relaciones documentadas.
+
+Consulta [la guía de conexión y uso de MCP](docs/MCP.md) para preparar la credencial local, conectar clientes y ejecutar las pruebas.
+
 ## Fuentes y artefactos públicos
 
 El registro de herramientas cubre, según los datos de entrada y la disponibilidad pública, búsqueda de aliases, perfiles sociales, cuentas de desarrollo, correo, Gravatar, dominio, documentos académicos, teléfonos, dorks, brechas, infraestructura y verificaciones de URLs públicas.

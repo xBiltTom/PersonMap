@@ -77,6 +77,14 @@ def _trace_event_log(event: InvestigationTraceEvent) -> Dict[str, Any] | None:
         else:
             message = "Llamada omitida por el motor."
         return {**common, "phase": "hybrid_refine_skipped", "tool": tool if isinstance(tool, str) else None, "message": message}
+    if event.event_type in {"session_start", "session_pause", "session_complete", "analysis_note"}:
+        message = {
+            "session_start": f"Sesión externa iniciada: {data.get('client', 'agente')}.",
+            "session_pause": "Sesión externa pausada.",
+            "session_complete": "Sesión externa finalizada.",
+            "analysis_note": f"Análisis guardado: {data.get('title', 'Nota')}.",
+        }[event.event_type]
+        return {**common, "phase": event.event_type, "message": message}
     return None
 
 
@@ -209,9 +217,11 @@ async def stream_investigation_events(id: UUID):
     # Check if investigation is already finished in DB
     is_already_finished = False
     status_in_db = "pending"
+    is_external = False
 
     async with async_session_maker() as db:
         inv = await db.get(Investigation, id)
+        is_external = bool(inv and inv.execution_mode == "external")
         if inv and inv.status in ["completed", "failed"]:
             is_already_finished = True
             status_in_db = inv.status
@@ -220,15 +230,17 @@ async def stream_investigation_events(id: UUID):
         try:
             # Yield initial connection confirmation
             yield f"data: {json.dumps({'type': 'connected', 'investigation_id': str_id})}\n\n"
+            if is_external:
+                yield f"data: {json.dumps({'type': 'workspace_snapshot', 'investigation_id': str_id})}\n\n"
 
             # Drain queue of all past events and stream them
             while not queue.empty():
                 past_event = queue.get_nowait()
                 yield f"data: {json.dumps(past_event)}\n\n"
-                if past_event.get("type") in ["investigation_complete", "investigation_error"]:
+                if not is_external and past_event.get("type") in ["investigation_complete", "investigation_error"]:
                     return
 
-            if is_already_finished:
+            if is_already_finished and not is_external:
                 # Sin historial EventBus no se inyecta una línea genérica: la
                 # consola ya obtuvo su proyección completa desde Trace DB.
                 # Este marcador no tiene `message`, así que el cliente solo
@@ -243,13 +255,13 @@ async def stream_investigation_events(id: UUID):
                     yield f"data: {json.dumps(event)}\n\n"
 
                     # Close stream gracefully once completed or failed
-                    if event.get("type") in ["investigation_complete", "investigation_error"]:
+                    if not is_external and event.get("type") in ["investigation_complete", "investigation_error"]:
                         break
                 except asyncio.TimeoutError:
                     # Check DB in case completion wasn't received
                     async with async_session_maker() as db:
                         check_inv = await db.get(Investigation, id)
-                        if check_inv and check_inv.status in ["completed", "failed"]:
+                        if not is_external and check_inv and check_inv.status in ["completed", "failed"]:
                             yield f"data: {json.dumps({'type': 'investigation_complete', 'status': check_inv.status, 'message': 'Investigación finalizada.'})}\n\n"
                             break
                     # Keep-alive ping
@@ -266,3 +278,23 @@ async def stream_investigation_events(id: UUID):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/workspace/events")
+async def stream_workspace_registry():
+    """Notify an open dossier list about cases created or changed through MCP."""
+    queue = await event_bus.subscribe("registry")
+
+    async def events():
+        try:
+            yield 'data: {"type":"connected"}\n\n'
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=20)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+        finally:
+            await event_bus.unsubscribe("registry", queue)
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

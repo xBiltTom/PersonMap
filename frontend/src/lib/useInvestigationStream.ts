@@ -36,7 +36,8 @@ export interface InvestigationStream {
  */
 export function useInvestigationStream(
   investigationId: string,
-  onFinished?: () => void
+  onFinished?: () => void,
+  onUpdated?: () => void
 ): InvestigationStream {
   const [logs, setLogs] = useState<StreamLog[]>([]);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
@@ -47,8 +48,10 @@ export function useInvestigationStream(
 
   const retriesRef = useRef(0);
   const onFinishedRef = useRef(onFinished);
+  const onUpdatedRef = useRef(onUpdated);
   useEffect(() => {
     onFinishedRef.current = onFinished;
+    onUpdatedRef.current = onUpdated;
   });
 
   // 1. Historial de eventos ya emitidos (replay tras recargar la página). Se
@@ -91,6 +94,9 @@ export function useInvestigationStream(
     eventSource.onmessage = (event) => {
       try {
         const data: StreamLog = JSON.parse(event.data);
+        if (["workspace_snapshot", "tool_start", "tool_complete", "tool_error", "analysis_note", "session_start", "session_pause", "session_complete"].includes(data.type)) {
+          onUpdatedRef.current?.();
+        }
         if (data.message) {
           setLogs((prev) => {
             // El backend reproduce el historial al suscribirse, así que tras una
@@ -103,7 +109,7 @@ export function useInvestigationStream(
             return exists ? prev : [...prev, data];
           });
         }
-        if (data.type === "investigation_complete" || data.type === "investigation_error") {
+        if (data.type === "investigation_complete" || data.type === "investigation_error" || data.type === "stream_complete") {
           eventSource.close();
           setStatus("closed");
           onFinishedRef.current?.();

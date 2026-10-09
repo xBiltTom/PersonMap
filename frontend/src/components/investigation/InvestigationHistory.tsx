@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import Link from "next/link";
 import type { InvestigationData } from "@/lib/types";
-import { deleteInvestigation, listInvestigations } from "@/lib/api";
+import { deleteInvestigation, getWorkspaceEventsUrl, listInvestigations } from "@/lib/api";
 import { ENGINE_META, resolveEngine } from "@/lib/engines";
 import {
   AlertTriangle,
   ArrowUpRight,
   CalendarDays,
   CheckCircle2,
+  Clock,
   FolderOpen,
   RefreshCw,
   Search,
@@ -43,6 +44,7 @@ function formatDate(value?: string): string {
 
 function statusView(status: string) {
   if (status === "completed") return { label: "Completado", icon: CheckCircle2, className: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" };
+  if (status === "paused") return { label: "Pausado", icon: Clock, className: "border-amber-500/25 bg-amber-500/10 text-amber-300" };
   if (status === "running" || status === "pending") return { label: "En análisis", icon: RefreshCw, className: "border-sky-500/25 bg-sky-500/10 text-sky-300" };
   return { label: status === "failed" ? "Error" : status, icon: XCircle, className: "border-rose-500/25 bg-rose-500/10 text-rose-300" };
 }
@@ -88,6 +90,19 @@ export function InvestigationHistory() {
     const loadTimer = window.setTimeout(loadData, 0);
     return () => window.clearTimeout(loadTimer);
   }, [loadData]);
+
+  useEffect(() => {
+    const events = new EventSource(getWorkspaceEventsUrl());
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    events.onmessage = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        void listAllInvestigations().then((data) => { setInvestigations(data); setError(null); })
+          .catch((err) => setError(err instanceof Error ? err.message : "No se pudo actualizar el registro"));
+      }, 250);
+    };
+    return () => { clearTimeout(timer); events.close(); };
+  }, []);
 
   const handleDelete = async (event: MouseEvent<HTMLButtonElement>, id: string, name: string) => {
     event.preventDefault();

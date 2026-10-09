@@ -1,0 +1,397 @@
+"""Shared dossier operations for REST and MCP, with incremental durable results."""
+import asyncio
+import hashlib
+import json
+import logging
+import time
+from collections import OrderedDict
+from datetime import datetime, timezone
+from uuid import UUID
+
+from fastapi import HTTPException
+from sqlalchemy import delete, select
+from sqlalchemy.orm import selectinload
+
+from app.agent.tool_dispatch import build_call_context
+from app.core.database import async_session_maker
+from app.core.events import event_bus
+from app.core.fingerprint import run_fingerprint
+from app.engine.persistence import build_relationships, persist_findings
+from app.engine.pivot_rules import extract_and_apply_pivots
+from app.engine.trace import PendingObservation, trace_recorder
+from app.identity.resolver import correlation_resolver
+from app.models.analysis_note import AnalysisNote
+from app.models.correlation_group import CorrelationGroup
+from app.models.entity import Entity
+from app.models.entity_observation import EntityObservation
+from app.models.investigation import Investigation
+from app.models.investigation_session import InvestigationSession
+from app.models.relationship import Relationship
+from app.models.target import Target
+from app.models.tool_execution import ToolExecution
+from app.schemas.entity import EntityRead
+from app.schemas.investigation import InvestigationCreate, InvestigationDetail, InvestigationRead
+from app.schemas.trace import ToolExecutionRead
+from app.schemas.workspace import NoteCreate, NoteRead, SessionCreate, SessionRead, ToolRequest
+from app.tools.base import TargetContext, ToolFinding
+from app.tools.public_page_reader import PublicPageReaderTool
+from app.tools.registry import tool_registry
+
+logger = logging.getLogger(__name__)
+EXTERNAL_TOOLS = {tool.name: tool for tool in tool_registry.get_all()}
+EXTERNAL_TOOLS["public_page_reader"] = PublicPageReaderTool()
+
+
+def call_fingerprint(tool_name: str, context: TargetContext) -> str:
+    # Only actual inputs; never ephemeral caches, secrets, budgets or event IDs.
+    tool = EXTERNAL_TOOLS[tool_name]
+    values = {}
+    for field in tool.required_inputs:
+        if field == "username":
+            value = context.all_usernames()
+        elif field == "email":
+            value = context.all_emails()
+        elif field == "phone":
+            value = context.all_phones()
+        else:
+            value = getattr(context, field, context.extra.get(field))
+        values[field] = sorted(value) if isinstance(value, list) else value
+    values["self_consent"] = bool(context.extra.get("self_consent"))
+    return hashlib.sha256(json.dumps([tool_name, values], sort_keys=True).encode()).hexdigest()
+
+
+class WorkspaceService:
+    def __init__(self, session_factory=async_session_maker):
+        self.session_factory = session_factory
+        self.tasks: dict[UUID, asyncio.Task] = {}
+        self.contexts: OrderedDict[UUID, TargetContext] = OrderedDict()
+
+    async def _investigation(self, db, investigation_id: UUID, *, lock=False):
+        stmt = select(Investigation).where(Investigation.id == investigation_id).options(selectinload(Investigation.target))
+        if lock:
+            stmt = stmt.with_for_update()
+        inv = (await db.scalars(stmt)).one_or_none()
+        if not inv:
+            raise HTTPException(404, "Expediente no encontrado")
+        return inv
+
+    async def create(self, payload: InvestigationCreate, db):
+        target = Target(**payload.target.model_dump(exclude={"extra_data"}), extra_data={
+            **(payload.target.extra_data or {}), "self_consent": payload.self_consent,
+        })
+        db.add(target)
+        await db.flush()
+        inv = Investigation(target_id=target.id, target=target, strategy=payload.strategy,
+                            execution_mode=payload.execution_mode, status="pending")
+        if payload.execution_mode == "external":
+            inv.metrics = {"engine_used": "external", "execution_mode": "external"}
+        db.add(inv)
+        await db.commit()
+        await db.refresh(inv)
+        inv.target = target
+        await event_bus.publish("registry", {"type": "investigation_created", "investigation_id": str(inv.id), "timestamp": time.time()})
+        return inv
+
+    async def detail(self, investigation_id: UUID) -> dict:
+        async with self.session_factory() as db:
+            stmt = select(Investigation).where(Investigation.id == investigation_id).options(
+                selectinload(Investigation.target), selectinload(Investigation.entities),
+                selectinload(Investigation.correlation_groups), selectinload(Investigation.analysis_notes),
+                selectinload(Investigation.sessions))
+            inv = (await db.scalars(stmt)).one_or_none()
+            if not inv:
+                raise HTTPException(404, "Expediente no encontrado")
+            result = InvestigationDetail.model_validate(inv).model_dump(mode="json")
+            result["analysis_notes"].sort(key=lambda n: n["created_at"])
+            result["sessions"].sort(key=lambda s: s["started_at"])
+            return result
+
+    async def context(self, investigation_id: UUID) -> dict:
+        async with self.session_factory() as db:
+            inv = await self._investigation(db, investigation_id)
+            entities = list((await db.scalars(select(Entity).where(Entity.investigation_id == investigation_id))).all())
+            context = self._context(inv, entities)
+            executions = list((await db.scalars(select(ToolExecution).where(ToolExecution.investigation_id == investigation_id)
+                                               .order_by(ToolExecution.started_at.desc()).limit(50))).all())
+            notes = list((await db.scalars(select(AnalysisNote).where(AnalysisNote.investigation_id == investigation_id)
+                                          .order_by(AnalysisNote.created_at.desc()).limit(20))).all())
+            sessions = list((await db.scalars(select(InvestigationSession).where(InvestigationSession.investigation_id == investigation_id)
+                                             .order_by(InvestigationSession.started_at.desc()).limit(20))).all())
+            return {"investigation": InvestigationRead.model_validate(inv).model_dump(mode="json"),
+                    "known_identifiers": context.model_dump(exclude={"extra"}),
+                    "candidate_urls": context.extra.get("candidate_urls", [])[:100],
+                    "executions": [ToolExecutionRead.model_validate(e).model_dump(mode="json") for e in executions],
+                    "notes": [NoteRead.model_validate(n).model_dump(mode="json") for n in notes],
+                    "sessions": [SessionRead.model_validate(s).model_dump(mode="json") for s in sessions],
+                    "total_findings": len(entities)}
+
+    def _context(self, inv, entities, *, use_cached=True):
+        ctx = build_call_context({}, inv.target)
+        saved = self.contexts.get(inv.id)
+        if saved and use_cached:
+            ctx.extra.update(saved.extra)
+        findings = [ToolFinding(entity_type=e.entity_type, platform=e.platform, value=e.value,
+                                display_name=e.display_name, metadata_info=dict(e.metadata_info or {})) for e in entities]
+        extract_and_apply_pivots(findings, ctx)
+        ctx.extra["investigation_id"] = str(inv.id)
+        return ctx
+
+    async def _active_session(self, db, inv, session_id):
+        session = await db.get(InvestigationSession, session_id)
+        if not session or session.investigation_id != inv.id:
+            raise HTTPException(404, "Sesión no encontrada en este expediente")
+        if inv.execution_mode != "external" or session.status != "active":
+            raise HTTPException(409, "La sesión externa no está activa")
+        return session
+
+    async def _validate_references(self, db, investigation_id, entity_ids=(), execution_ids=()):
+        for model, values in ((Entity, entity_ids), (ToolExecution, execution_ids)):
+            if values:
+                found = set((await db.scalars(select(model.id).where(model.investigation_id == investigation_id, model.id.in_(values)))).all())
+                if found != set(values):
+                    raise HTTPException(422, "Las referencias deben pertenecer al mismo expediente")
+
+    async def _publish(self, inv, event_type, message, **data):
+        event = {"type": event_type, "investigation_id": str(inv.id), "revision": inv.revision,
+                 "message": message, "timestamp": time.time(), "engine": "external", **data}
+        await event_bus.publish(str(inv.id), event)
+        await event_bus.publish("registry", {"type": "investigation_updated", "investigation_id": str(inv.id),
+                                            "revision": inv.revision, "timestamp": event["timestamp"]})
+
+    async def open_session(self, investigation_id: UUID, payload: SessionCreate) -> dict:
+        async with self.session_factory() as db:
+            inv = await self._investigation(db, investigation_id, lock=True)
+            if inv.execution_mode != "external":
+                raise HTTPException(409, "El expediente usa el motor interno; crea uno en modo externo")
+            active = (await db.scalars(select(InvestigationSession).where(
+                InvestigationSession.investigation_id == inv.id, InvestigationSession.status == "active"))).one_or_none()
+            if active:
+                if active.client != payload.client or active.model != payload.model:
+                    raise HTTPException(409, "Otro cliente tiene una sesión activa en el expediente")
+                return SessionRead.model_validate(active).model_dump(mode="json")
+            session = InvestigationSession(investigation_id=inv.id, **payload.model_dump())
+            db.add(session)
+            inv.status = "running"
+            inv.completed_at = None
+            inv.revision += 1
+            await trace_recorder.record_event(db, investigation_id=str(inv.id), event_type="session_start",
+                                            engine="external", data={"client": payload.client, "model": payload.model})
+            await db.commit()
+            await self._publish(inv, "session_start", f"Sesión externa iniciada: {payload.client}.")
+            return SessionRead.model_validate(session).model_dump(mode="json")
+
+    async def add_note(self, investigation_id: UUID, payload: NoteCreate, session_id: UUID | None = None) -> dict:
+        async with self.session_factory() as db:
+            inv = await self._investigation(db, investigation_id, lock=True)
+            session = await self._active_session(db, inv, session_id) if session_id else None
+            await self._validate_references(db, inv.id, payload.entity_ids, payload.execution_ids)
+            note = AnalysisNote(investigation_id=inv.id, session_id=session_id,
+                                author=session.client if session else "Analista", author_type="agent" if session else "analyst",
+                                **payload.model_dump(mode="json"))
+            db.add(note)
+            inv.revision += 1
+            if session:
+                session.updated_at = datetime.now(timezone.utc)
+            await trace_recorder.record_event(db, investigation_id=str(inv.id), event_type="analysis_note",
+                                            engine="external" if session else "analyst", data={"kind": note.kind, "title": note.title})
+            await db.commit()
+            await self._publish(inv, "analysis_note", f"Análisis guardado: {note.title}.")
+            return NoteRead.model_validate(note).model_dump(mode="json")
+
+    async def submit_tool(self, investigation_id: UUID, session_id: UUID, payload: ToolRequest) -> dict:
+        tool = EXTERNAL_TOOLS.get(payload.tool_name)
+        if not tool:
+            raise HTTPException(422, "Herramienta OSINT desconocida")
+        async with self.session_factory() as db:
+            inv = await self._investigation(db, investigation_id, lock=True)
+            session = await self._active_session(db, inv, session_id)
+            await self._validate_references(db, inv.id, payload.source_entity_ids)
+            entities = list((await db.scalars(select(Entity).where(Entity.investigation_id == inv.id))).all())
+            # Forced repeats need fresh tool-local caches as well as a new execution.
+            base_context = self._context(inv, entities, use_cached=not payload.force)
+            inputs = payload.inputs.model_dump(exclude_none=True)
+            context = build_call_context(inputs, inv.target, base_context)
+            for field, discovered in (("username", "discovered_usernames"), ("email", "discovered_emails"),
+                                      ("phone", "discovered_phones"), ("full_name", "discovered_names")):
+                if getattr(payload.inputs, field):
+                    setattr(context, discovered, [])
+            # Explicit URL selection avoids scraping every accumulated candidate again.
+            if payload.inputs.candidate_urls:
+                context.extra["candidate_urls"] = payload.inputs.candidate_urls
+            context.extra["investigation_id"] = str(inv.id)
+            if not tool.can_run(context):
+                raise HTTPException(422, "Faltan entradas requeridas para la herramienta")
+            if tool.name == "public_page_reader" and not payload.inputs.candidate_urls:
+                raise HTTPException(422, "Selecciona explícitamente las URLs que se leerán")
+            if tool.name == "public_page_reader" and len(payload.inputs.candidate_urls) > 3:
+                raise HTTPException(422, "Lee como máximo tres páginas por ejecución")
+            fingerprint = call_fingerprint(tool.name, context)
+            previous = (await db.scalars(select(ToolExecution).where(
+                ToolExecution.investigation_id == inv.id, ToolExecution.input_fingerprint == fingerprint,
+                ToolExecution.status.in_(["running", "completed"])).order_by(ToolExecution.started_at.desc()).limit(1))).first()
+            if previous and (previous.status == "running" or not payload.force):
+                return {**ToolExecutionRead.model_validate(previous).model_dump(mode="json"), "reused": True}
+            running = (await db.scalars(select(ToolExecution.id).where(
+                ToolExecution.investigation_id == inv.id, ToolExecution.status == "running").limit(1))).first()
+            if running:
+                raise HTTPException(409, "Espera a que termine la ejecución activa antes de iniciar otra")
+            execution = await trace_recorder.start_tool(db, investigation_id=str(inv.id), tool=tool,
+                                                       engine="external", engine_layer="external", context=context)
+            execution.session_id = session.id
+            execution.input_fingerprint = fingerprint
+            execution.input_summary = {**execution.input_summary, "rationale": payload.rationale,
+                                       "source_entity_ids": [str(i) for i in payload.source_entity_ids]}
+            session.updated_at = datetime.now(timezone.utc)
+            inv.revision += 1
+            await db.commit()
+            await self._publish(inv, "tool_start", f"Ejecutando {tool.name}.", tool=tool.name, tool_execution_id=str(execution.id))
+            task = asyncio.create_task(self._run_tool(inv.id, execution.id, tool, context))
+            self.tasks[execution.id] = task
+            task.add_done_callback(lambda _: self.tasks.pop(execution.id, None))
+            return {**ToolExecutionRead.model_validate(execution).model_dump(mode="json"), "reused": False}
+
+    async def _run_tool(self, investigation_id, execution_id, tool, context):
+        findings, error = [], None
+        try:
+            async with asyncio.timeout(600):
+                findings = await tool.execute(context)
+            for finding in findings:
+                finding.metadata_info.update({"source_tool": tool.name, "engine_layer": "external"})
+        except asyncio.CancelledError:
+            error = "Ejecución interrumpida al detener el servidor; puedes reintentarlo."
+        except Exception:
+            logger.exception("External OSINT execution failed: %s", execution_id)
+            error = "La herramienta no pudo completar la ejecución."
+        try:
+            async with self.session_factory() as db:
+                inv = await self._investigation(db, investigation_id, lock=True)
+                execution = await db.get(ToolExecution, execution_id)
+                entities = list((await db.scalars(select(Entity).where(Entity.investigation_id == inv.id))).all())
+                execution.completed_at = datetime.now(timezone.utc)
+                execution.status = "failed" if error else "completed"
+                execution.error_summary = error
+                execution.findings_count = len(findings)
+                if not error:
+                    changed = await persist_findings(str(inv.id), findings, inv.target, db, existing_entities=entities)
+                    await trace_recorder.link_observations(db, investigation_id=str(inv.id),
+                        pending=[PendingObservation(f, execution.id, execution.completed_at) for f in findings], entities=changed)
+                    all_entities = list((await db.scalars(select(Entity).where(Entity.investigation_id == inv.id))).all())
+                    await db.execute(delete(Relationship).where(Relationship.investigation_id == inv.id))
+                    await db.execute(delete(CorrelationGroup).where(CorrelationGroup.investigation_id == inv.id))
+                    relationships = await build_relationships(str(inv.id), all_entities, db)
+                    groups = await correlation_resolver.resolve_groups(inv.id, all_entities, relationships)
+                    db.add_all(groups)
+                    before = len(context.extra.get("candidate_urls", []))
+                    extract_and_apply_pivots(findings, context)
+                    await trace_recorder.record_event(db, investigation_id=str(inv.id), event_type="pivot", engine="external",
+                        data={"source_execution_id": str(execution.id), "source_entity_ids": [str(e.id) for e in changed],
+                              "candidate_urls_added": max(0, len(context.extra.get("candidate_urls", [])) - before)})
+                    self.contexts[inv.id] = context
+                    self.contexts.move_to_end(inv.id)
+                    while len(self.contexts) > 100:
+                        self.contexts.popitem(last=False)
+                inv.revision += 1
+                await db.commit()
+                await self._publish(inv, "tool_error" if error else "tool_complete",
+                    error or f"{tool.name}: {len(findings)} observaciones guardadas.",
+                    tool=tool.name, tool_execution_id=str(execution.id), findings_count=len(findings))
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                logger.exception("Could not persist external execution")
+        except Exception:
+            logger.exception("Could not persist external execution: %s", execution_id)
+            # Persist failure in a fresh transaction, so a failed flush does not leave a running job forever.
+            async with self.session_factory() as db:
+                execution = await db.get(ToolExecution, execution_id)
+                if execution:
+                    execution.status = "failed"
+                    execution.completed_at = datetime.now(timezone.utc)
+                    execution.error_summary = "No se pudieron guardar los resultados de la herramienta."
+                    await db.commit()
+
+    async def execution(self, investigation_id: UUID, execution_id: UUID) -> dict:
+        async with self.session_factory() as db:
+            execution = await db.get(ToolExecution, execution_id)
+            if not execution or execution.investigation_id != investigation_id:
+                raise HTTPException(404, "Ejecución no encontrada en este expediente")
+            ids = list((await db.scalars(select(EntityObservation.entity_id).where(EntityObservation.tool_execution_id == execution.id))).all())
+            return {**ToolExecutionRead.model_validate(execution).model_dump(mode="json"), "entity_ids": [str(i) for i in ids]}
+
+    async def findings(self, investigation_id: UUID, limit=20, offset=0, entity_id: UUID | None = None):
+        async with self.session_factory() as db:
+            await self._investigation(db, investigation_id)
+            stmt = select(Entity).where(Entity.investigation_id == investigation_id)
+            if entity_id:
+                stmt = stmt.where(Entity.id == entity_id)
+            rows = list((await db.scalars(stmt.order_by(Entity.discovered_at, Entity.id).offset(offset).limit(limit + 1))).all())
+            if entity_id and not rows:
+                raise HTTPException(404, "Hallazgo no encontrado")
+            return {"findings": [EntityRead.model_validate(e).model_dump(mode="json") for e in rows[:limit]],
+                    "next_offset": offset + limit if len(rows) > limit else None}
+
+    async def close_session(self, investigation_id: UUID, session_id: UUID, action: str, summary: str | None = None):
+        async with self.session_factory() as db:
+            inv = await self._investigation(db, investigation_id, lock=True)
+            session = await self._active_session(db, inv, session_id)
+            running = (await db.scalars(select(ToolExecution.id).where(
+                ToolExecution.investigation_id == inv.id, ToolExecution.status == "running").limit(1))).first()
+            if running:
+                raise HTTPException(409, "La herramienta sigue ejecutándose; consulta su progreso antes de cerrar la sesión")
+            now = datetime.now(timezone.utc)
+            session.status = "completed" if action == "finish" else "paused"
+            session.ended_at = session.updated_at = now
+            inv.status = "completed" if action == "finish" else "paused"
+            inv.completed_at = now if action == "finish" else None
+            if summary:
+                inv.summary = summary
+                db.add(AnalysisNote(investigation_id=inv.id, session_id=session.id, author=session.client,
+                                   author_type="agent", kind="summary", title="Resumen de sesión", content=summary))
+            executions = list((await db.scalars(select(ToolExecution).where(ToolExecution.investigation_id == inv.id))).all())
+            sessions = list((await db.scalars(select(InvestigationSession).where(InvestigationSession.investigation_id == inv.id))).all())
+            entities = list((await db.scalars(select(Entity.id).where(Entity.investigation_id == inv.id))).all())
+            groups = list((await db.scalars(select(CorrelationGroup.id).where(CorrelationGroup.investigation_id == inv.id))).all())
+            inv.metrics = {**(inv.metrics or {}), "engine_used": "external", "execution_mode": "external",
+                "external_client": session.client, "external_model_declared": session.model,
+                "external_sessions": len(sessions), "external_tools_registered": len(EXTERNAL_TOOLS),
+                "tools_executed": len(executions), "entities_discovered": len(entities), "correlation_groups": len(groups),
+                "tool_execution_seconds": sum(max(0, (e.completed_at - e.started_at).total_seconds()) for e in executions if e.completed_at),
+                "execution_time_seconds": sum(max(0, ((s.ended_at or now) - s.started_at).total_seconds()) for s in sessions),
+                "elapsed_wall_seconds": max(0, (now - inv.created_at).total_seconds()),
+                **{f"config_{k}": v for k, v in run_fingerprint().items()}}
+            inv.revision += 1
+            await trace_recorder.record_event(db, investigation_id=str(inv.id), event_type="session_complete" if action == "finish" else "session_pause",
+                                            engine="external", data={"session_id": str(session.id)})
+            await db.commit()
+            self.contexts.pop(inv.id, None)
+            await self._publish(inv, "session_complete" if action == "finish" else "session_pause",
+                                "Sesión finalizada." if action == "finish" else "Sesión pausada; el expediente conserva sus resultados.")
+            return SessionRead.model_validate(session).model_dump(mode="json")
+
+    async def recover_sessions(self):
+        """A process restart cannot resume in-memory jobs; mark them explicitly."""
+        async with self.session_factory() as db:
+            now = datetime.now(timezone.utc)
+            executions = list((await db.scalars(select(ToolExecution).where(ToolExecution.engine == "external", ToolExecution.status == "running"))).all())
+            for execution in executions:
+                execution.status = "failed"
+                execution.completed_at = now
+                execution.error_summary = "Interrumpida por reinicio del servidor; la llamada puede reintentarse."
+            sessions = list((await db.scalars(select(InvestigationSession).where(InvestigationSession.status == "active"))).all())
+            for session in sessions:
+                session.status = "paused"
+                session.ended_at = session.updated_at = now
+                inv = await db.get(Investigation, session.investigation_id)
+                if inv:
+                    inv.status = "paused"
+                    inv.revision += 1
+            await db.commit()
+
+    async def shutdown(self):
+        pending = list(self.tasks.values())
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        await self.recover_sessions()
+
+
+workspace = WorkspaceService()

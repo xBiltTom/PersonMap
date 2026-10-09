@@ -171,6 +171,12 @@ export function EvaluationView() {
       tone: "text-emerald-400",
       metrics: data.summary.hybrid ?? EMPTY_METRICS,
     },
+    {
+      id: "external",
+      label: data.engine_labels?.external ?? "Agente externo (MCP)",
+      tone: "text-amber-400",
+      metrics: data.summary.external ?? EMPTY_METRICS,
+    },
   ];
 
   return (

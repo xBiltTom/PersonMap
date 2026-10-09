@@ -22,6 +22,7 @@ class TraceEntity(BaseModel):
 class ToolExecutionRead(BaseModel):
     id: UUID
     tool_name: str
+    session_id: UUID | None = None
     tool_description: Optional[str] = None
     engine: str
     engine_layer: Optional[str] = None

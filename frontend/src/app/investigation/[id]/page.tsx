@@ -12,6 +12,7 @@ import { LiveConsole } from "@/components/console/LiveConsole";
 import { InvestigationProgress } from "@/components/console/InvestigationProgress";
 import { useInvestigationStream } from "@/lib/useInvestigationStream";
 import { ReportView } from "@/components/report/ReportView";
+import { AnalysisNotebook } from "@/components/investigation/AnalysisNotebook";
 import { EntityInspector, RelationshipInspector } from "@/components/graph/EntityInspector";
 import { entityToGraphNode } from "@/lib/entityInspector";
 import { getFriendlyRelationLabel, isProvenanceEdge } from "@/lib/graphSemantics";
@@ -21,6 +22,7 @@ import {
   Network,
   Table,
   Clock,
+  BookOpen,
   Terminal,
   RefreshCw,
   Download,
@@ -145,7 +147,7 @@ export default function InvestigationDetailPage({
       cancelled = true;
       window.clearTimeout(requestTimer);
     };
-  }, [id, investigation?.completed_at, investigation?.entities?.length, investigation?.id, investigation?.status]);
+  }, [id, investigation?.completed_at, investigation?.entities?.length, investigation?.id, investigation?.status, investigation?.revision]);
 
   // Close menus on click outside
   useEffect(() => {
@@ -223,7 +225,7 @@ export default function InvestigationDetailPage({
   const handleStreamFinished = useCallback(() => {
     if (wasRunning) loadData();
   }, [wasRunning, loadData]);
-  const stream = useInvestigationStream(id, handleStreamFinished);
+  const stream = useInvestigationStream(id, handleStreamFinished, loadData);
 
   const handleExportJson = () => {
     if (!investigation) return;
@@ -304,6 +306,7 @@ export default function InvestigationDetailPage({
   const lowerTabs = [
     { id: "findings", label: `Hallazgos (${findingsCount})`, icon: Table },
     { id: "timeline", label: "Trazabilidad", icon: Clock },
+    { id: "analysis", label: `Análisis (${investigation.analysis_notes?.length ?? 0})`, icon: BookOpen },
     { id: "console", label: "Consola", icon: Terminal },
   ];
 
@@ -406,6 +409,8 @@ export default function InvestigationDetailPage({
                   <CheckCircle2 className="w-3.5 h-3.5" />
                 ) : isRunning ? (
                   <Clock className="w-3.5 h-3.5 animate-spin" />
+                ) : investigation.status === "paused" ? (
+                  <Clock className="w-3.5 h-3.5" />
                 ) : (
                   <XCircle className="w-3.5 h-3.5" />
                 )}
@@ -416,6 +421,8 @@ export default function InvestigationDetailPage({
                     ? "En análisis"
                     : isFailed
                     ? "Fallido"
+                    : investigation.status === "paused"
+                    ? "Pausado"
                     : investigation.status}
                 </span>
               </span>
@@ -646,6 +653,10 @@ export default function InvestigationDetailPage({
                   onInspectNode={inspectNode}
                   onViewInMap={handleViewInMap}
                 />
+              )}
+
+              {activeTab === "analysis" && (
+                <AnalysisNotebook investigation={investigation} onSaved={loadData} />
               )}
 
               {activeTab === "console" && (

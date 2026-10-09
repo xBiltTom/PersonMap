@@ -9,12 +9,13 @@ from app.models.investigation import Investigation
 router = APIRouter()
 
 # Etiquetas de los tres brazos experimentales, en el orden en que se presentan.
-ENGINES = ("rules", "agentic", "hybrid")
+ENGINES = ("rules", "agentic", "hybrid", "external")
 
 ENGINE_LABELS = {
     "rules": "Motor por Reglas",
     "agentic": "Agente IA Autónomo",
     "hybrid": "Híbrido (Reglas + IA)",
+    "external": "Agente externo (MCP)",
 }
 
 
@@ -30,6 +31,8 @@ def engine_of(investigation: Investigation) -> str:
     `ai_enhanced`, que ya registraba si había LLM en el momento de ejecutar.
     """
     metrics = investigation.metrics or {}
+    if getattr(investigation, "execution_mode", "internal") == "external":
+        return "external"
     recorded = metrics.get("engine_used")
     if recorded in ENGINES:
         return recorded
@@ -125,9 +128,9 @@ async def get_scientific_comparison(db: AsyncSession = Depends(get_db)):
 \centering
 \caption{{Comparación Experimental: OSINT por Reglas vs. Agéntico con IA vs. Híbrido}}
 \label{{tab:osint_comparison}}
-\begin{{tabular}}{{|l|c|c|c|}}
+\begin{{tabular}}{{|l|c|c|c|c|}}
 \hline
-\textbf{{Métrica de Evaluación}} & \textbf{{Motor por Reglas}} & \textbf{{Agente IA Autónomo}} & \textbf{{Híbrido (Reglas + IA)}} \\ \hline
+\textbf{{Métrica de Evaluación}} & \textbf{{Motor por Reglas}} & \textbf{{Agente IA Autónomo}} & \textbf{{Híbrido (Reglas + IA)}} & \textbf{{Agente MCP}} \\ \hline
 {row("Muestras analizadas", "count")}
 {row("Tiempo medio de ejecución (s)", "avg_execution_time", "s")}
 {row("Entidades descubiertas (media)", "avg_entities")}
@@ -143,6 +146,7 @@ async def get_scientific_comparison(db: AsyncSession = Depends(get_db)):
             "rule_based": stats["rules"],
             "agentic": stats["agentic"],
             "hybrid": stats["hybrid"],
+            "external": stats["external"],
         },
         "engine_labels": ENGINE_LABELS,
         "hybrid_contribution": hybrid_contribution,

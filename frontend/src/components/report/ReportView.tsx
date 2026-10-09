@@ -5,6 +5,7 @@ import { FileCheck, Printer, KeyRound, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { AwarenessSurveyForm } from "@/components/report/AwarenessSurveyForm";
 import { Markdown } from "@/components/report/Markdown";
+import { AnalysisNotebook } from "@/components/investigation/AnalysisNotebook";
 
 export function ReportView({ investigation }: { investigation: InvestigationData }) {
   const handlePrint = () => {
@@ -82,6 +83,8 @@ export function ReportView({ investigation }: { investigation: InvestigationData
           </div>
         )}
       </div>
+
+      {(investigation.analysis_notes?.length ?? 0) > 0 && <div className="panel-card p-6"><AnalysisNotebook investigation={investigation} readOnly /></div>}
 
       <PasswordInvitation
         conBrechas={(investigation.entities || []).some(

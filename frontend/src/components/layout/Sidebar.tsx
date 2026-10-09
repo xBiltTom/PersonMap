@@ -226,6 +226,8 @@ export function Sidebar() {
                       ? "Completado"
                       : activeInvestigation?.status === "running"
                       ? "En análisis"
+                      : activeInvestigation?.status === "paused"
+                      ? "Pausado"
                       : activeInvestigation?.status || "Activo"}
                   </span>
                 </div>

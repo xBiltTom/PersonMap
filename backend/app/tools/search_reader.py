@@ -56,17 +56,22 @@ async def read_public_page(url: str) -> dict:
                                 return {"status": "too_large"}
                         text = bytes(body).decode(response.encoding or "utf-8", errors="replace")
                         title = ""
+                        links = []
                         if "html" in content_type:
                             soup = BeautifulSoup(text, "html.parser")
                             # A login page is not public evidence from the requested article.
                             if soup.select_one('input[type="password"]'):
                                 return {"status": "login_required"}
                             title = soup.title.get_text(" ", strip=True) if soup.title else ""
+                            for anchor in soup.select("a[href]"):
+                                linked = _public_page_url(urljoin(url, anchor.get("href", "")))
+                                if linked and linked not in links and len(links) < 150:
+                                    links.append(linked)
                             for tag in soup.select("script, style, nav, footer, header, noscript, form"):
                                 tag.decompose()
                             text = soup.get_text(" ", strip=True)
                         return {"status": "ok" if len(text.strip()) >= 80 else "thin_content",
-                                "title": title, "text": text[:MAX_TEXT], "final_url": url, "engine": "native"}
+                                "title": title, "text": text[:MAX_TEXT], "final_url": url, "engine": "native", "links": links}
                 return {"status": "redirect_limit"}
     except (httpx.HTTPError, httpx.InvalidURL, TimeoutError, ValueError):
         return {"status": "request_error"}

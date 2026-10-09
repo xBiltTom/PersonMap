@@ -20,6 +20,7 @@ from app.schemas.investigation import (
     InvestigationRead,
 )
 from app.schemas.trace import InvestigationTraceResponse
+from app.services.workspace import workspace
 
 router = APIRouter()
 
@@ -33,41 +34,9 @@ async def create_investigation(
     Creates and launches a new OSINT investigation for a person.
     At least ONE identifier is required in target (name, email, username, phone, or dni).
     """
-    # 1. Create Target
-    target = Target(
-        full_name=payload.target.full_name,
-        email=payload.target.email,
-        username=payload.target.username,
-        phone=payload.target.phone,
-        dni=payload.target.dni,
-        university=payload.target.university,
-        description=payload.target.description,
-        extra_data={
-            **(payload.target.extra_data or {}),
-            # Se guarda con el objetivo, no en una columna nueva: `extra_data`
-            # es JSONB y ya existe, así que no hace falta migración para una
-            # bandera que además pertenece al encargo concreto.
-            "self_consent": bool(payload.self_consent),
-        },
-    )
-    db.add(target)
-    await db.flush()
-
-    # 2. Create Investigation
-    investigation = Investigation(
-        target_id=target.id,
-        strategy=payload.strategy,
-        status="pending",
-    )
-    db.add(investigation)
-    await db.commit()
-    await db.refresh(investigation)
-    await db.refresh(target)
-
-    # 3. Launch background investigation task asynchronously
-    asyncio.create_task(orchestrator.run_investigation(investigation.id))
-
-    investigation.target = target
+    investigation = await workspace.create(payload, db)
+    if payload.execution_mode == "internal":
+        asyncio.create_task(orchestrator.run_investigation(investigation.id))
     return investigation
 
 
@@ -102,6 +71,8 @@ async def get_investigation(
             selectinload(Investigation.target),
             selectinload(Investigation.entities),
             selectinload(Investigation.correlation_groups),
+            selectinload(Investigation.analysis_notes),
+            selectinload(Investigation.sessions),
         )
     )
     result = await db.execute(stmt)
@@ -170,5 +141,6 @@ async def delete_investigation(
     # El bus de eventos guarda el historial de logs en memoria; sin esto quedaría
     # retenido para una investigación que ya no existe.
     await event_bus.clear(str(id))
+    await event_bus.publish("registry", {"type": "investigation_deleted", "investigation_id": str(id)})
 
     return {"status": "success", "message": "Investigación eliminada"}

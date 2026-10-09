@@ -127,6 +127,7 @@ async def persist_findings(
     target: Target,
     db: AsyncSession,
     default_source_tool: str = "osint_engine",
+    existing_entities: Optional[List[Entity]] = None,
 ) -> List[Entity]:
     """
     Deduplica y persiste observaciones como entidades.
@@ -136,15 +137,32 @@ async def persist_findings(
     escribir después los clusters y las métricas.
     """
     entities: List[Entity] = []
+    existing = {entity_dedupe_key(entity): entity for entity in (existing_entities or [])}
 
     for f in dedupe_findings(findings):
+        current = existing.get(finding_dedupe_key(f))
+        if current is not None:
+            previous = ToolFinding(
+                entity_type=current.entity_type, platform=current.platform, value=current.value,
+                display_name=current.display_name, metadata_info=dict(current.metadata_info or {}),
+                evidence_urls=(current.metadata_info or {}).get("evidence_urls", []), confidence=0,
+            )
+            old_tools = (current.metadata_info or {}).get("source_tools", [current.source_tool])
+            f = dedupe_findings([previous, f])[0]
+            f.metadata_info["source_tools"] = list(dict.fromkeys([*old_tools, *f.metadata_info.get("source_tools", [])]))
         metadata = dict(f.metadata_info or {})
         # Las herramientas ya recogen URLs de evidencia, pero Entity no tenía
         # una columna específica para ellas. Persistirlas dentro del metadata
         # evita una migración y permite que el inspector separe la fuente del
         # recurso observado. Solo se añaden cuando la herramienta las entregó.
-        if f.evidence_urls and "evidence_urls" not in metadata:
-            metadata["evidence_urls"] = list(dict.fromkeys(f.evidence_urls))
+        if f.evidence_urls:
+            metadata["evidence_urls"] = list(dict.fromkeys([*metadata.get("evidence_urls", []), *f.evidence_urls]))
+
+        if current is not None:
+            current.metadata_info = metadata
+            current.display_name = (f.display_name or current.display_name or f.value)[:255]
+            entities.append(current)
+            continue
 
         entity = Entity(
             investigation_id=investigation_id,
@@ -157,6 +175,7 @@ async def persist_findings(
         )
         db.add(entity)
         entities.append(entity)
+        existing[finding_dedupe_key(f)] = entity
 
     await db.flush()
     return entities

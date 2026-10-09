@@ -22,6 +22,8 @@ class ToolExecution(Base):
         index=True,
     )
     tool_name = Column(String(100), nullable=False)
+    session_id = Column(UUID(as_uuid=True), ForeignKey("investigation_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    input_fingerprint = Column(String(64), nullable=True, index=True)
     tool_description = Column(String(255), nullable=True)
     engine = Column(String(50), nullable=False)
     engine_layer = Column(String(50), nullable=True)

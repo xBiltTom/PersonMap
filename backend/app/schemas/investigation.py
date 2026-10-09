@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict
 from app.schemas.target import TargetCreate, TargetRead
 from app.schemas.entity import EntityRead
 from app.schemas.identity import CorrelationGroupRead
+from app.schemas.workspace import NoteRead, SessionRead
 
 
 # Estrategias de orquestación seleccionables. `hybrid` se añadió en la Fase 3
@@ -26,6 +27,7 @@ class InvestigationCreate(BaseModel):
     # investigación caía silenciosamente al motor de reglas, contaminando la
     # muestra del artículo con una condición experimental equivocada.
     strategy: Strategy = "auto"
+    execution_mode: Literal["internal", "external"] = "internal"
 
     # Consentimiento explícito para las fuentes que envían a un tercero la
     # identidad de a quién se investiga (hoy, los registros de infostealer de
@@ -39,6 +41,8 @@ class InvestigationRead(BaseModel):
     id: UUID
     target_id: UUID
     strategy: str
+    execution_mode: str = "internal"
+    revision: int = 0
     status: str
     summary: Optional[str] = None
     metrics: Dict[str, Any] = {}
@@ -52,3 +56,5 @@ class InvestigationRead(BaseModel):
 class InvestigationDetail(InvestigationRead):
     entities: List[EntityRead] = []
     correlation_groups: List[CorrelationGroupRead] = []
+    analysis_notes: List[NoteRead] = []
+    sessions: List[SessionRead] = []
