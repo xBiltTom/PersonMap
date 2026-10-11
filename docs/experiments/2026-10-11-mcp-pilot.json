@@ -1,0 +1,206 @@
+{
+  "date": "2026-10-11",
+  "code": "6565506eae799df006707d7d01cd5d6e33302116",
+  "seed_identical": true,
+  "config_identical": true,
+  "protocol": "2026-10-11-protocol.md",
+  "conditions": {
+    "rules": {
+      "investigation_id": "f3e7cc69-ff1f-486b-a7ca-634065e5a6ec",
+      "status": "completed",
+      "created_at": "2026-10-11T22:11:19.466900Z",
+      "completed_at": "2026-10-11T22:13:36.586518Z",
+      "end_to_end_seconds": 137.11961793899536,
+      "recorded_execution_or_session_seconds": 135.93,
+      "entities": 17,
+      "unique_reference_hits": 4,
+      "reference_hits": {
+        "github": true,
+        "linkedin": true,
+        "orcid": true,
+        "disqus": true
+      },
+      "tools_new_phase": 38,
+      "tools_including_baseline": 38,
+      "failed_tools_new_phase": 0,
+      "tool_active_union_seconds_new_phase": 134.80738806724548,
+      "tool_duration_sum_seconds_new_phase": 1556.2764735221863,
+      "logical_search_queries_new_phase": 5,
+      "search_provider_attempts": {
+        "tavily": 5,
+        "duckduckgo": 4
+      },
+      "coverage": {
+        "biltonjr": 500,
+        "xbilttom": 500,
+        "bjnovoaar": 500
+      },
+      "notes": 0,
+      "assessments": {},
+      "generic_linkedin_directory_observations": 3,
+      "commercial_numeric_noise_observations": 0,
+      "domain_entities": 0,
+      "osint_tools_new_phase": {
+        "username_finder": 3,
+        "keybase_resolver": 3,
+        "wikipedia_edits": 3,
+        "email_checker": 2,
+        "email_enumerator": 2,
+        "gravatar_deep": 2,
+        "google_account_osint": 3,
+        "github_deep_scanner": 3,
+        "search_dorker": 3,
+        "academic_finder": 2,
+        "dni_lookup": 1,
+        "breach_checker": 2,
+        "infostealer_checker": 3,
+        "social_url_extractor": 3,
+        "social_verifier": 3
+      },
+      "tool_timing_caveat": "Tool completion timestamps are assigned after round asyncio.gather; summed durations include round-barrier waiting, not individual tool runtimes."
+    },
+    "agent": {
+      "investigation_id": "024a4528-b9e4-46e5-b4ba-dcca0693c8f5",
+      "status": "completed",
+      "created_at": "2026-10-11T22:14:23.990974Z",
+      "completed_at": "2026-10-11T22:19:46.154362Z",
+      "end_to_end_seconds": 322.1633880138397,
+      "recorded_execution_or_session_seconds": 319.298018,
+      "entities": 13,
+      "unique_reference_hits": 4,
+      "reference_hits": {
+        "github": true,
+        "linkedin": true,
+        "orcid": true,
+        "disqus": true
+      },
+      "tools_new_phase": 14,
+      "tools_including_baseline": 14,
+      "failed_tools_new_phase": 0,
+      "tool_active_union_seconds_new_phase": 125.13593602180481,
+      "tool_duration_sum_seconds_new_phase": 145.7333962917328,
+      "logical_search_queries_new_phase": 3,
+      "search_provider_attempts": {
+        "tavily": 3,
+        "duckduckgo": 2
+      },
+      "coverage": {
+        "biltonjr": 500,
+        "xbilttom": 500,
+        "bjnovoaar": 500
+      },
+      "notes": 3,
+      "assessments": {
+        "inconclusive": 1
+      },
+      "generic_linkedin_directory_observations": 3,
+      "commercial_numeric_noise_observations": 0,
+      "domain_entities": 0,
+      "osint_tools_new_phase": {
+        "username_finder": 2,
+        "github_deep_scanner": 1,
+        "search_dorker": 2,
+        "academic_finder": 1,
+        "email_checker": 1,
+        "gravatar_deep": 1,
+        "social_verifier": 2,
+        "email_enumerator": 1,
+        "breach_checker": 1,
+        "google_account_osint": 1,
+        "infostealer_checker": 1
+      },
+      "mcp_calls": 24,
+      "mcp_call_duration_sum_seconds": 2.481348991394043,
+      "mcp_call_median_seconds": 0.04329848289489746,
+      "mcp_errors": 0,
+      "sessions": [
+        "163a0721-eeb2-47b5-a82e-bb8f5b756e03"
+      ]
+    },
+    "review": {
+      "investigation_id": "f4a0d01b-d1e1-4834-9467-9696c6ac47b9",
+      "status": "completed",
+      "created_at": "2026-10-11T22:20:14.127623Z",
+      "completed_at": "2026-10-11T22:24:22.909510Z",
+      "end_to_end_seconds": 248.78188681602478,
+      "recorded_execution_or_session_seconds": 242.094897,
+      "entities": 20,
+      "unique_reference_hits": 4,
+      "reference_hits": {
+        "github": true,
+        "linkedin": true,
+        "orcid": true,
+        "disqus": true
+      },
+      "tools_new_phase": 3,
+      "tools_including_baseline": 41,
+      "failed_tools_new_phase": 1,
+      "tool_active_union_seconds_new_phase": 3.5991950035095215,
+      "tool_duration_sum_seconds_new_phase": 5.864914894104004,
+      "logical_search_queries_new_phase": 2,
+      "search_provider_attempts": {
+        "tavily": 2,
+        "duckduckgo": 2
+      },
+      "coverage": {
+        "biltonjr": 500,
+        "xbilttom": 500,
+        "bjnovoaar": 500
+      },
+      "notes": 4,
+      "assessments": {
+        "inconclusive": 2
+      },
+      "generic_linkedin_directory_observations": 3,
+      "commercial_numeric_noise_observations": 0,
+      "domain_entities": 0,
+      "osint_tools_new_phase": {
+        "public_page_reader": 2,
+        "search_dorker": 1
+      },
+      "mcp_calls": 17,
+      "mcp_call_duration_sum_seconds": 1.1177222728729248,
+      "mcp_call_median_seconds": 0.031006336212158203,
+      "mcp_errors": 0,
+      "sessions": [
+        "e0fd7043-25d7-4d54-98ab-170fbfbf04c1"
+      ],
+      "combined_end_to_end_seconds": 385.90150475502014,
+      "combined_search_queries": 7,
+      "new_entities": 3
+    }
+  },
+  "reader_findings": [
+    {
+      "source_url": "https://github.com/xBiltTom",
+      "text_characters": 1302,
+      "links": 89,
+      "read_status": "ok"
+    },
+    {
+      "source_url": "https://orcid.org/0009-0002-0165-5976",
+      "text_characters": 5,
+      "links": 0,
+      "read_status": "thin_content"
+    },
+    {
+      "source_url": "https://snapchat.com/@biltonjr",
+      "text_characters": 1058,
+      "links": 43,
+      "read_status": "ok"
+    }
+  ],
+  "review_failed_reader_reason": "unsupported_content (structured ORCID endpoint)",
+  "baseline_preserved": true,
+  "limitations": [
+    "single own case; one run per condition",
+    "unblinded and self-evaluated",
+    "fixed order; possible cache/quota/source availability effects",
+    "agent executed official MCP Python SDK through terminal; command preparation and communication included",
+    "review reused rules prefix; larger search budget and additional reader capability",
+    "known reference recovery is not total recall or overall precision",
+    "tool completions are not guarantees that every provider succeeded",
+    "three additional web-page snapshots are not new confirmed identities",
+    "rules tool completion timestamps include round-barrier waiting; their duration sum is not a compute/network cost measurement"
+  ]
+}
