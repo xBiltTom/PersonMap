@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from app.tools.dni_public import public_source_url
 
 
@@ -110,6 +110,36 @@ class ToolInputs(BaseModel):
     _public_urls = field_validator("candidate_urls")(NoteCreate.public_urls.__func__)
 
 
+class PivotPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    question: str = Field(min_length=1, max_length=1000)
+    expected_signal: str = Field(min_length=1, max_length=1000)
+    stop_condition: str = Field(min_length=1, max_length=1000)
+
+
+class CorrelationAssessmentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    entity_ids: list[UUID] = Field(min_length=2, max_length=20)
+    verdict: Literal["candidate", "supported", "refuted", "inconclusive"]
+    reasoning: str = Field(min_length=1, max_length=10000)
+    supporting_urls: list[str] = Field(default_factory=list, max_length=15)
+    contradicting_urls: list[str] = Field(default_factory=list, max_length=15)
+    execution_ids: list[UUID] = Field(default_factory=list, max_length=30)
+    supersedes_note_id: UUID | None = None
+    _supporting = field_validator("supporting_urls")(NoteCreate.public_urls.__func__)
+    _contradicting = field_validator("contradicting_urls")(NoteCreate.public_urls.__func__)
+
+    @model_validator(mode="after")
+    def evidence_contract(self):
+        if len(set(self.entity_ids)) != len(self.entity_ids):
+            raise ValueError("Selecciona entidades distintas")
+        if self.verdict == "supported" and not self.supporting_urls:
+            raise ValueError("Una hipótesis respaldada requiere fuentes a favor")
+        if self.verdict == "refuted" and not self.contradicting_urls:
+            raise ValueError("Una hipótesis refutada requiere fuentes en contra")
+        return self
+
+
 class ToolRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     tool_name: str = Field(min_length=1, max_length=100)
@@ -117,3 +147,12 @@ class ToolRequest(BaseModel):
     rationale: str = Field(default="", max_length=1000)
     source_entity_ids: list[UUID] = Field(default_factory=list, max_length=30)
     force: bool = False
+    pivot: PivotPlan | None = None
+
+    @model_validator(mode="after")
+    def pivot_requires_provenance(self):
+        if (self.source_entity_ids or self.pivot) and not self.rationale:
+            raise ValueError("Un pivote requiere una justificación")
+        if self.pivot and not self.source_entity_ids:
+            raise ValueError("Un pivote requiere entidades de origen")
+        return self

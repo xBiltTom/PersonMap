@@ -26,13 +26,14 @@ from app.models.entity_observation import EntityObservation
 from app.models.investigation import Investigation
 from app.models.investigation_session import InvestigationSession
 from app.models.tool_execution import ToolExecution
+from app.models.analysis_note import AnalysisNote
 from app.models.relationship import Relationship
 from app.models.correlation_group import CorrelationGroup
 from app.core.fingerprint import run_fingerprint
 from fastapi import HTTPException
 from app.schemas.investigation import InvestigationCreate
 from app.schemas.target import TargetCreate
-from app.schemas.workspace import NoteCreate, SearchQuery, SessionCreate, ToolInputs, ToolRequest
+from app.schemas.workspace import CorrelationAssessmentCreate, NoteCreate, PivotPlan, SearchQuery, SessionCreate, ToolInputs, ToolRequest
 from app.services.workspace import EXTERNAL_TOOLS, WorkspaceService, call_fingerprint
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
@@ -191,6 +192,7 @@ async def test_review_import_preserves_baseline_and_graph(isolated_workspace):
     assert review_id != source_id and created["coverage_known"]
     assert created["imported_findings"] == 2 and created["imported_executions"] == 1
     context = await service.context(review_id)
+    assert context["execution_policy"]["new_execution_requires_pivot"] is True
     assert context["review_baseline"]["metrics"] == baseline_metrics
     assert context["execution_policy"]["search_queries_remaining"] == max(0, min(settings.tavily_max_queries, settings.mcp_review_max_queries))
     async with service.session_factory() as db:
@@ -211,12 +213,55 @@ async def test_review_import_preserves_baseline_and_graph(isolated_workspace):
         assert set(group.entity_ids) == {str(value) for value in ids}
         assert group.evidence["execution_id"] == str(execution.id)
     session = await service.open_session(review_id, SessionCreate(client="review-fixture"))
+    candidate = await service.add_assessment(review_id, uuid.UUID(session["id"]), CorrelationAssessmentCreate(
+        entity_ids=list(ids), verdict="candidate", reasoning="A possible link needs a reciprocal source"))
+    supported = await service.add_assessment(review_id, uuid.UUID(session["id"]), CorrelationAssessmentCreate(
+        entity_ids=list(ids), verdict="supported", reasoning="The profile publishes a direct link",
+        supporting_urls=["https://github.com/legacy"], supersedes_note_id=uuid.UUID(candidate["id"])))
+    assert candidate["id"] != supported["id"]
+    assert supported["details"]["supersedes_note_id"] == candidate["id"]
+    async with service.session_factory() as db:
+        prior = await db.get(AnalysisNote, uuid.UUID(candidate["id"]))
+        assert prior.details["verdict"] == "candidate"
+        assert (await db.scalars(select(Relationship).where(Relationship.investigation_id == review_id))).one().id == edge.id
+        assert (await db.scalars(select(CorrelationGroup).where(CorrelationGroup.investigation_id == review_id))).one().id == group.id
+    updates = await service.updates(review_id, 0)
+    assert any(change["kind"] == "note" and change["data"].get("assessment", {}).get("verdict") == "supported"
+               for change in updates["changes"])
+    with pytest.raises(HTTPException) as exc:
+        await service.add_assessment(review_id, uuid.UUID(session["id"]), CorrelationAssessmentCreate(
+            entity_ids=[first_id, second_id], verdict="candidate", reasoning="Foreign references"))
+    assert exc.value.status_code == 422
+    with pytest.raises(HTTPException) as exc:
+        await service.add_assessment(review_id, uuid.UUID(session["id"]), CorrelationAssessmentCreate(
+            entity_ids=list(ids), verdict="inconclusive", reasoning="Invalid predecessor", supersedes_note_id=uuid.uuid4()))
+    assert exc.value.status_code == 422
     reused = await service.submit_tool(review_id, uuid.UUID(session["id"]),
         ToolRequest(tool_name="username_finder", inputs=ToolInputs(username="legacy", scan_mode="deep")))
     assert reused["reused"] and reused["engine"] == "rules"
     with pytest.raises(HTTPException) as exc:
         await service.submit_tool(review_id, uuid.UUID(session["id"]), ToolRequest(tool_name="username_finder"))
     assert exc.value.status_code == 409
+    with pytest.raises(HTTPException) as exc:
+        await service.submit_tool(review_id, uuid.UUID(session["id"]), ToolRequest(tool_name="username_finder",
+            inputs=ToolInputs(username="new_pivot"), force=True))
+    assert exc.value.status_code == 422
+    plan = PivotPlan(question="Does a second profile publish the same link?", expected_signal="A direct link",
+                     stop_condition="Stop after this profile")
+    async def reviewed_lookup(context):
+        return []
+    from unittest.mock import AsyncMock
+    original_tool = EXTERNAL_TOOLS["username_finder"]
+    from pytest import MonkeyPatch
+    with MonkeyPatch.context() as patch:
+        lookup = AsyncMock(side_effect=reviewed_lookup)
+        patch.setattr(original_tool, "execute", lookup)
+        planned = await service.submit_tool(review_id, uuid.UUID(session["id"]), ToolRequest(tool_name="username_finder",
+            inputs=ToolInputs(username="new_pivot"), source_entity_ids=[observation.entity_id], rationale="Follow observed alias", pivot=plan))
+        await service.tasks[uuid.UUID(planned["id"])]
+        lookup.assert_awaited_once()
+        recorded = await service.execution(review_id, uuid.UUID(planned["id"]))
+        assert recorded["input_summary"]["pivot"] == plan.model_dump()
     async with service.session_factory() as db:
         source = await db.get(Investigation, source_id)
         source.metrics = {"engine_used": "rules"}
@@ -228,8 +273,8 @@ async def test_review_import_preserves_baseline_and_graph(isolated_workspace):
     await service.close_session(review_id, uuid.UUID(session["id"]), "finish")
     async with service.session_factory() as db:
         review = await db.get(Investigation, review_id)
-        assert review.metrics["tools_executed"] == 0
-        assert review.metrics["tool_execution_seconds"] == 0
+        assert review.metrics["tools_executed"] == 1
+        assert review.metrics["tool_execution_seconds"] >= 0
         assert review.metrics["new_findings"] == 0
     with pytest.raises(HTTPException) as exc:
         await service.create_review(review_id)

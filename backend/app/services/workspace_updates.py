@@ -111,7 +111,10 @@ class WorkspaceUpdates:
                 for row in rows:
                     data = compact_finding(row) if kind == "finding" else schema.model_validate(row).model_dump(mode="json")
                     if kind == "note":
-                        data.pop("details", None)
+                        details = data.pop("details", {})
+                        if details.get("record_type") == "correlation_assessment":
+                            data["assessment"] = {key: details.get(key) for key in
+                                ("verdict", "supporting_urls", "contradicting_urls", "supersedes_note_id")}
                         data["content_available"] = True
                         data["content"] = data["content"][:1500]
                     records[kind, str(row.id)] = data

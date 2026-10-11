@@ -35,7 +35,7 @@ from app.models.tool_execution import ToolExecution
 from app.schemas.entity import EntityRead
 from app.schemas.investigation import InvestigationCreate, InvestigationDetail, InvestigationRead
 from app.schemas.trace import ToolExecutionRead
-from app.schemas.workspace import NoteCreate, NoteRead, SessionCreate, SessionRead, ToolRequest
+from app.schemas.workspace import CorrelationAssessmentCreate, NoteCreate, NoteRead, SessionCreate, SessionRead, ToolRequest
 from app.tools.base import TargetContext, ToolFinding
 from app.tools.public_page_reader import PublicPageReaderTool
 from app.tools.registry import tool_registry
@@ -278,6 +278,8 @@ class WorkspaceService(WorkspaceUpdates):
                     "sessions": [SessionRead.model_validate(s).model_dump(mode="json") for s in sessions],
                     "total_findings": len(entities),
                     "execution_policy": {"max_parallel_tools": parallel_limit(),
+                        "new_execution_requires_pivot": bool((inv.metrics or {}).get("review_baseline")),
+                        "pivot_fields": ["question", "expected_signal", "stop_condition"],
                         "active_tools": active_tools,
                         "username_default_mode": "fast", "fast_sites": max(1, settings.mcp_username_fast_sites),
                         "deep_sites": max(1, settings.username_scan_max_sites),
@@ -367,6 +369,26 @@ class WorkspaceService(WorkspaceUpdates):
             await self._publish(inv, "analysis_note", f"Análisis guardado: {note.title}.")
             return NoteRead.model_validate(note).model_dump(mode="json")
 
+    async def add_assessment(self, investigation_id: UUID, session_id: UUID, payload: CorrelationAssessmentCreate):
+        # Assessments are append-only authored hypotheses, never graph/identity merges.
+        async with self.session_factory() as db:
+            inv = await self._investigation(db, investigation_id)
+            await self._active_session(db, inv, session_id)
+            await self._validate_references(db, inv.id, payload.entity_ids, payload.execution_ids)
+            if payload.supersedes_note_id:
+                previous = await db.get(AnalysisNote, payload.supersedes_note_id)
+                if (not previous or previous.investigation_id != inv.id
+                        or previous.details.get("record_type") != "correlation_assessment"):
+                    raise HTTPException(422, "La revisión debe referenciar una evaluación de este expediente")
+                if set(previous.entity_ids) != {str(value) for value in payload.entity_ids}:
+                    raise HTTPException(422, "La revisión debe evaluar las mismas entidades")
+        label = {"candidate": "candidata", "supported": "respaldada", "refuted": "refutada", "inconclusive": "inconclusa"}[payload.verdict]
+        return await self.add_note(investigation_id, NoteCreate(kind="hypothesis",
+            title=f"Evaluación de correlación: {label}", content=payload.reasoning,
+            entity_ids=payload.entity_ids, execution_ids=payload.execution_ids,
+            evidence_urls=[*payload.supporting_urls, *payload.contradicting_urls],
+            details={"record_type": "correlation_assessment", **payload.model_dump(mode="json", exclude={"reasoning", "entity_ids", "execution_ids"})}), session_id)
+
     async def submit_tool(self, investigation_id: UUID, session_id: UUID, payload: ToolRequest) -> dict:
         tool = EXTERNAL_TOOLS.get(payload.tool_name)
         if not tool:
@@ -429,6 +451,8 @@ class WorkspaceService(WorkspaceUpdates):
                     ToolExecution.engine != "external", ToolExecution.status == "completed").limit(1))).first()
                 if inherited and not supplied:
                     raise HTTPException(409, "El barrido ya ejecutó esta herramienta; selecciona entradas para una subbúsqueda o usa force")
+            if (inv.metrics or {}).get("review_baseline") and not payload.pivot:
+                raise HTTPException(422, "Una nueva subbúsqueda de revisión requiere pivot, entidades de origen y justificación")
             running = list((await db.scalars(select(ToolExecution).where(
                 ToolExecution.investigation_id == inv.id, ToolExecution.status == "running"))).all())
             if len(running) >= parallel_limit():
@@ -441,6 +465,8 @@ class WorkspaceService(WorkspaceUpdates):
             execution.input_fingerprint = fingerprint
             execution.input_summary = {**execution.input_summary, "rationale": payload.rationale,
                                        "source_entity_ids": [str(i) for i in payload.source_entity_ids]}
+            if payload.pivot:
+                execution.input_summary["pivot"] = payload.pivot.model_dump()
             if tool.name == "search_dorker" and payload.inputs.queries:
                 execution.input_summary["queries"] = context.extra["search_queries"]
             if tool.name == "username_finder":

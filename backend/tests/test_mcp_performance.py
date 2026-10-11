@@ -2,6 +2,7 @@
 import asyncio
 import json
 from types import SimpleNamespace
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -9,7 +10,7 @@ import respx
 from pydantic import ValidationError
 
 from app.core.config import settings
-from app.schemas.workspace import SearchQuery, ToolInputs
+from app.schemas.workspace import CorrelationAssessmentCreate, PivotPlan, SearchQuery, ToolInputs, ToolRequest
 from app.services.workspace import call_fingerprint, merge_runtime
 from app.tools.base import TargetContext, ToolFinding
 from app.tools.public_page_reader import PublicPageReaderTool
@@ -17,6 +18,30 @@ from app.tools.search_dorker import SearchBackend, SearchDorkerTool, SearchResul
 from app.tools.username_finder import UsernameFinderTool
 from app.core.runtime import durable_runtime, search_limit
 from app.engine.pivot_rules import extract_and_apply_pivots
+
+
+def test_pivot_requires_origin_and_reason():
+    plan = PivotPlan(question="Is this link reciprocal?", expected_signal="Profile links back", stop_condition="No link after one page")
+    for kwargs in ({"pivot": plan}, {"source_entity_ids": [uuid4()]}, {"pivot": plan, "rationale": "Inspect published link"}):
+        with pytest.raises(ValidationError):
+            ToolRequest(tool_name="public_page_reader", **kwargs)
+    request = ToolRequest(tool_name="public_page_reader", pivot=plan, rationale="Inspect link", source_entity_ids=[uuid4()])
+    assert request.pivot.question == plan.question
+
+
+def test_assessment_requires_distinct_entities_and_directional_sources():
+    ids = [uuid4(), uuid4()]
+    for verdict in ("supported", "refuted"):
+        with pytest.raises(ValidationError):
+            CorrelationAssessmentCreate(entity_ids=ids, verdict=verdict, reasoning="Claim")
+    with pytest.raises(ValidationError):
+        CorrelationAssessmentCreate(entity_ids=[ids[0], ids[0]], verdict="candidate", reasoning="Candidate")
+    with pytest.raises(ValidationError):
+        CorrelationAssessmentCreate(entity_ids=ids, verdict="supported", reasoning="Claim",
+            supporting_urls=["http://localhost/private"])
+    assessment = CorrelationAssessmentCreate(entity_ids=ids, verdict="supported", reasoning="Direct published link",
+        supporting_urls=["https://example.test/profile"])
+    assert assessment.verdict == "supported"
 
 
 def test_review_budget_and_runtime_are_bounded_and_serializable():

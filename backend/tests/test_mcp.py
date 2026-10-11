@@ -52,6 +52,7 @@ async def test_http_mcp_requires_token_and_exposes_registry(mcp_app):
             assert tools["add_analysis_note"]["annotations"]["readOnlyHint"] is False
             assert tools["get_finding"]["annotations"]["readOnlyHint"] is True
             assert tools["get_workspace_updates"]["annotations"]["readOnlyHint"] is True
+            assert tools["add_correlation_assessment"]["annotations"]["readOnlyHint"] is False
             assert tools["create_investigation"]["outputSchema"]["type"] == "object"
 
 

@@ -126,6 +126,24 @@ La traza duradera conserva herramientas, observaciones, sesiones y notas; el pro
 
 ## Evaluación
 
+### Pivotes y evaluaciones de correlación
+
+Las **ejecuciones nuevas** sobre una revisión importada requieren `rationale`, `source_entity_ids` y un plan `pivot`; también los refrescos con `force`. Las ejecuciones idénticas reutilizadas conservan el registro original. En expedientes externos creados desde cero el plan es opcional, pero si se proporciona necesita entidades de origen y una justificación.
+
+```json
+{
+  "question": "¿El portafolio enlaza de vuelta al perfil observado?",
+  "expected_signal": "Un enlace público al mismo perfil",
+  "stop_condition": "Detener esta vía tras revisar la página y sus enlaces directos"
+}
+```
+
+El plan se guarda en la ejecución y se muestra en la trazabilidad. El servidor valida la estructura y que los hallazgos de origen pertenezcan al expediente; evaluar la evidencia y cumplir la condición de parada corresponde al agente. No verifica automáticamente que un alias nuevo sea una deducción correcta.
+
+`add_correlation_assessment(investigation_id, session_id, assessment)` registra una hipótesis estructurada con al menos dos entidades distintas, `reasoning`, `verdict` y fuentes `supporting_urls` / `contradicting_urls`. Los veredictos admitidos son `candidate`, `supported`, `refuted` e `inconclusive`. `supported` exige fuentes a favor y `refuted` fuentes en contra. `execution_ids` permite enlazar las herramientas utilizadas. Las referencias deben pertenecer al mismo expediente.
+
+Para revisar una evaluación, proporciona `supersedes_note_id` y las mismas entidades: se crea otra nota conservando intactas la anterior y su autoría. Las evaluaciones aparecen como hipótesis en **Análisis**, con el veredicto y sus detalles; también llegan en la lectura incremental. Son interpretaciones del agente y no modifican automáticamente relaciones, grupos ni atribuciones de identidad. Las fuentes se validan como URLs públicas; su pertinencia y contenido requieren revisión.
+
 ### Revisar un barrido tradicional
 
 `create_review_investigation(source_investigation_id)` copia un expediente interno **terminado por reglas** a uno externo nuevo. Conserva entidades, observaciones, ejecuciones y referencias del grafo, enlaza el original y devuelve la URL web. El original permanece intacto. Abre una sesión sobre el ID nuevo, consulta `get_investigation_context` y `list_findings`, y utiliza las notas para distinguir evidencia, hipótesis y conclusiones.
