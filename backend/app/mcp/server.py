@@ -33,6 +33,13 @@ include_domains. Quote at least one literal evidence anchor and supply domains a
 not site: operators. Keep quotes for independent literal AND anchors; split alternatives
 into separate queries. Respect search_queries_remaining; don't use force to sidestep
 budgets or treat provider failures as proof of absence. Queries consume existing credits.
+Search covers profiles and documentary mentions: inspect name_search_variants in context.
+Public rolls may put surnames first. Query full phrases separately for each ordering,
+and include document hosts such as Scribd/College Sidekick when a document gap remains.
+An empty provider result or a missing snippet phrase is not proof of absence. Inspect
+received_results/rejections in search diagnostics. Use your own browser/search when
+available to inspect gaps, then persist sourced analysis notes. Such navigation is an
+additional capability, outside this server's execution trace; declare it in comparisons.
 For a completed traditional rules investigation, use create_review_investigation to
 import its evidence into a separate review dossier. The source remains the baseline.
 Open a session on the review and inspect get_investigation_context/list_findings before running tools.

@@ -95,6 +95,18 @@ Un agente que navegue con herramientas propias puede documentar lo observado med
 
 ## Sincronización y trazabilidad
 
+### Cobertura documental y navegación del agente
+
+El barrido de búsqueda reserva una consulta documental en una ronda inicial de al menos cinco consultas, sin aumentar el presupuesto total. Incluye Scribd, SlideShare, Studocu y College Sidekick. La búsqueda general del nombre no exige que el documento contenga literalmente la universidad; esa combinación queda como consulta secundaria.
+
+Para nombres de cuatro a seis palabras se prueba también el orden con las últimas dos palabras primero. Es una alternativa de búsqueda acotada, no una descomposición verificada de nombres y apellidos. Las consultas documentales usan alternativas de frases completas; su validación admite mayúsculas, tildes, separadores y apellidos primero. Se conservan `matched_name_variant`, `document_candidate` y atribución sin verificar. Las consultas propias del agente mantienen sus anclas independientes como AND: debe enviar consultas separadas para las alternativas.
+
+`get_investigation_context` devuelve `name_search_variants`. Los diagnósticos del buscador incluyen resultados recibidos y rechazos por falta de evidencia literal, dominio incorrecto o URL insegura. Si el proveedor no devuelve un documento o el fragmento no muestra el nombre, no se puede concluir que no exista.
+
+La lectura opcional de resultados (`SEARCH_READ_PAGES=true`) también admite plataformas documentales; conserva los límites de páginas. El lector nativo y `public_page_reader` buscan el nombre completo dentro del contenido público leído y guardan un extracto acotado, incluso si aparece después de los primeros 20 000 caracteres. Se mantienen límites de descarga y tiempo, y se descartan enlaces de navegación, cabecera y pie antes de recoger enlaces del contenido. Sitios que requieren autenticación, contenido no accesible o límites de tamaño pueden impedir la captura.
+
+El agente puede complementar MCP con su navegador y buscador propios. Debe guardar fuentes y distinguir búsqueda indexada, texto leído, candidatura y conclusiones mediante notas. Esa navegación no se registra automáticamente como ejecución PersonMap: usa `public_page_reader` para capturas compatibles, o declara en la nota el método externo. Para el artículo, evalúa «agente con navegación ampliada» como una capacidad adicional; no mezcles sus resultados con el piloto restringido a herramientas compartidas.
+
 ### Lectura incremental para agentes
 
 Tras leer el contexto inicial con `get_investigation_context`, conserva `investigation.revision` y pagina los hallazgos iniciales con `list_findings`. Después usa una sola llamada para obtener cambios:

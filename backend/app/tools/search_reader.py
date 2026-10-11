@@ -1,6 +1,9 @@
 """Bounded reading of public search pages; optional JS extraction via TinyFish."""
 import asyncio
 import json
+import re
+import unicodedata
+from array import array
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -29,7 +32,29 @@ async def _check_request(request: httpx.Request) -> None:
         raise httpx.InvalidURL("Non-public publication URL")
 
 
-async def read_public_page(url: str) -> dict:
+def _focus_excerpt(text: str, terms: list[str]) -> tuple[str, bool]:
+    """Keep a bounded excerpt around a full name even late in a long public roll."""
+    if not terms:
+        return text[:MAX_TEXT], False
+    folded, positions = [], array("I")
+    for index, char in enumerate(text):
+        normalized = "".join(c for c in unicodedata.normalize("NFKD", char).casefold() if not unicodedata.combining(c))
+        folded.append(normalized)
+        positions.extend([index] * len(normalized))
+    shadow = "".join(folded)
+    for term in terms[:2]:
+        normalized = "".join(c for c in unicodedata.normalize("NFKD", term).casefold() if not unicodedata.combining(c))
+        pattern = r"(?<!\w)" + r"[\s,;:]+".join(re.escape(part) for part in normalized.split()) + r"(?!\w)"
+        match = re.search(pattern, shadow) if normalized.strip() else None
+        if match:
+            start, end = positions[match.start()], positions[match.end()-1] + 1
+            excerpt = text[max(0, start-500):end+1000]
+            prefix = text[:min(800, max(0, start-500))]
+            return (prefix + ("\n[…]\n" if prefix else "") + excerpt)[:MAX_TEXT], True
+    return text[:MAX_TEXT], False
+
+
+async def read_public_page(url: str, *, focus_terms: list[str] | None = None) -> dict:
     if not _public_page_url(url):
         return {"status": "unsafe_url"}
     try:
@@ -63,15 +88,18 @@ async def read_public_page(url: str) -> dict:
                             if soup.select_one('input[type="password"]'):
                                 return {"status": "login_required"}
                             title = soup.title.get_text(" ", strip=True) if soup.title else ""
+                            for tag in soup.select("script, style, nav, footer, header, noscript, form"):
+                                tag.decompose()
                             for anchor in soup.select("a[href]"):
                                 linked = _public_page_url(urljoin(url, anchor.get("href", "")))
                                 if linked and linked not in links and len(links) < 150:
                                     links.append(linked)
-                            for tag in soup.select("script, style, nav, footer, header, noscript, form"):
-                                tag.decompose()
                             text = soup.get_text(" ", strip=True)
+                        selected, focused = _focus_excerpt(text, focus_terms or [])
                         return {"status": "ok" if len(text.strip()) >= 80 else "thin_content",
-                                "title": title, "text": text[:MAX_TEXT], "final_url": url, "engine": "native", "links": links}
+                                "title": title, "text": selected, "final_url": url, "engine": "native", "links": links,
+                                "content_selection": "name_excerpt" if focused else "prefix",
+                                "content_truncated": len(selected) < len(text)}
                 return {"status": "redirect_limit"}
     except (httpx.HTTPError, httpx.InvalidURL, TimeoutError, ValueError):
         return {"status": "request_error"}
@@ -120,17 +148,17 @@ async def read_tinyfish_page(url: str) -> dict:
 
 
 async def enrich_search_findings(findings: list[ToolFinding], context: TargetContext) -> None:
-    from app.tools.search_dorker import Dork, _matches_literally
+    from app.tools.search_dorker import Dork, _matches_literally, DOCUMENT_PLATFORMS
     read_urls = context.extra.setdefault("search_read_urls", [])
     fetch_disabled = context.extra.get("search_fetch_disabled", False)
     for finding in findings:
         if len(read_urls) >= max(0, min(10, settings.search_max_pages)):
             break
         # Platform verification and public DNI document reading have their own tools.
-        if finding.platform != "web_search" or finding.metadata_info.get("dni_query") or finding.value in read_urls:
+        if finding.platform not in {"web_search", *DOCUMENT_PLATFORMS} or finding.metadata_info.get("dni_query") or finding.value in read_urls:
             continue
         read_urls.append(finding.value)
-        page = await read_public_page(finding.value)
+        page = await read_public_page(finding.value, focus_terms=finding.metadata_info.get("name_search_variants", []))
         native_status = page["status"]
         if (native_status not in {"ok", "unsafe_url", "unsafe_redirect", "login_required", "unsupported_content", "too_large"}
                 and settings.tinyfish_enabled and settings.tinyfish_fetch_enabled and not fetch_disabled):
@@ -141,9 +169,11 @@ async def enrich_search_findings(findings: list[ToolFinding], context: TargetCon
         meta = finding.metadata_info
         meta["page_read_status"] = page["status"]
         meta["page_native_status"] = native_status
+        meta["page_content_selection"] = page.get("content_selection", "prefix")
         if page["status"] != "ok":
             continue
-        dork = Dork(meta["query"], meta["rationale"], phone=meta.get("phone_query"))
+        dork = Dork(meta["query"], meta["rationale"], phone=meta.get("phone_query"),
+                    name_variants=meta.get("name_search_variants", []))
         match = _matches_literally(dork, page["title"], page["text"], "")
         meta["page_literal_match"] = match
         meta["page_reader"] = page["engine"]

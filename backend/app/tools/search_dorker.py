@@ -49,6 +49,8 @@ PLATFORM_DOMAINS: Dict[str, str] = {
     "orcid.org": "orcid",
     "slideshare.net": "slideshare",
     "scribd.com": "scribd",
+    "studocu.com": "studocu",
+    "collegesidekick.com": "college_sidekick",
 }
 
 # Dominios donde suele acabar el perfil profesional/social de un estudiante.
@@ -63,6 +65,8 @@ PROFILE_DOMAINS = [
     "snapchat.com",
     "t.me",
 ]
+DOCUMENT_DOMAINS = ["scribd.com", "slideshare.net", "studocu.com", "collegesidekick.com"]
+DOCUMENT_PLATFORMS = {PLATFORM_DOMAINS[domain] for domain in DOCUMENT_DOMAINS}
 
 
 QUOTED_TERM_RE = re.compile(r'"([^"]+)"')
@@ -84,11 +88,30 @@ def _bounded_match(term: str, text: str) -> bool:
     return bool(re.search(pattern, _normalize(text)))
 
 
+def name_search_variants(name: str) -> List[str]:
+    """Bounded ordering alternatives, not an assertion of given/surname structure."""
+    parts = name.split()
+    variants = [" ".join(parts)] if parts else []
+    if 4 <= len(parts) <= 6:
+        variants.append(" ".join([*parts[-2:], *parts[:-2]]))
+    return list(dict.fromkeys(variants))
+
+
+def _matched_name_variant(dork: "Dork", title: str, snippet: str) -> Optional[str]:
+    for variant in dork.name_variants:
+        # Public rolls often separate surnames and given names with a comma.
+        if any(_bounded_match(variant, re.sub(r"[,;:]", " ", text)) for text in (title, snippet)):
+            return variant
+    return None
+
+
 def _matches_literally(dork: "Dork", title: str, snippet: str, url: str) -> bool:
     if dork.dni:
         return matches_dni_context(dork.dni, title + "\n" + snippet)
     if dork.phone:
         return matches_phone_text(dork.phone, title, snippet)
+    if dork.name_variants:
+        return _matched_name_variant(dork, title, snippet) is not None
     terms = QUOTED_TERM_RE.findall(dork.query)
     # Only path segments can support URL matches: reflected query strings are not evidence.
     segments = [unquote(p) for p in urlsplit(url).path.split("/") if p]
@@ -112,6 +135,8 @@ class SearchResults(list):
         self.status = status
         self.matched = matched
         self.usage = usage
+        self.received = 0
+        self.rejections = {}
 
 
 @dataclass
@@ -130,13 +155,15 @@ class Dork:
     phone: Optional[str] = None
     dni: Optional[str] = None
     origin: str = "template"
+    name_variants: List[str] = field(default_factory=list)
+    scope: str = "general"
 
     def as_text_query(self) -> str:
         """Consulta en texto plano, para motores sin filtro de dominio nativo."""
         if not self.include_domains:
             return self.query
         sites = " OR ".join(f"site:{d}" for d in self.include_domains)
-        return f"{self.query} ({sites})"
+        return f"({self.query}) ({sites})"
 
 
 @dataclass(frozen=True)
@@ -211,7 +238,14 @@ class SearchDorkerTool(BaseTool):
         # Prefer newly discovered identifiers over secondary domain variants on later rounds.
         if executed and not context.extra.get("search_queries"):
             dorks.sort(key=lambda d: bool(d.include_domains))
-        dorks = dorks[:min(max(1, settings.search_max_queries_per_round), max(0, max_queries - used))]
+        available = min(max(1, settings.search_max_queries_per_round), max(0, max_queries - used))
+        selected = dorks[:available]
+        # At least one name-document query inside a normal five-query sweep.
+        if not executed and available >= 5 and not context.extra.get("search_queries"):
+            document = next((d for d in dorks if d.scope == "documents"), None)
+            if document and document not in selected:
+                selected[-1] = document
+        dorks = selected
         if not dorks:
             context.extra["search_last_status"] = "budget_exhausted" if used >= max_queries else "already_covered"
             return []
@@ -244,6 +278,9 @@ class SearchDorkerTool(BaseTool):
                     status = getattr(result, "status", "ok")
                     diagnostics.append({"engine": backend.name, "query": dork.query,
                                         "status": status, "findings": len(result),
+                                        "scope": dork.scope, "include_domains": dork.include_domains,
+                                        "received_results": getattr(result, "received", 0),
+                                        "rejections": getattr(result, "rejections", {}),
                                         "usage": getattr(result, "usage", None)})
                     findings.extend(result)
                     if status in {"http_401", "http_402", "http_403", "http_429", "http_432"}:
@@ -302,15 +339,21 @@ class SearchDorkerTool(BaseTool):
             name = name.strip()
             if not name:
                 continue
-            uni = (context.university or "").strip()
-            query = f'"{name}" "{uni}"' if uni else f'"{name}"'
-            groups[4].append(Dork(query, "Nombre y afiliación" if uni else "Menciones del nombre completo"))
+            groups[4].append(Dork(f'"{name}"', "Menciones del nombre completo"))
         # Give each identifier class a slot before extra phones/emails or site variants.
-        dorks = [group[i] for i in range(max(map(len, groups), default=0)) for group in groups if i < len(group)]
+        dorks = [group[0] for group in groups if group]
+        # A document query gets a slot before secondary aliases/emails consume the budget.
+        for name in names[:1]:
+            variants = name_search_variants(name)
+            if variants:
+                dorks.append(Dork(" OR ".join(f'"{variant}"' for variant in variants),
+                    "Documentos y padrones; variantes de orden del nombre sin exigir afiliación literal",
+                    include_domains=DOCUMENT_DOMAINS, name_variants=variants, scope="documents"))
+        dorks.extend(group[i] for i in range(1, max(map(len, groups), default=0)) for group in groups if i < len(group))
         if context.university:
             for name in names:
                 if name.strip():
-                    dorks.append(Dork(f'"{name.strip()}"', "Menciones del nombre completo"))
+                    dorks.append(Dork(f'"{name.strip()}" "{context.university.strip()}"', "Nombre y afiliación"))
         for name in names:
             if name.strip():
                 dorks.append(Dork(f'"{name.strip()}"', "Perfiles del nombre", include_domains=PROFILE_DOMAINS))
@@ -377,31 +420,39 @@ class SearchDorkerTool(BaseTool):
         usage = {"credits": credits} if isinstance(credits, (int, float)) and math.isfinite(credits) else None
         result = SearchResults(usage=usage)
         for item in data["results"][:max(1, min(20, settings.tavily_max_results))]:
+            result.received += 1
             if not isinstance(item, dict):
                 continue
             finding = self._validated_finding(dork, item.get("url"), item.get("title"),
                                               item.get("content") if engine == "tavily" else item.get("snippet"),
-                                              engine, item.get("score"))
+                                              engine, item.get("score"), rejections=result.rejections)
             if finding:
                 result.matched += 1
                 if finding.value not in seen_urls:
                     seen_urls.add(finding.value)
                     result.append(finding)
+                else:
+                    result.rejections["duplicate_url"] = result.rejections.get("duplicate_url", 0) + 1
         if not result.matched:
             result.status = "no_verified_matches"
         return result
 
-    def _validated_finding(self, dork: Dork, url: Any, title: Any, snippet: Any, engine: str, relevance: Any = None) -> ToolFinding | None:
-        if not isinstance(url, str) or not public_source_url(url):
+    def _validated_finding(self, dork: Dork, url: Any, title: Any, snippet: Any, engine: str, relevance: Any = None,
+                           *, rejections: dict | None = None) -> ToolFinding | None:
+        def reject(reason):
+            if rejections is not None:
+                rejections[reason] = rejections.get(reason, 0) + 1
             return None
+        if not isinstance(url, str) or not public_source_url(url):
+            return reject("unsafe_url")
         host = (urlsplit(url).hostname or "").lower().rstrip(".")
         if dork.include_domains and not any(host == d or host.endswith("." + d) for d in dork.include_domains):
-            return None
+            return reject("outside_requested_domains")
         title = title if isinstance(title, str) else ""
         snippet = snippet if isinstance(snippet, str) else ""
         literal = _matches_literally(dork, title, snippet, url)
         if not literal and (dork.phone or dork.dni or settings.tavily_require_literal_match):
-            return None
+            return reject("literal_evidence_missing")
         return self._build_finding(url=url, title=title, snippet=snippet, dork=dork,
                                    engine=engine, relevance=relevance, literal=literal)
 
@@ -417,6 +468,7 @@ class SearchDorkerTool(BaseTool):
                 return SearchResults(status=f"http_{resp.status_code}")
             soup = BeautifulSoup(resp.text, "html.parser")
             for row in soup.find_all("div", class_="result")[:5]:
+                result.received += 1
                 title_tag = row.find("a", class_="result__a")
                 if not title_tag:
                     continue
@@ -427,7 +479,8 @@ class SearchDorkerTool(BaseTool):
                         url = unquote(match.group(1))
                 snippet_tag = row.find("a", class_="result__snippet")
                 finding = self._validated_finding(dork, url, title_tag.get_text(" ", strip=True),
-                                                 snippet_tag.get_text(" ", strip=True) if snippet_tag else "", "duckduckgo")
+                                                 snippet_tag.get_text(" ", strip=True) if snippet_tag else "", "duckduckgo",
+                                                 rejections=result.rejections)
                 if finding:
                     result.matched += 1
                     if finding.value not in seen_urls:
@@ -509,6 +562,10 @@ class SearchDorkerTool(BaseTool):
                 "phone_query": dork.phone,
                 "phone_mention_status": "observed_in_search_result" if dork.phone else None,
                 "ownership_status": "unverified",
+                "search_scope": dork.scope,
+                "name_search_variants": dork.name_variants,
+                "matched_name_variant": _matched_name_variant(dork, title, snippet),
+                "document_candidate": platform in DOCUMENT_PLATFORMS,
             },
             confidence=confidence,
             evidence_urls=[url],

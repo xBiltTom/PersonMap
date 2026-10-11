@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 from app.tools.search_reader import read_public_page, read_tinyfish_page
+from app.tools.search_dorker import name_search_variants
 
 
 class PublicPageReaderTool(BaseTool):
@@ -20,7 +21,7 @@ class PublicPageReaderTool(BaseTool):
         urls = context.extra.get("candidate_urls", [])[:3]
 
         async def read_one(url):
-            page = await read_public_page(url)
+            page = await read_public_page(url, focus_terms=name_search_variants(context.full_name or ""))
             if page["status"] in {"thin_content", "request_error", "http_403"}:
                 fallback = await read_tinyfish_page(url)
                 if fallback.get("status") == "ok":
@@ -39,7 +40,8 @@ class PublicPageReaderTool(BaseTool):
                     "linked_profiles": page.get("links", []),
                     "retrieved_at": datetime.now(timezone.utc).isoformat(),
                     "content_sha256": hashlib.sha256(text.encode()).hexdigest(),
-                    "content_truncated": len(text) >= 20000,
+                    "content_truncated": page.get("content_truncated", len(text) >= 20000),
+                    "content_selection": page.get("content_selection", "prefix"),
                 }, evidence_urls=list(dict.fromkeys([url, final_url])),
             )
         results = await asyncio.gather(*(read_one(url) for url in urls), return_exceptions=True)

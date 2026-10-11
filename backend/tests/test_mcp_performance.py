@@ -215,7 +215,7 @@ async def test_parallel_page_reader_retains_successes_when_one_page_fails(monkey
     import app.tools.public_page_reader as reader
     active, peak = 0, 0
     ready = asyncio.Event()
-    async def read(url):
+    async def read(url, *, focus_terms=None):
         nonlocal active, peak
         active += 1
         peak = max(peak, active)

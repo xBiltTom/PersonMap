@@ -39,6 +39,7 @@ from app.schemas.workspace import CorrelationAssessmentCreate, NoteCreate, NoteR
 from app.tools.base import TargetContext, ToolFinding
 from app.tools.public_page_reader import PublicPageReaderTool
 from app.tools.registry import tool_registry
+from app.tools.search_dorker import name_search_variants
 from app.services.workspace_updates import WorkspaceUpdates, compact_finding
 
 logger = logging.getLogger(__name__)
@@ -272,6 +273,7 @@ class WorkspaceService(WorkspaceUpdates):
             return {"investigation": InvestigationRead.model_validate(inv).model_dump(mode="json"),
                     "review_baseline": (inv.metrics or {}).get("review_baseline"),
                     "known_identifiers": context.model_dump(exclude={"extra"}),
+                    "name_search_variants": name_search_variants(context.full_name or ""),
                     "candidate_urls": context.extra.get("candidate_urls", [])[:100],
                     "executions": [ToolExecutionRead.model_validate(e).model_dump(mode="json") for e in executions],
                     "notes": [NoteRead.model_validate(n).model_dump(mode="json") for n in notes],

@@ -108,7 +108,7 @@ def test_site_filter_is_data_not_a_string_operator(context):
     como dato; solo el respaldo lo renderiza al operador `site:`.
     """
     dorks = SearchDorkerTool()._generate_dorks(context)
-    profile_dork = next(d for d in dorks if d.include_domains)
+    profile_dork = next(d for d in dorks if "linkedin.com" in d.include_domains)
 
     assert "site:" not in profile_dork.query
     assert "linkedin.com" in profile_dork.include_domains
