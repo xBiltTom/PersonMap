@@ -26,6 +26,17 @@ def matches_dni(dni: str, text: str) -> bool:
     return bool(normalize_dni(dni) and re.search(r'(?<![\w])' + re.escape(dni) + r'(?![\w])', text))
 
 
+def matches_dni_context(dni: str, text: str) -> bool:
+    """A number is a document mention only near an explicit document label."""
+    if not matches_dni(dni, text):
+        return False
+    for match in re.finditer(r'(?<!\w)' + re.escape(dni) + r'(?!\w)', text):
+        nearby = text[max(0, match.start() - 100):match.end() + 100]
+        if re.search(r'\b(?:d\.?n\.?i\.?|documento\s+(?:nacional\s+de\s+identidad|de\s+identidad)|n[uú]mero\s+de\s+documento)\b', nearby, re.I):
+            return True
+    return False
+
+
 def public_source_url(value: str) -> str | None:
     try:
         url = urlsplit(value)
@@ -98,7 +109,7 @@ def _records(rows, dni: str) -> list[dict]:
 
 def _text_matches(text: str, dni: str) -> list[dict]:
     for line in text[:500000].splitlines():
-        if matches_dni(dni, line):
+        if matches_dni_context(dni, line):
             match = re.search(re.escape(dni), line)
             # A free-text mention is evidence, but surrounding names are ambiguous.
             return [{'dni': dni, 'excerpt': line[max(0, match.start() - 100):match.end() + 100],

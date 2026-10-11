@@ -32,6 +32,13 @@ include_domains. Quote at least one literal evidence anchor and supply domains a
 not site: operators. Keep quotes for independent literal AND anchors; split alternatives
 into separate queries. Respect search_queries_remaining; don't use force to sidestep
 budgets or treat provider failures as proof of absence. Queries consume existing credits.
+For a completed traditional rules investigation, use create_review_investigation to
+import its evidence into a separate review dossier. The source remains the baseline.
+Open a session on the review and inspect get_context/list_findings before running tools.
+Prefer at most two focused review rounds; stop when no evidence-backed pivot remains.
+Inherited executions are not new work. Reuse known coverage; legacy/incompatible
+coverage is unknown. Select explicit inputs for subsearches, never blindly repeat the sweep.
+The review has an additional small query budget, so report baseline plus review resources.
 Fetch compact findings with list_findings and full captured content with get_finding;
 follow pagination and don't infer absence from a small sample.
 Use source_entity_ids and a concise rationale to document pivots. Save useful analysis,
@@ -77,6 +84,16 @@ async def list_investigations(limit: int = 20, offset: int = 0) -> dict[str, Any
                                      .order_by(Investigation.created_at.desc()).offset(offset).limit(limit + 1))).all())
         return {"investigations": [InvestigationRead.model_validate(i).model_dump(mode="json") for i in rows[:limit]],
                 "next_offset": offset + limit if len(rows) > limit else None}
+
+
+@mcp.tool(annotations=WRITE)
+async def create_review_investigation(source_investigation_id: UUID) -> dict[str, Any]:
+    """Continue a completed rules dossier in a separate review copy, preserving evidence and scan coverage.
+
+    The source is unchanged. Open a session on the returned id, inspect findings,
+    then issue only targeted follow-ups. Search has an explicit additional review budget.
+    """
+    return await _call(workspace.create_review(source_investigation_id))
 
 
 @mcp.tool(annotations=WRITE)

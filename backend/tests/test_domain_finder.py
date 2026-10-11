@@ -44,7 +44,25 @@ RESPUESTA_PERSONAL = [
 def _ctx(**extra) -> TargetContext:
     base = {"candidate_urls": [], "investigation_id": None}
     base.update(extra)
+    base["personal_domain_urls"] = extra.get("candidate_urls", [])
     return TargetContext(extra=base)
+
+
+def test_search_urls_do_not_become_personal_domains():
+    context = TargetContext(extra={"candidate_urls": ["https://bid.cars/lot/12345678"]})
+    assert not DomainFinderTool().can_run(context)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_domain_queries_are_not_repeated_between_rounds():
+    route = respx.get(url__startswith=CRT).respond(200, json=RESPUESTA_PERSONAL)
+    context = _ctx(candidate_urls=["https://juan.dev"])
+    tool = DomainFinderTool()
+    assert len(await tool.execute(context)) == 1
+    assert not tool.can_run(context)
+    assert await tool.execute(context) == []
+    assert route.call_count == 1
 
 
 # --- ¿De quién es el dominio? --------------------------------------------

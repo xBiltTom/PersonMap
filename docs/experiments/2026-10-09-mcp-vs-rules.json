@@ -1,0 +1,141 @@
+{
+  "date": "2026-10-09",
+  "git_revision": "1333b0d22428ca9989674ae7d16674d9a05fb38d",
+  "historical_source_case": "3e770c8f-2098-4e6b-8a99-a6c13e4d172c",
+  "same_seeds": true,
+  "same_config_fingerprint": true,
+  "run_order": [
+    "mcp",
+    "rules"
+  ],
+  "shared_fingerprint": {
+    "config_search_depth": "basic",
+    "config_search_engine": "tavily",
+    "config_maigret_commit": "8f42a42d0ebb117f265eeaf6c75ebda5249a79b4",
+    "config_search_country": "peru",
+    "config_pdf_ocr_enabled": true,
+    "config_catalog_enriched": 291,
+    "config_search_max_pages": 2,
+    "config_tinyfish_enabled": false,
+    "config_tools_registered": 18,
+    "config_http_max_per_host": 4,
+    "config_pdf_ocr_languages": "auto",
+    "config_pdf_ocr_max_pages": 3,
+    "config_phone_max_numbers": 3,
+    "config_search_read_pages": false,
+    "config_tinyfish_language": "es",
+    "config_tinyfish_location": "PE",
+    "config_dni_engine_version": 3,
+    "config_search_exact_match": true,
+    "config_search_max_queries": 5,
+    "config_search_max_results": 8,
+    "config_catalog_from_maigret": 0,
+    "config_http_max_concurrency": 40,
+    "config_phone_engine_version": 2,
+    "config_phone_network_fields": [],
+    "config_search_literal_match": true,
+    "config_search_engine_version": 3,
+    "config_social_engine_version": 4,
+    "config_dni_max_public_sources": 4,
+    "config_mcp_max_parallel_tools": 3,
+    "config_search_timeout_seconds": 90.0,
+    "config_social_verify_max_urls": 300,
+    "config_tinyfish_fetch_enabled": false,
+    "config_mcp_username_fast_sites": 200,
+    "config_pdf_ocr_timeout_seconds": 20.0,
+    "config_catalog_from_whatsmyname": 500,
+    "config_catalog_with_regex_check": 36,
+    "config_search_query_concurrency": 3,
+    "config_username_catalog_scanned": 500,
+    "config_social_verify_concurrency": 8,
+    "config_social_verify_url_timeout": 20.0,
+    "config_username_scan_concurrency": 24,
+    "config_username_catalog_available": 2479,
+    "config_search_max_queries_per_round": 5,
+    "config_username_scan_engine_version": 2,
+    "config_dni_public_sources_fingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "references_declared_by_user": {
+    "GitHub": "https://github.com/xBiltTom",
+    "LinkedIn": "https://pe.linkedin.com/in/bilton-junior-novoa-arce-6a52a3281",
+    "ORCID": "https://orcid.org/0009-0002-0165-5976",
+    "Disqus": "https://disqus.com/by/biltonjr/"
+  },
+  "reference_validation_is_independent": false,
+  "complete_precision_or_recall_measured": false,
+  "mcp_primary_session_id": "600ec991-43b2-4941-846c-5ba8e459c322",
+  "mcp_is_interactive_pilot": true,
+  "external_browser_used": false,
+  "public_page_reader_used": false,
+  "runs": {
+    "mcp": {
+      "investigation_id": "f74bf3a2-a084-48c4-a734-2e1b9fa1ee2d",
+      "measured_duration_seconds": 635.220346,
+      "entities": 20,
+      "entities_by_type": {
+        "search_mention": 10,
+        "social_account": 6,
+        "email": 2,
+        "academic": 1,
+        "email_registration": 1
+      },
+      "tool_executions": 22,
+      "execution_statuses": {
+        "completed": 22
+      },
+      "tool_active_wall_seconds": 180.47,
+      "alias_catalog_coverage": {
+        "biltonjr": 500,
+        "xbilttom": 500,
+        "bjnovoaar": 500
+      },
+      "recognized_references": {
+        "GitHub": true,
+        "LinkedIn": true,
+        "ORCID": true,
+        "Disqus": true
+      }
+    },
+    "rules": {
+      "investigation_id": "8c23b723-598a-4ae3-a2f7-4ad549092277",
+      "measured_duration_seconds": 204.25,
+      "entities": 23,
+      "entities_by_type": {
+        "document": 1,
+        "social_account": 7,
+        "email": 2,
+        "search_mention": 8,
+        "domain": 3,
+        "academic": 1,
+        "email_registration": 1
+      },
+      "tool_executions": 42,
+      "execution_statuses": {
+        "completed": 42
+      },
+      "tool_active_wall_seconds": 203.504,
+      "alias_catalog_coverage": {
+        "xbilttom": 500,
+        "bjnovoaar": 500,
+        "biltonjr": 500
+      },
+      "recognized_references": {
+        "GitHub": true,
+        "LinkedIn": true,
+        "ORCID": true,
+        "Disqus": true
+      }
+    }
+  },
+  "reviewed_unattributable_observations": {
+    "mcp": 6,
+    "rules": 11
+  },
+  "uncertain_ownership": [
+    "Picsart biltonjr",
+    "X biltonjr",
+    "Roblox biltonjr",
+    "Snapchat biltonjr",
+    "Facebook Bilton Novoa"
+  ]
+}

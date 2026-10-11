@@ -7,7 +7,7 @@ import time
 from copy import deepcopy
 from collections import OrderedDict
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import delete, select
@@ -21,6 +21,7 @@ from app.core.fingerprint import run_fingerprint
 from app.engine.persistence import build_relationships, persist_findings
 from app.engine.pivot_rules import extract_and_apply_pivots
 from app.engine.trace import PendingObservation, trace_recorder
+from app.core.runtime import durable_runtime, search_limit
 from app.identity.resolver import correlation_resolver
 from app.models.analysis_note import AnalysisNote
 from app.models.correlation_group import CorrelationGroup
@@ -42,11 +43,6 @@ from app.tools.registry import tool_registry
 logger = logging.getLogger(__name__)
 EXTERNAL_TOOLS = {tool.name: tool for tool in tool_registry.get_all()}
 EXTERNAL_TOOLS["public_page_reader"] = PublicPageReaderTool()
-RUNTIME_KEYS = (
-    "username_finder_coverage", "username_finder_scanned", "username_finder_stats",
-    "search_queries_executed", "search_queries_used", "search_provider_attempts", "search_seen_urls",
-    "search_disabled_backends", "search_diagnostics",
-)
 
 
 def parallel_limit():
@@ -87,11 +83,6 @@ def merge_runtime(current, baseline, incoming, *, extent=False, counter=False):
     return result
 
 
-def durable_runtime(extra):
-    values = {key: extra[key] for key in RUNTIME_KEYS if key in extra}
-    return json.loads(json.dumps(values, default=lambda value: sorted(value) if isinstance(value, set) else str(value)))
-
-
 def call_fingerprint(tool_name: str, context: TargetContext) -> str:
     # Only actual inputs; never ephemeral caches, secrets, budgets or event IDs.
     tool = EXTERNAL_TOOLS[tool_name]
@@ -106,6 +97,8 @@ def call_fingerprint(tool_name: str, context: TargetContext) -> str:
         else:
             value = getattr(context, field, context.extra.get(field))
         values[field] = sorted(value) if isinstance(value, list) else value
+    if tool_name == "domain_finder":
+        values["candidate_urls"] = sorted(context.extra.get("personal_domain_urls", []))
     values["self_consent"] = bool(context.extra.get("self_consent"))
     if tool_name == "search_dorker":
         if context.extra.get("search_queries"):
@@ -168,6 +161,100 @@ class WorkspaceService:
             result["sessions"].sort(key=lambda s: s["started_at"])
             return result
 
+    async def create_review(self, source_id: UUID) -> dict:
+        """Fork completed rule evidence atomically; the control dossier stays unchanged."""
+        async with self.session_factory() as db:
+            source = await self._investigation(db, source_id, lock=True)
+            if (source.execution_mode != "internal" or source.status != "completed"
+                    or (source.metrics or {}).get("engine_used", source.strategy) not in {"rules", "rule_based"}):
+                raise HTTPException(409, "La revisión requiere un barrido de reglas terminado")
+            target = Target(**{column.name: deepcopy(getattr(source.target, column.name))
+                               for column in Target.__table__.columns if column.name not in {"id", "created_at"}})
+            target.extra_data = target.extra_data or {}
+            db.add(target)
+            await db.flush()
+            runtime = deepcopy((source.metrics or {}).get("collection_runtime", {}))
+            current_config = run_fingerprint()
+            coverage_known = "username_finder_coverage" in runtime and all(
+                (source.metrics or {}).get(f"config_{key}") == current_config[key]
+                for key in ("username_scan_engine_version", "username_catalog_scanned", "maigret_commit"))
+            if not coverage_known:
+                for key in ("username_finder_coverage", "username_finder_scanned", "username_finder_stats"):
+                    runtime.pop(key, None)
+            # Review is an additional, explicit phase with its own small query budget.
+            for key in ("search_queries_used", "search_queries_executed", "search_provider_attempts",
+                        "search_disabled_backends", "search_diagnostics"):
+                runtime.pop(key, None)
+            runtime["search_query_limit"] = max(0, min(settings.tavily_max_queries, settings.mcp_review_max_queries))
+            review = Investigation(target=target, strategy="auto", execution_mode="external", status="pending",
+                metrics={"engine_used": "external", "execution_mode": "external",
+                         "review_baseline": {"investigation_id": str(source.id), "metrics": deepcopy(source.metrics or {}),
+                                             "coverage_known": coverage_known},
+                         "external_runtime": runtime})
+            db.add(review)
+            await db.flush()
+            entity_map, execution_map = {}, {}
+
+            def copy_columns(row):
+                return {column.name: deepcopy(getattr(row, column.name)) for column in row.__table__.columns
+                        if column.name not in {"id", "investigation_id"}}
+
+            entities = list((await db.scalars(select(Entity).where(Entity.investigation_id == source.id))).all())
+            for entity in entities:
+                new_id = uuid4()
+                entity_map[entity.id] = new_id
+                values = copy_columns(entity)
+                values["metadata_info"] = {**(values["metadata_info"] or {}), "imported_from_entity_id": str(entity.id)}
+                db.add(Entity(id=new_id, investigation_id=review.id, **values))
+            executions = list((await db.scalars(select(ToolExecution).where(ToolExecution.investigation_id == source.id))).all())
+            for execution in executions:
+                new_id = uuid4()
+                execution_map[execution.id] = new_id
+                values = copy_columns(execution)
+                values["session_id"] = None
+                if execution.tool_name == "username_finder" and not coverage_known:
+                    values["input_fingerprint"] = None
+                values["input_summary"] = {**(values["input_summary"] or {}),
+                                           "imported_from_execution_id": str(execution.id)}
+                db.add(ToolExecution(id=new_id, investigation_id=review.id, **values))
+            await db.flush()
+
+            def remap(value):
+                if isinstance(value, dict):
+                    return {key: remap(item) for key, item in value.items()}
+                if isinstance(value, list):
+                    return [remap(item) for item in value]
+                if isinstance(value, str):
+                    try:
+                        return str(entity_map.get(UUID(value), execution_map.get(UUID(value), UUID(value))))
+                    except ValueError:
+                        pass
+                return deepcopy(value)
+
+            for model in (EntityObservation, Relationship, CorrelationGroup):
+                rows = list((await db.scalars(select(model).where(model.investigation_id == source.id))).all())
+                for row in rows:
+                    values = copy_columns(row)
+                    for field in ("entity_id", "source_entity_id", "target_entity_id"):
+                        if field in values:
+                            values[field] = entity_map[values[field]]
+                    if "tool_execution_id" in values:
+                        values["tool_execution_id"] = execution_map[values["tool_execution_id"]]
+                    for field in ("evidence", "entity_ids"):
+                        if field in values:
+                            values[field] = remap(values[field])
+                    db.add(model(investigation_id=review.id, **values))
+            review.metrics = {**review.metrics, "imported_findings": len(entities), "imported_executions": len(executions)}
+            await trace_recorder.record_event(db, investigation_id=str(review.id), event_type="baseline_import",
+                engine="external", data={"source_investigation_id": str(source.id), "entities_count": len(entities)})
+            await db.commit()
+            await self._publish(review, "workspace_snapshot", "Barrido importado; listo para revisión por agente.")
+            await event_bus.publish("registry", {"type": "investigation_created", "investigation_id": str(review.id), "timestamp": time.time()})
+            return {"id": str(review.id), "source_investigation_id": str(source.id), "status": review.status,
+                    "web_url": f"{settings.frontend_url.rstrip('/')}/investigation/{review.id}",
+                    "imported_findings": len(entities), "imported_executions": len(executions),
+                    "coverage_known": coverage_known, "review_query_budget": runtime["search_query_limit"]}
+
     async def context(self, investigation_id: UUID) -> dict:
         async with self.session_factory() as db:
             inv = await self._investigation(db, investigation_id)
@@ -182,6 +269,7 @@ class WorkspaceService:
             sessions = list((await db.scalars(select(InvestigationSession).where(InvestigationSession.investigation_id == investigation_id)
                                              .order_by(InvestigationSession.started_at.desc()).limit(20))).all())
             return {"investigation": InvestigationRead.model_validate(inv).model_dump(mode="json"),
+                    "review_baseline": (inv.metrics or {}).get("review_baseline"),
                     "known_identifiers": context.model_dump(exclude={"extra"}),
                     "candidate_urls": context.extra.get("candidate_urls", [])[:100],
                     "executions": [ToolExecutionRead.model_validate(e).model_dump(mode="json") for e in executions],
@@ -192,7 +280,7 @@ class WorkspaceService:
                         "active_tools": active_tools,
                         "username_default_mode": "fast", "fast_sites": max(1, settings.mcp_username_fast_sites),
                         "deep_sites": max(1, settings.username_scan_max_sites),
-                        "search_queries_remaining": max(0, settings.tavily_max_queries - context.extra.get("search_queries_used", len(context.extra.get("search_queries_executed", []))))},
+                        "search_queries_remaining": max(0, search_limit(context, settings.tavily_max_queries) - context.extra.get("search_queries_used", len(context.extra.get("search_queries_executed", []))))},
                     "tool_readiness": [{"name": tool.name, "can_run": tool.can_run(context),
                         "running": tool.name in active_tools}
                         for tool in EXTERNAL_TOOLS.values()],
@@ -314,6 +402,8 @@ class WorkspaceService:
             # Explicit URL selection avoids scraping every accumulated candidate again.
             if payload.inputs.candidate_urls:
                 context.extra["candidate_urls"] = payload.inputs.candidate_urls
+                if tool.name == "domain_finder":
+                    context.extra["personal_domain_urls"] = payload.inputs.candidate_urls
             context.extra["investigation_id"] = str(inv.id)
             if not tool.can_run(context):
                 raise HTTPException(422, "Faltan entradas requeridas para la herramienta")
@@ -327,6 +417,14 @@ class WorkspaceService:
                 ToolExecution.status.in_(["running", "completed"])).order_by(ToolExecution.started_at.desc()).limit(1))).first()
             if previous and (previous.status == "running" or not payload.force):
                 return {**ToolExecutionRead.model_validate(previous).model_dump(mode="json"), "reused": True}
+            if (inv.metrics or {}).get("review_baseline") and not payload.force:
+                supplied = payload.inputs.model_dump(exclude_none=True, exclude_defaults=True)
+                supplied.pop("scan_mode", None)
+                inherited = (await db.scalars(select(ToolExecution.id).where(
+                    ToolExecution.investigation_id == inv.id, ToolExecution.tool_name == tool.name,
+                    ToolExecution.engine != "external", ToolExecution.status == "completed").limit(1))).first()
+                if inherited and not supplied:
+                    raise HTTPException(409, "El barrido ya ejecutó esta herramienta; selecciona entradas para una subbúsqueda o usa force")
             running = list((await db.scalars(select(ToolExecution).where(
                 ToolExecution.investigation_id == inv.id, ToolExecution.status == "running"))).all())
             if len(running) >= parallel_limit():
@@ -380,7 +478,7 @@ class WorkspaceService:
                     execution.input_summary = {**execution.input_summary,
                         "search_status": context.extra.get("search_last_status"),
                         "search_diagnostics": context.extra.get("search_diagnostics", [])[-15:],
-                        "search_queries_remaining": max(0, settings.tavily_max_queries - context.extra.get("search_queries_used", len(context.extra.get("search_queries_executed", []))))}
+                        "search_queries_remaining": max(0, search_limit(context, settings.tavily_max_queries) - context.extra.get("search_queries_used", len(context.extra.get("search_queries_executed", []))))}
                 if tool.name == "public_page_reader":
                     execution.input_summary = {**execution.input_summary,
                         "page_errors": context.extra.get("public_page_reader_errors", [])}
@@ -504,6 +602,7 @@ class WorkspaceService:
                 db.add(AnalysisNote(investigation_id=inv.id, session_id=session.id, author=session.client,
                                    author_type="agent", kind="summary", title="Resumen de sesión", content=summary))
             executions = list((await db.scalars(select(ToolExecution).where(ToolExecution.investigation_id == inv.id))).all())
+            external_executions = [e for e in executions if e.engine == "external"]
             sessions = list((await db.scalars(select(InvestigationSession).where(InvestigationSession.investigation_id == inv.id))).all())
             entities = list((await db.scalars(select(Entity.id).where(Entity.investigation_id == inv.id))).all())
             groups = list((await db.scalars(select(CorrelationGroup.id).where(CorrelationGroup.investigation_id == inv.id))).all())
@@ -511,8 +610,9 @@ class WorkspaceService:
                 "external_client": session.client, "external_model_declared": session.model,
                 "external_sessions": len(sessions), "external_tools_registered": len(EXTERNAL_TOOLS),
                 "external_scan_coverage": (inv.metrics or {}).get("external_runtime", {}).get("username_finder_coverage", {}),
-                "tools_executed": len(executions), "entities_discovered": len(entities), "correlation_groups": len(groups),
-                "tool_execution_seconds": sum(max(0, (e.completed_at - e.started_at).total_seconds()) for e in executions if e.completed_at),
+                "tools_executed": len(external_executions), "entities_discovered": len(entities), "correlation_groups": len(groups),
+                "new_findings": max(0, len(entities) - (inv.metrics or {}).get("imported_findings", 0)),
+                "tool_execution_seconds": sum(max(0, (e.completed_at - e.started_at).total_seconds()) for e in external_executions if e.completed_at),
                 "execution_time_seconds": sum(max(0, ((s.ended_at or now) - s.started_at).total_seconds()) for s in sessions),
                 "elapsed_wall_seconds": max(0, (now - inv.created_at).total_seconds()),
                 **{f"config_{k}": v for k, v in run_fingerprint().items()}}

@@ -276,6 +276,13 @@ class RuleEngine:
         start_time = time.time()
 
         sweep = await self.collect_findings(investigation_id, target, db)
+        from uuid import UUID
+        from app.models.investigation import Investigation
+        from app.core.runtime import durable_runtime
+        investigation = await db.get(Investigation, UUID(str(investigation_id)))
+        if investigation is not None:
+            investigation.metrics = {**(investigation.metrics or {}),
+                                     "collection_runtime": durable_runtime(sweep.context.extra)}
 
         # Deduplicación, scoring y persistencia compartidos con el agente autónomo
         entities = await persist_findings(

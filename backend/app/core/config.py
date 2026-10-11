@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     mcp_max_parallel_tools: int = 3
     mcp_username_fast_sites: int = 200
+    mcp_review_max_queries: int = 3
 
     # --- Presupuesto de concurrencia HTTP ------------------------------------
     # Compartido por todas las tools a través de app.tools.http_client.

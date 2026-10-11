@@ -15,6 +15,28 @@ from app.tools.base import TargetContext, ToolFinding
 from app.tools.public_page_reader import PublicPageReaderTool
 from app.tools.search_dorker import SearchBackend, SearchDorkerTool, SearchResults
 from app.tools.username_finder import UsernameFinderTool
+from app.core.runtime import durable_runtime, search_limit
+from app.engine.pivot_rules import extract_and_apply_pivots
+
+
+def test_review_budget_and_runtime_are_bounded_and_serializable():
+    context = TargetContext(extra={"search_query_limit": 3, "username_finder_scanned": {"fixture"}, "secret": "excluded"})
+    assert search_limit(context, 5) == 3
+    assert search_limit(context, 2) == 2
+    assert durable_runtime(context.extra) == {"search_query_limit": 3, "username_finder_scanned": ["fixture"]}
+    context.extra["search_query_limit"] = 0
+    assert search_limit(context, 5) == 0
+
+
+def test_domain_pivots_require_an_observed_profile_link():
+    context = TargetContext()
+    candidate = ToolFinding(entity_type="social_account", value="https://example.test/profile",
+        metadata_info={"website": "https://portfolio.test", "source_tool": "search_dorker"})
+    extract_and_apply_pivots([candidate], context)
+    assert context.extra.get("personal_domain_urls", []) == []
+    candidate.metadata_info["source_tool"] = "agent:github_deep_scanner"
+    extract_and_apply_pivots([candidate], context)
+    assert context.extra["personal_domain_urls"] == ["https://portfolio.test"]
 
 
 @pytest.mark.parametrize("domain", ["localhost", "127.0.0.1", "https://github.com", "github.com/path", "github.com:443", "*.github.com", "user@github.com"])

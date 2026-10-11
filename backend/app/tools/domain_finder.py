@@ -58,7 +58,7 @@ MAX_DOMAINS_QUERIED = 4
 class DomainFinderTool(BaseTool):
     name = "domain_finder"
     description = (
-        "Descubre la infraestructura personal (dominio propio y sus subdominios) "
+        "Consulta dominios candidatos y sus subdominios, sin confirmar propiedad, "
         "a partir de los registros públicos de Certificate Transparency vía crt.sh"
     )
     category = ToolCategory.DOCUMENT
@@ -74,10 +74,13 @@ class DomainFinderTool(BaseTool):
         herramienta se despacharía en cada ronda solo por tener un correo de
         Gmail, para no consultar nada.
         """
-        return bool(self._candidate_domains(context))
+        checked = context.extra.get("domain_finder_checked", {})
+        return any(host not in checked for host in self._candidate_domains(context)) and len(checked) < MAX_DOMAINS_QUERIED
 
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
-        candidates = self._candidate_domains(context)
+        checked = context.extra.setdefault("domain_finder_checked", {})
+        candidates = [host for host in self._candidate_domains(context) if host not in checked]
+        candidates = candidates[:max(0, MAX_DOMAINS_QUERIED - len(checked))]
         if not candidates:
             return []
 
@@ -89,8 +92,9 @@ class DomainFinderTool(BaseTool):
         async with http_client.build_client(
             timeout=30.0, rotate_ua=False, max_retries=4
         ) as client:
-            for domain in candidates[:MAX_DOMAINS_QUERIED]:
+            for domain in candidates:
                 entries = await self._query(client, domain)
+                checked[domain] = "unavailable" if entries is None else "checked"
                 if entries is None:
                     if investigation_id:
                         await event_bus.publish(investigation_id, {
@@ -154,7 +158,7 @@ class DomainFinderTool(BaseTool):
                 host = host[4:]
             if not host or "." not in host:
                 return
-            if host in PUBLIC_PROVIDERS or host in known_platforms:
+            if any(host == provider or host.endswith("." + provider) for provider in PUBLIC_PROVIDERS | known_platforms):
                 return
             if any(host.endswith(suffix) for suffix in INSTITUTIONAL_SUFFIXES):
                 return
@@ -165,7 +169,9 @@ class DomainFinderTool(BaseTool):
             if "@" in email:
                 consider(email.split("@", 1)[1])
 
-        for url in context.extra.get("candidate_urls", []) or []:
+        # Search-result URLs are not evidence of a personal domain. Use only
+        # explicit selections or links published in an observed profile.
+        for url in context.extra.get("personal_domain_urls", []) or []:
             try:
                 consider(urlparse(str(url)).hostname)
             except Exception:
@@ -226,7 +232,7 @@ class DomainFinderTool(BaseTool):
             entity_type="domain",
             platform="certificate_transparency",
             value=domain,
-            display_name=f"Dominio propio: {domain} ({len(subdomains)} subdominios)",
+            display_name=f"Dominio candidato: {domain} ({len(subdomains)} subdominios)",
             metadata_info={
                 "domain": domain,
                 "subdomains": subdomains[:MAX_SUBDOMAINS_FOR_PERSONAL],
@@ -236,6 +242,7 @@ class DomainFinderTool(BaseTool):
                 "last_certificate": last_seen[:10],
                 "source": "crt.sh",
                 "source_tool": "domain_finder",
+                "ownership_status": "unverified",
             },
             # Certeza de DETECCIÓN: el certificado existe en los logs públicos.
             # Que el dominio sea de la persona lo decide el modelo de identidad.

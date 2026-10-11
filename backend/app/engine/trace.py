@@ -80,6 +80,10 @@ class TraceRecorder:
             status="running",
             input_summary=safe_input_summary(tool, context),
         )
+        if context is not None:
+            from app.services.workspace import EXTERNAL_TOOLS, call_fingerprint
+            if execution.tool_name in EXTERNAL_TOOLS:
+                execution.input_fingerprint = call_fingerprint(execution.tool_name, context)
         db.add(execution)
         await db.flush()
         return execution

@@ -10,6 +10,13 @@ from app.schemas.target import TargetCreate
 from app.tools.base import TargetContext, ToolFinding
 from app.tools.dni_lookup import DniLookupTool
 from app.tools.dni_public import normalize_dni, matches_dni, parse_public_document, publisher, public_source_url
+from app.tools.dni_public import matches_dni_context
+
+
+def test_commercial_numbers_are_not_identity_document_mentions():
+    assert not matches_dni_context('12345678', '2009 Ford Flex lot 12345678')
+    assert parse_public_document(b'Ford Flex lot 12345678', 'text/plain', 'https://example.test/lot', '12345678')[0] == []
+    assert matches_dni_context('12345678', 'DNI: 12345678 ANA PRUEBA')
 from app.tools.search_dorker import Dork, SearchDorkerTool, _matches_literally
 from app.engine.pivot_rules import extract_and_apply_pivots
 from app.engine.rule_engine import RuleEngine

@@ -14,7 +14,8 @@ from bs4 import BeautifulSoup
 
 from app.core.config import settings
 from app.tools import http_client
-from app.tools.dni_public import normalize_dni, matches_dni, public_source_url
+from app.tools.dni_public import normalize_dni, public_source_url, matches_dni_context
+from app.core.runtime import search_limit
 from app.tools.phone_numbers import analyze_phone, matches_phone_text, extract_phone_observations
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
@@ -85,7 +86,7 @@ def _bounded_match(term: str, text: str) -> bool:
 
 def _matches_literally(dork: "Dork", title: str, snippet: str, url: str) -> bool:
     if dork.dni:
-        return any(matches_dni(dork.dni, text) for text in (title, snippet))
+        return matches_dni_context(dork.dni, title + "\n" + snippet)
     if dork.phone:
         return matches_phone_text(dork.phone, title, snippet)
     terms = QUOTED_TERM_RE.findall(dork.query)
@@ -202,7 +203,7 @@ class SearchDorkerTool(BaseTool):
             return []
         dorks = list({(d.query, tuple(sorted(d.include_domains))): d for d in dorks}.values())
 
-        max_queries = max(1, settings.tavily_max_queries)
+        max_queries = search_limit(context, max(1, settings.tavily_max_queries))
         executed = context.extra.setdefault("search_queries_executed", [])
         used = context.extra.setdefault("search_queries_used", len(executed))
         if not context.extra.get("search_force"):

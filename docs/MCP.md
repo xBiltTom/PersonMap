@@ -105,11 +105,37 @@ La traza duradera conserva herramientas, observaciones, sesiones y notas; el pro
 
 ## Evaluación
 
+### Revisar un barrido tradicional
+
+`create_review_investigation(source_investigation_id)` copia un expediente interno **terminado por reglas** a uno externo nuevo. Conserva entidades, observaciones, ejecuciones y referencias del grafo, enlaza el original y devuelve la URL web. El original permanece intacto. Abre una sesión sobre el ID nuevo, consulta `get_context` y `list_findings`, y utiliza las notas para distinguir evidencia, hipótesis y conclusiones.
+
+Los nuevos barridos guardan cobertura reutilizable. La revisión solo hereda cobertura de alias cuando coincide la configuración del catálogo; expedientes antiguos o incompatibles devuelven `coverage_known=false`. No se reconstruye cobertura a partir del número de perfiles encontrados. Las llamadas idénticas con huella guardada reutilizan ejecuciones; una herramienta ya ejecutada requiere entradas explícitas para una subbúsqueda o un refresco deliberado con `force`.
+
+`MCP_REVIEW_MAX_QUERIES=3` limita las consultas **adicionales**, sin superar `TAVILY_MAX_QUERIES`; cero permite revisión sin nuevas consultas de buscador. Las instrucciones recomiendan como máximo dos rondas enfocadas, sin imponer ese límite en el servidor. Las métricas separan ejecuciones heredadas (`imported_executions`), hallazgos importados y herramientas nuevas; `review_baseline` conserva las métricas del original. Para comparar esta condición con reglas, contabiliza el barrido más la revisión y su presupuesto adicional.
+
+Ejemplo de petición al agente: «Revisa el expediente UUID mediante `create_review_investigation`. Lee primero los hallazgos, realiza hasta dos rondas de subbúsquedas justificadas y guarda un resumen con fuentes y dudas pendientes».
+
+Las optimizaciones compartidas exigen contexto de documento para coincidencias numéricas en texto libre; un número exacto aislado ya no basta. Los campos estructurados de DNI siguen siendo válidos. Los dominios proceden de correos, enlaces publicados por perfiles observados o una selección explícita del agente; las URLs genéricas del buscador no se convierten en infraestructura personal. Cada dominio se consulta una vez por contexto, hasta cuatro, y su propiedad permanece sin verificar.
+
 `external` se registra como motor separado: no se clasifica según las claves LLM del servidor. La comparativa incluye una columna para MCP. Las métricas actuales son operacionales; cantidad de entidades y grupos no demuestra precisión ni mejora de identidad. Registra las sesiones, el cliente y el modelo declarado junto al presupuesto, herramientas, fuentes y referencias conocidas al diseñar el experimento.
 
 `execution_time_seconds` suma la duración de las sesiones y excluye los intervalos entre ellas. `elapsed_wall_seconds` mide el tiempo desde la creación del expediente; `tool_execution_seconds` suma la duración de las herramientas. Estos tiempos no distinguen automáticamente trabajo del agente de espera humana dentro de una sesión abierta.
 
 `external_peak_parallel_tools` registra el máximo de herramientas simultáneas y `external_scan_coverage` la cobertura por alias. Al solaparse trabajos, la suma de sus duraciones puede superar el tiempo de sesión. La huella registra los límites de concurrencia y la configuración del barrido rápido para que el cambio de cobertura no se confunda con una mejora de velocidad a igualdad de condiciones.
+
+### Comparación con la ejecución tradicional optimizada
+
+El motor de reglas ya despacha las herramientas disponibles en paralelo por ronda; ambos caminos comparten la implementación OSINT, los límites HTTP y las consultas paralelas de `search_dorker`. La concurrencia de herramientas no es idéntica: las reglas despachan la ronda completa y MCP limita los trabajos simultáneos por expediente. Registra esta diferencia al interpretar tiempos. Las optimizaciones compartidas deben estar presentes en ambos caminos antes de medir.
+
+Para estudiar el aporte de la planificación del agente, prepara expedientes nuevos y separados con los mismos datos iniciales, consentimiento, versión del código, catálogo, proveedores y configuración de presupuestos. Ejecuta las condiciones por separado, alternando su orden entre repeticiones, para reducir competencia por conexiones y efectos del orden sobre cuotas y disponibilidad. Conserva también los fallos y ejecuciones incompletas.
+
+- **Cobertura del barrido:** pide al agente `scan_mode="deep"` desde el inicio para usar el mismo máximo de sitios que la ejecución interna. Compara la cobertura efectivamente realizada y los alias comprobados; compartir un máximo no implica haber examinado los mismos sitios y alias. Una corrida MCP rápida de 200 sitios frente a un barrido tradicional mayor mide estrategias de cobertura diferentes.
+- **Herramientas y fuentes:** en la comparación de planificación, limita al agente a las herramientas del registro que usa el motor interno. Excluye `public_page_reader` y la navegación/búsqueda propia del cliente de esa condición: el lector adicional solo está expuesto por MCP. Evalúa esas capacidades en otra condición de agente con navegación ampliada y registra sus fuentes y lecturas.
+- **Presupuestos:** fija antes del ensayo los mismos máximos de consultas, resultados, sitios y alias, además de un límite de tiempo común. Los límites por llamada y el número de rondas no equivalen a un plazo total; el plazo del ensayo debe controlarse aparte. Permite que cada estrategia decida sus pivotes dentro del presupuesto y registra cuánto consume realmente.
+- **Tiempo:** mide de inicio a fin, incluyendo planificación, inferencia, llamadas MCP, espera y persistencia. En MCP usa una sesión continua sin intervención humana durante la corrida medida. No compares la suma de duraciones de herramientas con el tiempo total del motor tradicional.
+- **Calidad:** usa casos con referencias conocidas y una revisión independiente para contar hallazgos correctos, falsos positivos y relaciones respaldadas por evidencia. Reporta también cobertura y tiempo. Más perfiles o notas no prueban por sí solos una mejor correlación.
+
+Una condición adicional con las mismas entradas, herramientas y pivotes prefijados puede aislar el coste de ejecución del puente MCP. La comparación adaptativa permite que cambien las consultas y los pivotes: esa elección es precisamente parte del aporte que se quiere medir. Los resultados deben admitir mejora, empate o empeoramiento; no se fija un ganador antes de medir.
 
 ## Verificación
 

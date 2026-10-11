@@ -119,6 +119,7 @@ class Orchestrator:
                 # 7. Record Metrics for Academic Research
                 elapsed = round(time.time() - start_time, 2)
                 investigation.metrics = {
+                    **(investigation.metrics or {}),
                     "execution_time_seconds": elapsed,
                     "entities_discovered": len(entities),
                     "correlation_groups": len(groups),

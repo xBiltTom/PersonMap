@@ -26,10 +26,14 @@ from app.models.entity_observation import EntityObservation
 from app.models.investigation import Investigation
 from app.models.investigation_session import InvestigationSession
 from app.models.tool_execution import ToolExecution
+from app.models.relationship import Relationship
+from app.models.correlation_group import CorrelationGroup
+from app.core.fingerprint import run_fingerprint
+from fastapi import HTTPException
 from app.schemas.investigation import InvestigationCreate
 from app.schemas.target import TargetCreate
 from app.schemas.workspace import NoteCreate, SearchQuery, SessionCreate, ToolInputs, ToolRequest
-from app.services.workspace import EXTERNAL_TOOLS, WorkspaceService
+from app.services.workspace import EXTERNAL_TOOLS, WorkspaceService, call_fingerprint
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
 pytestmark = pytest.mark.db
@@ -83,6 +87,78 @@ class FixtureTool(BaseTool):
         return [ToolFinding(entity_type="social_account", platform="github", value="https://github.com/fixture",
                             metadata_info={"username": "fixture", "bio": "Public fixture biography"},
                             evidence_urls=["https://example.test/source"])]
+
+
+@pytest.mark.asyncio
+async def test_review_import_preserves_baseline_and_graph(isolated_workspace):
+    service, source_id = isolated_workspace
+    first_id, second_id, execution_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    async with service.session_factory() as db:
+        source = await db.get(Investigation, source_id)
+        source.status = "completed"
+        source.metrics = {"engine_used": "rules", "tools_executed": 1,
+            "collection_runtime": {"username_finder_coverage": {"legacy": 500}, "search_queries_used": 5},
+            **{f"config_{key}": value for key, value in run_fingerprint().items()}}
+        baseline_metrics = dict(source.metrics)
+        db.add_all([
+            Entity(id=first_id, investigation_id=source_id, entity_type="social_account", value="https://github.com/legacy", source_tool="username_finder", metadata_info={}),
+            Entity(id=second_id, investigation_id=source_id, entity_type="website", value="https://example.test", source_tool="domain_finder", metadata_info={}),
+            ToolExecution(id=execution_id, investigation_id=source_id, tool_name="username_finder", engine="rules", status="completed",
+                input_fingerprint=call_fingerprint("username_finder", TargetContext(username="legacy")))])
+        await db.flush()
+        db.add_all([
+            EntityObservation(investigation_id=source_id, entity_id=first_id, tool_execution_id=execution_id, evidence_urls=["https://github.com/legacy"]),
+            Relationship(investigation_id=source_id, source_entity_id=first_id, target_entity_id=second_id, evidence={"entity_id": str(first_id)}),
+            CorrelationGroup(investigation_id=source_id, label="Grupo 01", entity_ids=[str(first_id), str(second_id)], evidence={"execution_id": str(execution_id)})])
+        await db.commit()
+    created = await service.create_review(source_id)
+    review_id = uuid.UUID(created["id"])
+    assert review_id != source_id and created["coverage_known"]
+    assert created["imported_findings"] == 2 and created["imported_executions"] == 1
+    context = await service.context(review_id)
+    assert context["review_baseline"]["metrics"] == baseline_metrics
+    assert context["execution_policy"]["search_queries_remaining"] == max(0, min(settings.tavily_max_queries, settings.mcp_review_max_queries))
+    async with service.session_factory() as db:
+        source = await db.get(Investigation, source_id)
+        review = await db.get(Investigation, review_id)
+        assert source.metrics == baseline_metrics and source.status == "completed"
+        assert source.target_id != review.target_id
+        entities = list((await db.scalars(select(Entity).where(Entity.investigation_id == review_id))).all())
+        ids = {entity.id for entity in entities}
+        assert ids.isdisjoint({first_id, second_id})
+        observation = (await db.scalars(select(EntityObservation).where(EntityObservation.investigation_id == review_id))).one()
+        execution = await db.get(ToolExecution, observation.tool_execution_id)
+        assert observation.entity_id in ids and execution.id != execution_id and execution.engine == "rules"
+        edge = (await db.scalars(select(Relationship).where(Relationship.investigation_id == review_id))).one()
+        assert edge.source_entity_id in ids and edge.target_entity_id in ids
+        assert edge.evidence["entity_id"] == str(edge.source_entity_id)
+        group = (await db.scalars(select(CorrelationGroup).where(CorrelationGroup.investigation_id == review_id))).one()
+        assert set(group.entity_ids) == {str(value) for value in ids}
+        assert group.evidence["execution_id"] == str(execution.id)
+    session = await service.open_session(review_id, SessionCreate(client="review-fixture"))
+    reused = await service.submit_tool(review_id, uuid.UUID(session["id"]),
+        ToolRequest(tool_name="username_finder", inputs=ToolInputs(username="legacy", scan_mode="deep")))
+    assert reused["reused"] and reused["engine"] == "rules"
+    with pytest.raises(HTTPException) as exc:
+        await service.submit_tool(review_id, uuid.UUID(session["id"]), ToolRequest(tool_name="username_finder"))
+    assert exc.value.status_code == 409
+    async with service.session_factory() as db:
+        source = await db.get(Investigation, source_id)
+        source.metrics = {"engine_used": "rules"}
+        await db.commit()
+    legacy_review = await service.create_review(source_id)
+    assert not legacy_review["coverage_known"]
+    context = await service.context(uuid.UUID(legacy_review["id"]))
+    assert context["scan_coverage"] == {}
+    await service.close_session(review_id, uuid.UUID(session["id"]), "finish")
+    async with service.session_factory() as db:
+        review = await db.get(Investigation, review_id)
+        assert review.metrics["tools_executed"] == 0
+        assert review.metrics["tool_execution_seconds"] == 0
+        assert review.metrics["new_findings"] == 0
+    with pytest.raises(HTTPException) as exc:
+        await service.create_review(review_id)
+    assert exc.value.status_code == 409
 
 
 @pytest.mark.asyncio

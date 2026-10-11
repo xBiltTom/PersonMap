@@ -60,6 +60,18 @@ def extract_and_apply_pivots(findings: List[ToolFinding], context: TargetContext
 
     for f in findings:
         metadata = f.metadata_info or {}
+        observed_profile = f.entity_type == "social_account" and (
+            metadata.get("verification_status") == "verified"
+            or any(str(tool).split(":")[-1] in {"github_deep_scanner", "social_verifier", "gravatar_deep"}
+                   for tool in [metadata.get("source_tool"), *metadata.get("source_tools", [])]))
+        if observed_profile:
+            personal = context.extra.setdefault("personal_domain_urls", [])
+            links = [metadata.get("website"), metadata.get("blog"), *metadata.get("linked_profiles", [])]
+            for link in links:
+                source = public_source_url(link) if isinstance(link, str) else None
+                if source and source not in personal:
+                    personal.append(source)
+                    pivoted = True
 
         if metadata.get("dni_query") == normalize_dni(context.dni) and metadata.get("dni_mention_status") == "observed_in_search_result":
             source = public_source_url(f.value)

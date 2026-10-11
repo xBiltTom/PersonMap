@@ -166,6 +166,12 @@ async def dispatch_tool_call(
         return []
 
     ctx = build_call_context(args, target, base_context)
+    if tool.name == "domain_finder":
+        ctx.extra["personal_domain_urls"] = list(dict.fromkeys([
+            *ctx.extra.get("personal_domain_urls", []),
+            *([args["url"]] if args.get("url") else []),
+            *(args.get("candidate_urls") or []),
+        ]))
     if investigation_id:
         ctx.extra["investigation_id"] = investigation_id
     try:
