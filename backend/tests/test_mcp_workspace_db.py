@@ -90,6 +90,81 @@ class FixtureTool(BaseTool):
 
 
 @pytest.mark.asyncio
+async def test_updates_paginate_refresh_existing_findings_and_survive_restart(isolated_workspace, monkeypatch):
+    from app.services.workspace_updates import encode_cursor
+
+    service, _ = isolated_workspace
+    monkeypatch.setitem(EXTERNAL_TOOLS, "username_finder", FixtureTool())
+    async with service.session_factory() as db:
+        inv = await service.create(InvestigationCreate(target=TargetCreate(username="fixture"), execution_mode="external"), db)
+    session = await service.open_session(inv.id, SessionCreate(client="updates-fixture"))
+    session_id = uuid.UUID(session["id"])
+    first = await service.submit_tool(inv.id, session_id, ToolRequest(tool_name="username_finder"))
+    await service.tasks[uuid.UUID(first["id"])]
+    note = await service.add_note(inv.id, NoteCreate(title="Analysis", content="Fixture conclusion"), session_id)
+    cursor, changes = None, []
+    # Resume with a fresh service after every page: no in-memory cursor history is required.
+    for _ in range(20):
+        resumed = WorkspaceService(service.session_factory)
+        page = await resumed.updates(inv.id, 0, cursor=cursor, limit=1)
+        assert len(page["changes"]) <= 1
+        changes.extend(page["changes"])
+        cursor = page["next_cursor"]
+        if not page["has_more"]:
+            break
+    else:
+        pytest.fail("Pagination did not terminate")
+    finding = next(change["data"] for change in changes if change["kind"] == "finding")
+    assert any(change["kind"] == "execution" for change in changes)
+    assert any(change["kind"] == "note" and change["data"]["id"] == note["id"] for change in changes)
+    assert not (await service.updates(inv.id, 0, cursor=cursor))["changes"]
+
+    gate = asyncio.Event()
+    class EnrichmentTool(FixtureTool):
+        async def execute(self, context):
+            await gate.wait()
+            return [ToolFinding(entity_type="social_account", platform="github", value="https://github.com/fixture",
+                metadata_info={"username": "fixture", "bio": "Additional evidence", "page_text": "Captured text " * 1000})]
+    monkeypatch.setitem(EXTERNAL_TOOLS, "username_finder", EnrichmentTool())
+    second = await service.submit_tool(inv.id, session_id, ToolRequest(tool_name="username_finder", force=True))
+    context = await service.context(inv.id)
+    since = context["investigation"]["revision"]
+    asyncio.get_running_loop().call_later(0.05, gate.set)
+    page = await service.updates(inv.id, since, wait_seconds=1)
+    refreshed = next(change["data"] for change in page["changes"] if change["kind"] == "finding")
+    assert refreshed["id"] == finding["id"]
+    assert refreshed["metadata_info"]["content_available"] is True
+    assert "page_text" not in refreshed["metadata_info"]
+    assert any(change["kind"] == "execution" and change["data"]["id"] == second["id"]
+               and change["data"]["status"] == "completed" for change in page["changes"])
+    full = await service.findings(inv.id, 1, entity_id=uuid.UUID(finding["id"]), include_content=True)
+    assert "page_text" in full["findings"][0]["metadata_info"]
+    with pytest.raises(HTTPException) as exc:
+        await service.updates(inv.id, 0, cursor=encode_cursor(uuid.uuid4(), 0))
+    assert exc.value.status_code == 422
+    with pytest.raises(HTTPException) as exc:
+        await service.updates(inv.id, since + 1000)
+    assert exc.value.status_code == 422
+    with pytest.raises(HTTPException) as exc:
+        await service.updates(inv.id, 0, cursor=encode_cursor(inv.id, since, 100000))
+    assert exc.value.status_code == 422
+    class FailingTool(FixtureTool):
+        async def execute(self, context):
+            raise RuntimeError("Controlled fixture failure")
+    monkeypatch.setitem(EXTERNAL_TOOLS, "username_finder", FailingTool())
+    failed = await service.submit_tool(inv.id, session_id, ToolRequest(tool_name="username_finder", force=True))
+    await service.tasks[uuid.UUID(failed["id"])]
+    failures = await service.updates(inv.id, 0, cursor=page["next_cursor"])
+    assert any(change["kind"] == "execution" and change["data"]["status"] == "failed"
+               for change in failures["changes"])
+    assert not any(change["kind"] == "finding" for change in failures["changes"])
+    await service.close_session(inv.id, session_id, "finish", "Final fixture summary")
+    final = await service.updates(inv.id, 0, cursor=failures["next_cursor"])
+    assert final["status"] == "completed"
+    assert any(change["kind"] == "note" for change in final["changes"])
+
+
+@pytest.mark.asyncio
 async def test_review_import_preserves_baseline_and_graph(isolated_workspace):
     service, source_id = isolated_workspace
     first_id, second_id, execution_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()

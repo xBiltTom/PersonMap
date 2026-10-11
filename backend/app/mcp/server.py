@@ -23,8 +23,9 @@ tools to collect public evidence. Begin with get_investigation_context and read 
 execution_policy, tool_readiness, scan_coverage and previous executions. Write a short
 plan in an analysis note. Start independent tools with run_tool_batch up to the reported
 parallel limit; avoid overlapping the same tool. Dependencies must wait for their source
-execution. Use get_executions(wait_seconds=10) to wait for useful progress instead of
-tight polling. Review evidence while other jobs run, then adjust targeted queries/pivots.
+execution. After reading initial findings, prefer get_workspace_updates(wait_seconds=10)
+for progress and results together; use get_executions for specific jobs. Review evidence
+while other jobs run, then adjust targeted queries/pivots.
 username_finder defaults to a fast prefix of the catalogue, not exhaustive absence;
 use inputs.scan_mode="deep" to extend coverage only when warranted by the task/budget.
 search_dorker accepts inputs.queries: agent-written queries, each with a rationale and
@@ -34,13 +35,19 @@ into separate queries. Respect search_queries_remaining; don't use force to side
 budgets or treat provider failures as proof of absence. Queries consume existing credits.
 For a completed traditional rules investigation, use create_review_investigation to
 import its evidence into a separate review dossier. The source remains the baseline.
-Open a session on the review and inspect get_context/list_findings before running tools.
+Open a session on the review and inspect get_investigation_context/list_findings before running tools.
 Prefer at most two focused review rounds; stop when no evidence-backed pivot remains.
 Inherited executions are not new work. Reuse known coverage; legacy/incompatible
 coverage is unknown. Select explicit inputs for subsearches, never blindly repeat the sweep.
 The review has an additional small query budget, so report baseline plus review resources.
 Fetch compact findings with list_findings and full captured content with get_finding;
 follow pagination and don't infer absence from a small sample.
+After the initial context/findings, retain investigation.revision and use
+get_workspace_updates(since_revision=that_revision, wait_seconds=10). It returns compact
+execution changes, findings (including existing findings with new evidence), and notes.
+Retain next_cursor and drain has_more pages before waiting again. Cursor polling survives
+restarts. Change records contain current data, not historical snapshots; get_finding
+retrieves full captured text. Batches already launch independent tools in one request.
 Use source_entity_ids and a concise rationale to document pivots. Save useful analysis,
 hypotheses, summaries, comments and next steps with add_analysis_note and cite sources.
 Analysis is authored interpretation, never automatically verified identity evidence.
@@ -149,6 +156,19 @@ async def get_executions(investigation_id: UUID, execution_ids: list[UUID], wait
     if not 1 <= len(execution_ids) <= 10 or not 0 <= wait_seconds <= 20:
         raise ToolError("Usa entre 1 y 10 IDs y una espera entre 0 y 20 segundos")
     return await _call(workspace.executions(investigation_id, list(dict.fromkeys(execution_ids)), wait_seconds))
+
+
+@mcp.tool(annotations=READ)
+async def get_workspace_updates(investigation_id: UUID, since_revision: int, cursor: str | None = None,
+                                limit: int = 20, wait_seconds: float = 0) -> dict[str, Any]:
+    """Read external dossier changes after a revision, including refreshed existing findings.
+
+    Read initial context/list_findings first. Use next_cursor on subsequent calls; it
+    overrides since_revision. Follow has_more. Up to 50 change records; optional wait
+    up to 20 seconds for an active tool. Full page text stays in get_finding.
+    """
+    return await _call(workspace.updates(investigation_id, since_revision, cursor=cursor,
+                                      limit=limit, wait_seconds=wait_seconds))
 
 
 @mcp.tool(annotations=READ)

@@ -39,6 +39,7 @@ from app.schemas.workspace import NoteCreate, NoteRead, SessionCreate, SessionRe
 from app.tools.base import TargetContext, ToolFinding
 from app.tools.public_page_reader import PublicPageReaderTool
 from app.tools.registry import tool_registry
+from app.services.workspace_updates import WorkspaceUpdates, compact_finding
 
 logger = logging.getLogger(__name__)
 EXTERNAL_TOOLS = {tool.name: tool for tool in tool_registry.get_all()}
@@ -115,7 +116,7 @@ def call_fingerprint(tool_name: str, context: TargetContext) -> str:
     return hashlib.sha256(json.dumps([tool_name, values], sort_keys=True).encode()).hexdigest()
 
 
-class WorkspaceService:
+class WorkspaceService(WorkspaceUpdates):
     def __init__(self, session_factory=async_session_maker):
         self.session_factory = session_factory
         self.tasks: dict[UUID, asyncio.Task] = {}
@@ -341,6 +342,7 @@ class WorkspaceService:
             inv.revision += 1
             await trace_recorder.record_event(db, investigation_id=str(inv.id), event_type="session_start",
                                             engine="external", data={"client": payload.client, "model": payload.model})
+            await self._record_change(db, inv)
             await db.commit()
             await self._publish(inv, "session_start", f"Sesión externa iniciada: {payload.client}.")
             return SessionRead.model_validate(session).model_dump(mode="json")
@@ -359,6 +361,8 @@ class WorkspaceService:
                 session.updated_at = datetime.now(timezone.utc)
             await trace_recorder.record_event(db, investigation_id=str(inv.id), event_type="analysis_note",
                                             engine="external" if session else "analyst", data={"kind": note.kind, "title": note.title})
+            await db.flush()
+            await self._record_change(db, inv, notes=[note.id])
             await db.commit()
             await self._publish(inv, "analysis_note", f"Análisis guardado: {note.title}.")
             return NoteRead.model_validate(note).model_dump(mode="json")
@@ -446,6 +450,7 @@ class WorkspaceService:
             inv.metrics = {**(inv.metrics or {}), "external_peak_parallel_tools":
                 max((inv.metrics or {}).get("external_peak_parallel_tools", 0), len(running) + 1)}
             inv.revision += 1
+            await self._record_change(db, inv, executions=[execution.id])
             await db.commit()
             await self._publish(inv, "tool_start", f"Ejecutando {tool.name}.", tool=tool.name, tool_execution_id=str(execution.id))
             task = asyncio.create_task(self._run_tool(inv.id, execution.id, tool, context, deepcopy(context.extra)))
@@ -510,6 +515,8 @@ class WorkspaceService:
                     latest.extra.pop("search_force", None)
                 inv.metrics = {**(inv.metrics or {}), "external_runtime": durable_runtime(latest.extra)}
                 inv.revision += 1
+                await self._record_change(db, inv, executions=[execution.id],
+                                          entities=[entity.id for entity in changed] if not error else [])
                 await db.commit()
                 self.contexts[inv.id] = latest
                 self.contexts.move_to_end(inv.id)
@@ -525,11 +532,14 @@ class WorkspaceService:
             logger.exception("Could not persist external execution: %s", execution_id)
             # Persist failure in a fresh transaction, so a failed flush does not leave a running job forever.
             async with self.session_factory() as db:
+                inv = await self._investigation(db, investigation_id, lock=True)
                 execution = await db.get(ToolExecution, execution_id)
                 if execution:
                     execution.status = "failed"
                     execution.completed_at = datetime.now(timezone.utc)
                     execution.error_summary = "No se pudieron guardar los resultados de la herramienta."
+                    inv.revision += 1
+                    await self._record_change(db, inv, executions=[execution.id])
                     await db.commit()
 
     async def execution(self, investigation_id: UUID, execution_id: UUID) -> dict:
@@ -572,15 +582,8 @@ class WorkspaceService:
             rows = list((await db.scalars(stmt.order_by(Entity.discovered_at, Entity.id).offset(offset).limit(limit + 1))).all())
             if entity_id and not rows:
                 raise HTTPException(404, "Hallazgo no encontrado")
-            findings = [EntityRead.model_validate(e).model_dump(mode="json") for e in rows[:limit]]
-            if not include_content:
-                for finding in findings:
-                    metadata = finding["metadata_info"]
-                    omitted = [key for key in ("page_text", "raw_content", "document_text") if key in metadata]
-                    for key in omitted:
-                        metadata.pop(key)
-                    if omitted:
-                        metadata["content_available"] = True
+            findings = [(EntityRead.model_validate(e).model_dump(mode="json") if include_content else compact_finding(e))
+                        for e in rows[:limit]]
             return {"findings": findings,
                     "next_offset": offset + limit if len(rows) > limit else None}
 
@@ -599,8 +602,9 @@ class WorkspaceService:
             inv.completed_at = now if action == "finish" else None
             if summary:
                 inv.summary = summary
-                db.add(AnalysisNote(investigation_id=inv.id, session_id=session.id, author=session.client,
-                                   author_type="agent", kind="summary", title="Resumen de sesión", content=summary))
+                summary_note = AnalysisNote(investigation_id=inv.id, session_id=session.id, author=session.client,
+                                   author_type="agent", kind="summary", title="Resumen de sesión", content=summary)
+                db.add(summary_note)
             executions = list((await db.scalars(select(ToolExecution).where(ToolExecution.investigation_id == inv.id))).all())
             external_executions = [e for e in executions if e.engine == "external"]
             sessions = list((await db.scalars(select(InvestigationSession).where(InvestigationSession.investigation_id == inv.id))).all())
@@ -619,6 +623,8 @@ class WorkspaceService:
             inv.revision += 1
             await trace_recorder.record_event(db, investigation_id=str(inv.id), event_type="session_complete" if action == "finish" else "session_pause",
                                             engine="external", data={"session_id": str(session.id)})
+            await db.flush()
+            await self._record_change(db, inv, notes=[summary_note.id] if summary else [])
             await db.commit()
             self.contexts.pop(inv.id, None)
             await self._publish(inv, "session_complete" if action == "finish" else "session_pause",
@@ -638,10 +644,12 @@ class WorkspaceService:
             for session in sessions:
                 session.status = "paused"
                 session.ended_at = session.updated_at = now
-                inv = await db.get(Investigation, session.investigation_id)
+                inv = await self._investigation(db, session.investigation_id, lock=True)
                 if inv:
                     inv.status = "paused"
                     inv.revision += 1
+                    await self._record_change(db, inv, executions=[execution.id for execution in executions
+                                                                 if execution.investigation_id == inv.id])
             await db.commit()
 
     async def shutdown(self):

@@ -59,6 +59,7 @@ def run_fingerprint() -> Dict[str, Any]:
         "mcp_max_parallel_tools": max(1, min(6, settings.mcp_max_parallel_tools)),
         "mcp_username_fast_sites": max(1, settings.mcp_username_fast_sites),
         "mcp_review_max_queries": max(0, settings.mcp_review_max_queries),
+        "mcp_updates_version": 1,
         "http_max_concurrency": settings.http_max_concurrency,
         "http_max_per_host": settings.http_max_per_host,
         "username_scan_concurrency": settings.tool_concurrency_budget(

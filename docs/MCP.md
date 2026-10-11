@@ -95,6 +95,27 @@ Un agente que navegue con herramientas propias puede documentar lo observado med
 
 ## Sincronización y trazabilidad
 
+### Lectura incremental para agentes
+
+Tras leer el contexto inicial con `get_investigation_context`, conserva `investigation.revision` y pagina los hallazgos iniciales con `list_findings`. Después usa una sola llamada para obtener cambios:
+
+```json
+{
+  "investigation_id": "UUID-del-expediente",
+  "since_revision": 3,
+  "limit": 20,
+  "wait_seconds": 10
+}
+```
+
+La herramienta `get_workspace_updates` devuelve `changes` de tipo `state`, `execution`, `finding` y `note`. Incluye tanto entidades nuevas como entidades existentes que recibieron otra observación. Las páginas contienen hasta 50 registros de cambio; notas resumidas y hallazgos sin el texto completo de páginas. Para leer ese texto utiliza `get_finding`; las notas completas siguen disponibles en el contexto y la web.
+
+Conserva `next_cursor` y pásalo como `cursor` en las siguientes llamadas (manteniendo `since_revision`; el cursor tiene prioridad). Si `has_more=true`, termina de leer las páginas antes de esperar. Una revisión puede abarcar varias páginas: avanzar directamente a `revision` omitiría registros pendientes. Los registros muestran los datos actuales de cada objeto, por lo que una entidad o ejecución puede aparecer más de una vez con el mismo ID.
+
+El cursor pertenece a un expediente y persiste entre reinicios. Los cambios se guardan en la misma transacción que sus resultados y se leen en orden de revisión. La espera solo se aplica si no hay cambios disponibles y hay herramientas activas en este proceso, con un máximo de 20 segundos; no cancela tareas. Las consultas y el presupuesto OSINT permanecen iguales.
+
+Esta lectura está disponible para expedientes externos y registra cambios posteriores a esta versión. Para expedientes preexistentes o revisiones importadas, lee primero el contexto y los hallazgos iniciales. El registro incremental no reconstruye su historial anterior. `run_tool_batch` ya permite lanzar herramientas independientes en una petición; ahora la lectura incremental reúne sus resultados, estados y notas en otra petición, evitando consultar cada ejecución y después volver a listar todos los hallazgos.
+
 REST y MCP usan `WorkspaceService` para crear casos y guardar notas; las llamadas OSINT reutilizan `BaseTool`, contexto y persistencia compartida. Cada ejecución guarda resultados incrementalmente, deduplica contra las entidades existentes y conserva su UUID, fuentes y `EntityObservation`. El grafo y grupos se recalculan dentro de la misma transacción. Las notas mantienen una procedencia distinta de las observaciones.
 
 Los eventos se publican después del commit. La página actualiza mapa, hallazgos, trazabilidad y notas ante eventos de herramientas/sesiones; `revision` también refresca relaciones aunque no cambie el número de nodos. El listado de expedientes sigue `/api/v1/workspace/events`. Un expediente externo mantiene abierto su SSE al terminar una sesión para detectar continuaciones.
@@ -107,7 +128,7 @@ La traza duradera conserva herramientas, observaciones, sesiones y notas; el pro
 
 ### Revisar un barrido tradicional
 
-`create_review_investigation(source_investigation_id)` copia un expediente interno **terminado por reglas** a uno externo nuevo. Conserva entidades, observaciones, ejecuciones y referencias del grafo, enlaza el original y devuelve la URL web. El original permanece intacto. Abre una sesión sobre el ID nuevo, consulta `get_context` y `list_findings`, y utiliza las notas para distinguir evidencia, hipótesis y conclusiones.
+`create_review_investigation(source_investigation_id)` copia un expediente interno **terminado por reglas** a uno externo nuevo. Conserva entidades, observaciones, ejecuciones y referencias del grafo, enlaza el original y devuelve la URL web. El original permanece intacto. Abre una sesión sobre el ID nuevo, consulta `get_investigation_context` y `list_findings`, y utiliza las notas para distinguir evidencia, hipótesis y conclusiones.
 
 Los nuevos barridos guardan cobertura reutilizable. La revisión solo hereda cobertura de alias cuando coincide la configuración del catálogo; expedientes antiguos o incompatibles devuelven `coverage_known=false`. No se reconstruye cobertura a partir del número de perfiles encontrados. Las llamadas idénticas con huella guardada reutilizan ejecuciones; una herramienta ya ejecutada requiere entradas explícitas para una subbúsqueda o un refresco deliberado con `force`.
 
