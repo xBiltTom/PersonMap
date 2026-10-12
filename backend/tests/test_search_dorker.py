@@ -319,7 +319,7 @@ def test_the_engines_are_a_table_not_a_branch():
 
     backends = SearchDorkerTool()._backends()
 
-    assert [b.name for b in backends] == ["tavily", "tinyfish", "duckduckgo"]
+    assert [b.name for b in backends] == ["tavily", "tinyfish", "brave", "duckduckgo"]
 
 
 def test_the_free_engine_is_always_available():

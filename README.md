@@ -95,6 +95,8 @@ Consulta [la guía de conexión y uso de MCP](docs/MCP.md) para preparar la cred
 
 ## Fuentes y artefactos públicos
 
+La [auditoría de cobertura y arquitectura del 12-10-2026](docs/AUDITORIA_OSINT_2026-10-12.md) documenta las mejoras del buscador, el inventario de herramientas, las fuentes evaluadas y el trabajo pendiente para la feria. `SEARCH_MAX_QUERIES` define un presupuesto independiente del proveedor (el ejemplo usa 20); MCP y los agentes reciben `search_coverage` con consultas intentadas y ámbitos pendientes. Brave es un respaldo opcional y el lector público admite PDFs con capa de texto. Los ámbitos consultados no equivalen a cobertura exhaustiva de una plataforma.
+
 El registro de herramientas cubre, según los datos de entrada y la disponibilidad pública, búsqueda de aliases, perfiles sociales, cuentas de desarrollo, correo, Gravatar, dominio, documentos académicos, teléfonos, dorks, brechas, infraestructura y verificaciones de URLs públicas.
 
 Cuando una fuente ya devuelve datos como `avatar_url`, perfiles asociados, OpenGraph o thumbnails, PersonMap los persiste como artefactos visuales observados y puede mostrarlos en el inspector. No realiza reconocimiento facial, matching biométrico ni afirma identidad a partir de imágenes. La búsqueda inversa de imagen es opcional y requiere una clave configurada.
@@ -177,7 +179,7 @@ docker compose down -v
 cp .env.example .env
 ```
 
-Edita al menos `DATABASE_URL` si tu PostgreSQL no usa el valor local por defecto. `LLM_MODEL`, `LLM_API_KEY`, `TAVILY_API_KEY`, `SERPAPI_KEY` y `BING_VISUAL_SEARCH_KEY` son opcionales.
+Edita al menos `DATABASE_URL` si tu PostgreSQL no usa el valor local por defecto. `LLM_MODEL`, `LLM_API_KEY`, `TAVILY_API_KEY`, `TINYFISH_API_KEY`, `BRAVE_API_KEY`, `OPENALEX_API_KEY`, `GITHUB_API_TOKEN` y `SERPAPI_KEY` son opcionales. Bing Search fue retirado y su clave ya no activa búsquedas.
 
 ### 2. Crear la base de datos
 

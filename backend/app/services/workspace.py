@@ -188,7 +188,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
             for key in ("search_queries_used", "search_queries_executed", "search_provider_attempts",
                         "search_disabled_backends", "search_diagnostics"):
                 runtime.pop(key, None)
-            runtime["search_query_limit"] = max(0, min(settings.tavily_max_queries, settings.mcp_review_max_queries))
+            runtime["search_query_limit"] = max(0, min(settings.search_query_budget, settings.mcp_review_max_queries))
             review = Investigation(target=target, strategy="auto", execution_mode="external", status="pending",
                 metrics={"engine_used": "external", "execution_mode": "external",
                          "review_baseline": {"investigation_id": str(source.id), "metrics": deepcopy(source.metrics or {}),
@@ -292,11 +292,12 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                         "active_tools": active_tools,
                         "username_default_mode": "fast", "fast_sites": max(1, settings.mcp_username_fast_sites),
                         "deep_sites": max(1, settings.username_scan_max_sites),
-                        "search_queries_remaining": max(0, search_limit(context, settings.tavily_max_queries) - context.extra.get("search_queries_used", len(context.extra.get("search_queries_executed", []))))},
+                        "search_queries_remaining": max(0, search_limit(context, settings.search_query_budget) - context.extra.get("search_queries_used", len(context.extra.get("search_queries_executed", []))))},
                     "tool_readiness": [{"name": tool.name, "can_run": tool.can_run(context),
                         "running": tool.name in active_tools}
                         for tool in EXTERNAL_TOOLS.values()],
-                    "scan_coverage": context.extra.get("username_finder_coverage", {})}
+                    "scan_coverage": context.extra.get("username_finder_coverage", {}),
+                    "search_coverage": tool_registry.get_tool("search_dorker").coverage(context)}
 
     def _context(self, inv, entities, *, use_cached=True):
         ctx = build_call_context({}, inv.target)
@@ -412,7 +413,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
             # Search retains its budgets even when repeating an explicit query.
             if payload.force and tool.name != "search_dorker":
                 for key in list(base_context.extra):
-                    if key.startswith(tool.name + "_"):
+                    if key.startswith(getattr(tool, "cache_prefix", tool.name + "_")):
                         base_context.extra.pop(key)
             inputs = payload.inputs.model_dump(exclude_none=True)
             context = build_call_context(inputs, inv.target, base_context)
@@ -518,7 +519,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                     execution.input_summary = {**execution.input_summary,
                         "search_status": context.extra.get("search_last_status"),
                         "search_diagnostics": context.extra.get("search_diagnostics", [])[-15:],
-                        "search_queries_remaining": max(0, search_limit(context, settings.tavily_max_queries) - context.extra.get("search_queries_used", len(context.extra.get("search_queries_executed", []))))}
+                        "search_queries_remaining": max(0, search_limit(context, settings.search_query_budget) - context.extra.get("search_queries_used", len(context.extra.get("search_queries_executed", []))))}
                 if tool.name == "public_page_reader":
                     execution.input_summary = {**execution.input_summary,
                         "page_errors": context.extra.get("public_page_reader_errors", [])}

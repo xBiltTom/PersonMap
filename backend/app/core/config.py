@@ -135,6 +135,8 @@ class Settings(BaseSettings):
     # Tope de dorks por investigación: acota el gasto de créditos, ya que el
     # motor puede re-ejecutar la herramienta en rondas posteriores tras pivotar.
     tavily_max_queries: int = 5
+    # Provider-independent budget. None keeps older TAVILY_MAX_QUERIES deployments compatible.
+    search_max_queries: Optional[int] = None
     tavily_max_results: int = 8
     # Sesga los resultados hacia el país del público objetivo. ISO en inglés.
     tavily_country: Optional[str] = "peru"
@@ -150,6 +152,20 @@ class Settings(BaseSettings):
     tinyfish_location: str = "PE"
     tinyfish_language: str = "es"
     tinyfish_fetch_enabled: bool = False
+    # Independent web index, optional; does not enable paid requests without a key.
+    brave_api_key: Optional[SecretStr] = None
+    brave_country: str = "PE"
+    brave_search_language: str = "es"
+    openalex_api_key: Optional[SecretStr] = None
+    github_api_token: Optional[SecretStr] = None
+
+    @property
+    def brave_enabled(self) -> bool:
+        return bool(self.brave_api_key and self.brave_api_key.get_secret_value().strip())
+
+    @property
+    def search_query_budget(self) -> int:
+        return max(0, self.search_max_queries if self.search_max_queries is not None else self.tavily_max_queries)
 
     @property
     def tinyfish_enabled(self) -> bool:
@@ -174,8 +190,8 @@ class Settings(BaseSettings):
 
     @property
     def reverse_image_enabled(self) -> bool:
-        """Returns True if at least one reverse-image-search backend is configured."""
-        return bool(self.bing_visual_search_key or self.serpapi_key)
+        """Bing Search APIs retired in 2025; only the supported optional provider can run."""
+        return bool(self.serpapi_key)
 
     @property
     def semantic_matching_enabled(self) -> bool:

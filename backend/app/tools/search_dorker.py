@@ -51,6 +51,14 @@ PLATFORM_DOMAINS: Dict[str, str] = {
     "scribd.com": "scribd",
     "studocu.com": "studocu",
     "collegesidekick.com": "college_sidekick",
+    "stackoverflow.com": "stackoverflow",
+    "stackexchange.com": "stackexchange",
+    "news.ycombinator.com": "hacker_news",
+    "dev.to": "devto",
+    "zenodo.org": "zenodo",
+    "figshare.com": "figshare",
+    "archive.org": "internet_archive",
+    "academia.edu": "academia",
 }
 
 # Dominios donde suele acabar el perfil profesional/social de un estudiante.
@@ -67,6 +75,9 @@ PROFILE_DOMAINS = [
 ]
 DOCUMENT_DOMAINS = ["scribd.com", "slideshare.net", "studocu.com", "collegesidekick.com"]
 DOCUMENT_PLATFORMS = {PLATFORM_DOMAINS[domain] for domain in DOCUMENT_DOMAINS}
+FORUM_DOMAINS = ["reddit.com", "stackoverflow.com", "stackexchange.com", "news.ycombinator.com"]
+PUBLICATION_DOMAINS = ["medium.com", "dev.to", "youtube.com", "bsky.app", "x.com", "threads.com"]
+ACADEMIC_DOMAINS = ["orcid.org", "researchgate.net", "academia.edu", "zenodo.org", "figshare.com", "alicia.concytec.gob.pe", "renati.sunedu.gob.pe"]
 
 
 QUOTED_TERM_RE = re.compile(r'"([^"]+)"')
@@ -189,13 +200,17 @@ class SearchDorkerTool(BaseTool):
     description = (
         "Genera y ejecuta dorks de búsqueda contextuales sobre la web pública "
         "(LinkedIn, GitHub, redes sociales, repositorios académicos) usando Tavily, "
-        "con TinyFish opcional y DuckDuckGo como motores de respaldo."
+        "con TinyFish y Brave opcionales y DuckDuckGo como motores de respaldo. "
+        "Acepta consultas propias con anclas literales, justificación y dominios."
     )
     category = ToolCategory.SEARCH
     required_inputs = ["full_name", "username", "email", "dni", "phone"]
 
     def can_run(self, context: TargetContext) -> bool:
-        return bool(context.extra.get("search_queries")) or super().can_run(context) or bool(context.all_phones()) or bool(context.discovered_names) or bool(context.all_emails()) or bool(context.all_usernames())
+        used = context.extra.get("search_queries_used", len(context.extra.get("search_queries_executed", [])))
+        if used >= search_limit(context, settings.search_query_budget):
+            return False
+        return bool(self._generate_dorks(context) if context.extra.get("search_force") else self.pending_queries(context))
 
     def _backends(self) -> List["SearchBackend"]:
         return [
@@ -214,6 +229,12 @@ class SearchDorkerTool(BaseTool):
                 search=self._search_tinyfish,
             ),
             SearchBackend(
+                name="brave",
+                is_available=lambda: settings.brave_enabled,
+                build_client=lambda: http_client.build_client(timeout=15.0, rotate_ua=False, max_retries=0, follow_redirects=False),
+                search=self._search_brave,
+            ),
+            SearchBackend(
                 name="duckduckgo",
                 is_available=lambda: True,
                 build_client=lambda: http_client.build_client(
@@ -229,12 +250,22 @@ class SearchDorkerTool(BaseTool):
             context.extra["search_last_status"] = "no_queries"
             return []
         dorks = list({(d.query, tuple(sorted(d.include_domains))): d for d in dorks}.values())
+        plan = context.extra.setdefault("search_query_plan", [])
+        planned_keys = {(item["query"], tuple(sorted(item["include_domains"]))) for item in plan}
+        for dork in dorks:
+            entry = {"query": dork.query, "include_domains": dork.include_domains,
+                     "scope": dork.scope, "rationale": dork.rationale, "origin": dork.origin}
+            key = (dork.query, tuple(sorted(dork.include_domains)))
+            if key not in planned_keys:
+                plan.append(entry)
+                planned_keys.add(key)
 
-        max_queries = search_limit(context, max(1, settings.tavily_max_queries))
+        max_queries = search_limit(context, settings.search_query_budget)
         executed = context.extra.setdefault("search_queries_executed", [])
         used = context.extra.setdefault("search_queries_used", len(executed))
+        executed_keys = {(query, tuple(sorted(domains))) for query, domains in executed}
         if not context.extra.get("search_force"):
-            dorks = [d for d in dorks if [d.query, d.include_domains] not in executed]
+            dorks = [d for d in dorks if (d.query, tuple(sorted(d.include_domains))) not in executed_keys]
         # Prefer newly discovered identifiers over secondary domain variants on later rounds.
         if executed and not context.extra.get("search_queries"):
             dorks.sort(key=lambda d: bool(d.include_domains))
@@ -263,8 +294,10 @@ class SearchDorkerTool(BaseTool):
 
         async def search_one(dork):
             async with semaphore:
-                if [dork.query, dork.include_domains] not in executed:
+                key = (dork.query, tuple(sorted(dork.include_domains)))
+                if key not in executed_keys:
                     executed.append([dork.query, dork.include_domains])
+                    executed_keys.add(key)
                 context.extra["search_queries_used"] += 1
                 for backend in backends:
                     if backend.name in disabled or attempts.get(backend.name, 0) >= max_queries:
@@ -278,12 +311,15 @@ class SearchDorkerTool(BaseTool):
                     status = getattr(result, "status", "ok")
                     diagnostics.append({"engine": backend.name, "query": dork.query,
                                         "status": status, "findings": len(result),
+                                        "matched_results": getattr(result, "matched", len(result)),
                                         "scope": dork.scope, "include_domains": dork.include_domains,
                                         "received_results": getattr(result, "received", 0),
                                         "rejections": getattr(result, "rejections", {}),
                                         "usage": getattr(result, "usage", None)})
                     findings.extend(result)
-                    if status in {"http_401", "http_402", "http_403", "http_429", "http_432"}:
+                    if status in {"http_401", "http_402", "http_403", "http_429", "http_432", "http_433"}:
+                        disabled.add(backend.name)
+                    if backend.name == "duckduckgo" and status in {"http_202", "blocked_response"}:
                         disabled.add(backend.name)
                     if getattr(result, "matched", len(result)):
                         break
@@ -307,8 +343,52 @@ class SearchDorkerTool(BaseTool):
             await enrich_search_findings(findings, context)
         # Keep diagnostics reviewable even if a later provider supplied the evidence.
         for finding in findings:
-            finding.metadata_info["search_provider_status"] = [dict(d) for d in diagnostics[-max_queries * 3:]]
+            finding.metadata_info["search_provider_status"] = [dict(d) for d in diagnostics[-max_queries * len(backends):]]
         return findings
+
+    def pending_queries(self, context: TargetContext) -> List[Dork]:
+        """Remaining templates, including scopes that need another rules round."""
+        executed = {(query, tuple(sorted(domains))) for query, domains in context.extra.get("search_queries_executed", [])}
+        return [d for d in self._generate_dorks(context) if (d.query, tuple(sorted(d.include_domains))) not in executed]
+
+    def coverage(self, context: TargetContext) -> dict:
+        """Report attempts and evidence separately; an unavailable source proves no absence."""
+        plan = list(context.extra.get("search_query_plan", []))
+        planned_keys = {(item["query"], tuple(sorted(item["include_domains"]))) for item in plan}
+        for d in self._generate_dorks(context):
+            item = {"query": d.query, "include_domains": d.include_domains, "scope": d.scope,
+                    "rationale": d.rationale, "origin": d.origin}
+            key = (d.query, tuple(sorted(d.include_domains)))
+            if key not in planned_keys:
+                plan.append(item)
+                planned_keys.add(key)
+        diagnostics = context.extra.get("search_diagnostics", [])
+        executed = {(query, tuple(sorted(domains))) for query, domains in context.extra.get("search_queries_executed", [])}
+        scopes = {}
+        pending = []
+        for item in plan:
+            key = (item["query"], tuple(sorted(item["include_domains"])))
+            stats = scopes.setdefault(item["scope"], {"planned": 0, "attempted": 0, "with_matches": 0, "without_verified_matches": 0, "unavailable": 0, "pending": 0})
+            stats["planned"] += 1
+            if key not in executed:
+                stats["pending"] += 1
+                pending.append(item)
+                continue
+            stats["attempted"] += 1
+            outcomes = [row for row in diagnostics if (row.get("query"), tuple(sorted(row.get("include_domains", [])))) == key]
+            if any(row.get("matched_results", row.get("findings", 0)) for row in outcomes):
+                stats["with_matches"] += 1
+            elif any(row.get("status") == "no_verified_matches" for row in outcomes):
+                stats["without_verified_matches"] += 1
+            else:
+                stats["unavailable"] += 1
+        limit = search_limit(context, settings.search_query_budget)
+        used = context.extra.get("search_queries_used", len(executed))
+        return {"budget": limit, "used": used, "remaining": max(0, limit-used),
+                "planned_queries": len(plan), "pending_queries": len(pending),
+                "scopes": scopes, "next_queries": pending[:20],
+                "last_status": context.extra.get("search_last_status", "not_started"),
+                "budget_limited": bool(pending and used >= limit)}
 
     # -- Generación de dorks ---------------------------------------------
 
@@ -356,9 +436,26 @@ class SearchDorkerTool(BaseTool):
                     dorks.append(Dork(f'"{name.strip()}" "{context.university.strip()}"', "Nombre y afiliación"))
         for name in names:
             if name.strip():
-                dorks.append(Dork(f'"{name.strip()}"', "Perfiles del nombre", include_domains=PROFILE_DOMAINS))
+                    dorks.append(Dork(f'"{name.strip()}"', "Perfiles del nombre", include_domains=PROFILE_DOMAINS, scope="profiles"))
         for username in context.all_usernames()[:5]:
-            dorks.append(Dork(f'"{username}"', "Perfiles del alias", include_domains=PROFILE_DOMAINS))
+            dorks.append(Dork(f'"{username}"', "Perfiles del alias", include_domains=PROFILE_DOMAINS, scope="profiles"))
+        # Interleave source families so extra aliases cannot monopolize the tail.
+        anchors = [(name.strip(), True) for name in names if name.strip()]
+        anchors.extend((username, False) for username in context.all_usernames()[:3])
+        for domains, scope, rationale in [
+            (FORUM_DOMAINS, "forums", "Menciones indexadas en foros, preguntas y comentarios públicos"),
+            (PUBLICATION_DOMAINS, "publications", "Publicaciones y menciones públicas indexadas"),
+            (ACADEMIC_DOMAINS, "academic", "Repositorios abiertos, tesis, autores y datasets"),
+            ([], "open_documents", "Documentos PDF indexados en la web abierta"),
+        ]:
+            for anchor, is_name in anchors:
+                variants = name_search_variants(anchor) if is_name else []
+                query = " OR ".join(f'"{v}"' for v in variants) if variants else f'"{anchor}"'
+                if scope == "open_documents":
+                    query = f"({query}) filetype:pdf"
+                dorks.append(Dork(query, rationale, include_domains=domains, scope=scope, name_variants=variants))
+        for username in context.all_usernames()[:3]:
+            dorks.append(Dork(f'"{username}"', "Alias declarado en plataformas de documentos", include_domains=DOCUMENT_DOMAINS, scope="documents"))
         if dni:
             dorks.extend([
                 Dork(f'"{dni}"', "Publicaciones abiertas de RENIEC", include_domains=["reniec.gob.pe"], dni=dni),
@@ -403,6 +500,37 @@ class SearchDorkerTool(BaseTool):
         resp = await http_client.get(client, "https://api.search.tinyfish.ai", params=params,
                                      headers={"X-API-Key": settings.tinyfish_api_key.get_secret_value()})
         return self._parse_api_response(resp, dork, seen_urls, "tinyfish")
+
+    async def _search_brave(self, client: httpx.AsyncClient, dork: Dork, seen_urls: set[str]) -> SearchResults:
+        response = await http_client.get(client, "https://api.search.brave.com/res/v1/web/search",
+            params={"q": dork.as_text_query(), "count": max(1, min(20, settings.tavily_max_results)),
+                    "extra_snippets": "true", "country": settings.brave_country,
+                    "search_lang": settings.brave_search_language},
+            headers={"X-Subscription-Token": settings.brave_api_key.get_secret_value(), "Accept": "application/json"})
+        if response is None:
+            return SearchResults(status="request_error")
+        if response.status_code != 200:
+            return SearchResults(status=f"http_{response.status_code}")
+        try:
+            data = response.json()
+        except ValueError:
+            return SearchResults(status="invalid_json")
+        web = data.get("web") if isinstance(data, dict) else None
+        # Brave omits web when there are no web results, but error payloads are not empty searches.
+        if isinstance(data, dict) and "query" in data and web is None:
+            return SearchResults(status="no_verified_matches")
+        if not isinstance(web, dict) or not isinstance(web.get("results"), list):
+            return SearchResults(status="invalid_payload")
+        items = []
+        for item in web["results"]:
+            if not isinstance(item, dict):
+                continue
+            excerpts = item.get("extra_snippets", [])
+            excerpts = excerpts if isinstance(excerpts, list) else []
+            snippet = "\n".join(value for value in [item.get("description"), *excerpts[:5]] if isinstance(value, str))
+            items.append({"url": item.get("url"), "title": BeautifulSoup(str(item.get("title") or ""), "html.parser").get_text(" "),
+                          "snippet": BeautifulSoup(snippet, "html.parser").get_text(" ")})
+        return self._parse_api_response(httpx.Response(200, json={"results": items}), dork, seen_urls, "brave")
 
     def _parse_api_response(self, resp: httpx.Response | None, dork: Dork, seen_urls: set[str], engine: str) -> SearchResults:
         if resp is None:
@@ -467,7 +595,9 @@ class SearchDorkerTool(BaseTool):
             if resp.status_code != 200:
                 return SearchResults(status=f"http_{resp.status_code}")
             soup = BeautifulSoup(resp.text, "html.parser")
-            for row in soup.find_all("div", class_="result")[:5]:
+            if soup.select_one("form#challenge-form, form#img-form, .anomaly-modal"):
+                return SearchResults(status="blocked_response")
+            for row in soup.find_all("div", class_="result")[:max(1, min(20, settings.tavily_max_results))]:
                 result.received += 1
                 title_tag = row.find("a", class_="result__a")
                 if not title_tag:
@@ -477,7 +607,7 @@ class SearchDorkerTool(BaseTool):
                     match = re.search(r"uddg=([^&]+)", url)
                     if match:
                         url = unquote(match.group(1))
-                snippet_tag = row.find("a", class_="result__snippet")
+                snippet_tag = row.find(class_="result__snippet")
                 finding = self._validated_finding(dork, url, title_tag.get_text(" ", strip=True),
                                                  snippet_tag.get_text(" ", strip=True) if snippet_tag else "", "duckduckgo",
                                                  rejections=result.rejections)
@@ -565,7 +695,7 @@ class SearchDorkerTool(BaseTool):
                 "search_scope": dork.scope,
                 "name_search_variants": dork.name_variants,
                 "matched_name_variant": _matched_name_variant(dork, title, snippet),
-                "document_candidate": platform in DOCUMENT_PLATFORMS,
+                "document_candidate": platform in DOCUMENT_PLATFORMS or urlsplit(url).path.lower().endswith(".pdf"),
             },
             confidence=confidence,
             evidence_urls=[url],

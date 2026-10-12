@@ -1,5 +1,7 @@
 from typing import Dict, List, Set
+import re
 import httpx
+from app.core.config import settings
 from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
@@ -18,21 +20,41 @@ class GitHubDeepScannerTool(BaseTool):
     )
     category = ToolCategory.SOCIAL
     required_inputs = ["username", "discovered_usernames"]
+    cache_prefix = "github_"
 
     # Repositorios propios cuyos commits se leen para sacar el correo de autoría.
     # Sin token la API permite 60 peticiones por hora: con 3 repos cada perfil
     # cuesta 6 (usuario, eventos, repos y 3 listados de commits).
     MAX_REPOS_FOR_EMAILS = 3
 
+    def _pending_usernames(self, context):
+        checked = set(context.extra.get("github_checked_usernames", []))
+        if len(checked) >= max(0, settings.username_scan_max_aliases):
+            return []
+        return list(dict.fromkeys(username for username in context.all_usernames()
+                                 if re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", username)
+                                 and username.casefold() not in checked))[:settings.username_scan_max_aliases]
+
+    def can_run(self, context: TargetContext) -> bool:
+        return bool(self._pending_usernames(context))
+
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
-        usernames = context.all_usernames()
+        usernames = self._pending_usernames(context)
         if not usernames:
             return []
 
         findings: List[ToolFinding] = []
 
-        async with http_client.build_client(timeout=10.0, rotate_ua=False, headers=HEADERS) as client:
+        headers = {**HEADERS, "X-GitHub-Api-Version": "2022-11-28"}
+        if settings.github_api_token:
+            headers["Authorization"] = f"Bearer {settings.github_api_token.get_secret_value()}"
+        checked = context.extra.setdefault("github_checked_usernames", [])
+        async with http_client.build_client(timeout=10.0, rotate_ua=False, max_retries=0,
+                                            follow_redirects=False, headers=headers) as client:
             for username in usernames:
+                if username.casefold() in checked or len(checked) >= max(0, settings.username_scan_max_aliases):
+                    continue
+                checked.append(username.casefold())
                 result = await self._scan_github_profile(client, username)
                 if result:
                     findings.append(result)
@@ -101,13 +123,10 @@ class GitHubDeepScannerTool(BaseTool):
                 from collections import Counter
                 hour_dist = Counter(commit_hours)
                 peak_hour_utc = hour_dist.most_common(1)[0][0]
-                # Inferred local timezone assuming typical peak programming between 19:00 - 23:00
-                inferred_tz = f"UTC{peak_hour_utc - 21:+d}" if -12 <= (peak_hour_utc - 21) <= 14 else "UTC"
                 schedule_meta = {
                     "peak_hour_utc": peak_hour_utc,
                     "hour_distribution": dict(sorted(hour_dist.items())),
                     "inferred_active_hours": f"{peak_hour_utc}:00 UTC",
-                    "inferred_timezone_hint": inferred_tz,
                     "recent_active_repos": list(active_repos)[:5],
                 }
 
@@ -166,7 +185,7 @@ class GitHubDeepScannerTool(BaseTool):
         own_repos = [
             repo["full_name"]
             for repo in repos_resp.json()
-            if isinstance(repo, dict) and repo.get("full_name") and not repo.get("fork")
+            if isinstance(repo, dict) and repo.get("full_name") and not repo.get("fork") and not repo.get("private")
         ]
         for full_name in own_repos[: self.MAX_REPOS_FOR_EMAILS]:
             resp = await client.get(

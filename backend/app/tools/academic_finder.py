@@ -1,129 +1,122 @@
-from typing import List
-from urllib.parse import quote_plus
+"""Public scholarly records, linked through explicit OpenAlex author identifiers."""
+import re
+
 import httpx
+
+from app.core.config import settings
 from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
+from app.tools.dni_public import public_source_url
+from app.tools.search_dorker import _normalize, name_search_variants
 
-
-# OpenAlex's "polite pool" rate-limit policy explicitly rewards a stable,
-# descriptive User-Agent identifying the application -- not a rotating
-# browser UA -- so this client opts out of UA rotation.
-HEADERS = {
-    "User-Agent": "person-map-academic-osint/1.0 (https://github.com/person-map; academic research tool)",
-    "Accept": "application/json",
-}
+HEADERS = {"User-Agent": "PersonMap/1.0 (public academic footprint research)", "Accept": "application/json"}
 
 
 class AcademicFinderTool(BaseTool):
     name = "academic_finder"
-    description = (
-        "Busca publicaciones científicas, tesis, papers y afiliaciones universitarias "
-        "en OpenAlex y repositorios académicos abiertos."
-    )
+    description = "Busca autores candidatos en OpenAlex y recupera sus publicaciones por ID documentado, con ORCID y enlaces de acceso abierto. Un homónimo no prueba identidad."
     category = ToolCategory.ACADEMIC
-    required_inputs = ["full_name", "email"]
+    required_inputs = ["full_name"]
+    cache_prefix = "academic_"
 
-    async def execute(self, context: TargetContext) -> List[ToolFinding]:
-        findings: List[ToolFinding] = []
+    def _names(self, context):
+        return list(dict.fromkeys(name.strip() for name in [context.full_name, *context.discovered_names]
+                                  if isinstance(name, str) and name.strip()))[:3]
 
-        if not context.full_name:
-            return []
+    def can_run(self, context):
+        checked = context.extra.get("academic_checked_names", [])
+        return any(name not in checked for name in self._names(context))
 
-        async with http_client.build_client(timeout=10.0, rotate_ua=False, headers=HEADERS) as client:
-            # 1. Search OpenAlex Authors API
-            author_findings = await self._search_openalex_authors(client, context.full_name, context.university)
-            findings.extend(author_findings)
-
-            # 2. Search OpenAlex Works API (Papers where target is author)
-            works_findings = await self._search_openalex_works(client, context.full_name)
-            findings.extend(works_findings)
-
-        return findings
-
-    async def _search_openalex_authors(
-        self, client: httpx.AsyncClient, name: str, university: str | None
-    ) -> List[ToolFinding]:
-        url = f"https://api.openalex.org/authors?search={quote_plus(name)}"
-        findings: List[ToolFinding] = []
-
+    async def _records(self, client, endpoint, params, diagnostics):
+        if settings.openalex_api_key:
+            params = {**params, "api_key": settings.openalex_api_key.get_secret_value()}
         try:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                data = resp.json()
-                results = data.get("results", [])
-                for author in results[:3]:
-                    display_name = author.get("display_name")
-                    affiliations = author.get("affiliations", [])
-                    institutions = [
-                        aff.get("institution", {}).get("display_name", "")
-                        for aff in affiliations
-                        if aff.get("institution")
-                    ]
-                    orcid = author.get("orcid")
-                    works_count = author.get("works_count", 0)
-                    cited_by_count = author.get("cited_by_count", 0)
-                    openalex_id = author.get("id")
-
-                    # Boost confidence if university matches
-                    confidence = 0.60
-                    if university and any(university.lower() in inst.lower() for inst in institutions):
-                        confidence = 0.90
-
-                    findings.append(
-                        ToolFinding(
-                            entity_type="academic",
-                            platform="openalex_author",
-                            value=openalex_id or display_name,
-                            display_name=f"{display_name} (Autor Académico)",
-                            metadata_info={
-                                "author_name": display_name,
-                                "institutions": institutions,
-                                "orcid": orcid,
-                                "works_count": works_count,
-                                "citations_count": cited_by_count,
-                                "profile_url": openalex_id,
-                            },
-                            confidence=confidence,
-                            evidence_urls=[openalex_id] if openalex_id else [],
-                        )
-                    )
-        except Exception:
+            response = await http_client.get(client, f"https://api.openalex.org/{endpoint}", params=params)
+            if response is None or response.status_code != 200:
+                diagnostics.append({"endpoint": endpoint, "status": f"http_{response.status_code}" if response is not None else "request_error"})
+                return []
+            data = response.json()
+            if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+                diagnostics.append({"endpoint": endpoint, "status": "invalid_payload"})
+                return []
+            diagnostics.append({"endpoint": endpoint, "status": "ok", "received": len(data["results"])})
+            return [row for row in data["results"] if isinstance(row, dict)]
+        except (httpx.HTTPError, ValueError, TypeError):
+            diagnostics.append({"endpoint": endpoint, "status": "request_error"})
             return []
 
-        return findings
-
-    async def _search_openalex_works(self, client: httpx.AsyncClient, name: str) -> List[ToolFinding]:
-        url = f"https://api.openalex.org/works?filter=author.search:{quote_plus(name)}"
-        findings: List[ToolFinding] = []
-
-        try:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                data = resp.json()
-                results = data.get("results", [])
-                for work in results[:5]:  # Top 5 works
-                    title = work.get("title") or "Sin título"
-                    doi = work.get("doi")
-                    pub_year = work.get("publication_year")
-                    landing_url = work.get("primary_location", {}).get("landing_page_url") or doi
-
-                    findings.append(
-                        ToolFinding(
-                            entity_type="academic",
-                            platform="research_paper",
-                            value=doi or title,
-                            display_name=f"Paper: {title[:80]}...",
-                            metadata_info={
-                                "title": title,
-                                "doi": doi,
-                                "publication_year": pub_year,
-                                "url": landing_url,
-                            },
-                            confidence=0.70,
-                            evidence_urls=[landing_url] if landing_url else [],
-                        )
-                    )
-        except Exception:
-            return []
-
+    async def execute(self, context: TargetContext) -> list[ToolFinding]:
+        checked = context.extra.setdefault("academic_checked_names", [])
+        diagnostics = context.extra.setdefault("academic_diagnostics", [])
+        findings, seen = [], set()
+        async with http_client.build_client(timeout=10, rotate_ua=False, max_retries=0,
+                                            follow_redirects=False, headers=HEADERS) as client:
+            for name in self._names(context):
+                if name in checked:
+                    continue
+                checked.append(name)
+                candidates = await self._records(client, "authors", {"search": name, "per_page": 10}, diagnostics)
+                names = {_normalize(variant) for variant in name_search_variants(name)}
+                authors = {}
+                for author in candidates:
+                    label = author.get("display_name")
+                    identifier = author.get("id")
+                    if not isinstance(label, str) or _normalize(label) not in names:
+                        continue
+                    if not isinstance(identifier, str) or not re.fullmatch(r"https://openalex\.org/A[0-9]+", identifier):
+                        continue
+                    institutions = []
+                    for affiliation in author.get("affiliations") or []:
+                        institution = affiliation.get("institution") if isinstance(affiliation, dict) else None
+                        if isinstance(institution, dict) and isinstance(institution.get("display_name"), str):
+                            institutions.append(institution["display_name"])
+                    orcid = public_source_url(author.get("orcid"))
+                    authors[identifier] = label
+                    if identifier not in seen:
+                        seen.add(identifier)
+                        findings.append(ToolFinding(entity_type="academic", platform="openalex_author", value=identifier,
+                            display_name=label, evidence_urls=[identifier], metadata_info={
+                                "author_name": label, "query_name": name, "institutions": list(dict.fromkeys(institutions)),
+                                "orcid": orcid, "linked_profiles": [orcid] if orcid else [],
+                                "works_count": author.get("works_count"), "citations_count": author.get("cited_by_count"),
+                                "profile_url": identifier, "ownership_status": "unverified",
+                                "name_match": "full_name_variant", "source_tool": self.name}))
+                    if len(authors) >= 3:
+                        break
+                if not authors:
+                    continue
+                works = await self._records(client, "works", {
+                    "filter": "author.id:" + "|".join(identifier.rsplit("/", 1)[-1] for identifier in authors),
+                    "per_page": 10}, diagnostics)
+                for work in works:
+                    identifier = work.get("id")
+                    if not isinstance(identifier, str) or not re.fullmatch(r"https://openalex\.org/W[0-9]+", identifier) or identifier in seen:
+                        continue
+                    matched = [item["author"]["id"] for item in (work.get("authorships") or [])
+                               if isinstance(item, dict) and isinstance(item.get("author"), dict) and item["author"].get("id") in authors]
+                    if not matched:
+                        continue
+                    links, pdfs = [], []
+                    locations = work.get("locations")
+                    locations = locations if isinstance(locations, list) else []
+                    for location in [work.get("primary_location"), work.get("best_oa_location"), *locations[:10]]:
+                        if not isinstance(location, dict):
+                            continue
+                        link = public_source_url(location.get("landing_page_url"))
+                        pdf = public_source_url(location.get("pdf_url")) if location.get("is_oa") else None
+                        if link and link not in links:
+                            links.append(link)
+                        if pdf and pdf not in pdfs:
+                            pdfs.append(pdf)
+                    seen.add(identifier)
+                    doi = public_source_url(work.get("doi"))
+                    findings.append(ToolFinding(entity_type="academic", platform="research_paper", value=doi or identifier,
+                        display_name=str(work.get("title") or "Sin título")[:200],
+                        evidence_urls=list(dict.fromkeys([identifier, *links, *pdfs])), metadata_info={
+                            "title": work.get("title"), "doi": doi, "openalex_id": identifier,
+                            "publication_year": work.get("publication_year"), "work_type": work.get("type"),
+                            "url": next(iter(links), identifier), "open_access_urls": pdfs,
+                            "matched_author_ids": matched, "matched_author_names": [authors[key] for key in matched],
+                            "ownership_status": "unverified", "authorship_evidence": "openalex_author_id",
+                            "source_tool": self.name}))
         return findings

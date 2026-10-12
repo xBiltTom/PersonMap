@@ -36,16 +36,14 @@ class ReverseImageSearchTool(BaseTool):
     exists for linking accounts across platforms that this system's own
     modules don't (yet) cover directly.
 
-    Two optional backends are supported, both gracefully disabled unless an
-    API key is configured (same pattern as the LLM integration):
-      - SerpApi (Google Lens engine): https://serpapi.com/google-lens-api
-      - Bing Visual Search (Azure AI Vision): https://learn.microsoft.com/bing/search-apis/bing-visual-search/
+    Optional provider: SerpApi (Google Lens engine), https://serpapi.com/google-lens-api.
+    Bing Search APIs retired on 2025-08-11; legacy parsers are not scheduled.
     """
 
     name = "reverse_image_search"
     description = (
         "Busca en la web abierta otras páginas donde aparece el mismo avatar/foto de perfil ya "
-        "descubierto, usando Google Lens (SerpApi) y/o Bing Visual Search como motores oficiales."
+        "descubierto, usando el proveedor opcional SerpApi (Google Lens). La reutilización de una imagen no prueba identidad."
     )
     category = ToolCategory.IMAGE
     required_inputs = ["avatar_urls"]
@@ -72,10 +70,6 @@ class ReverseImageSearchTool(BaseTool):
                 if settings.serpapi_key:
                     findings.extend(
                         await self._search_serpapi_google_lens(client, avatar_url, seen_matches)
-                    )
-                if settings.bing_visual_search_key:
-                    findings.extend(
-                        await self._search_bing_visual(client, avatar_url, seen_matches)
                     )
 
         return findings

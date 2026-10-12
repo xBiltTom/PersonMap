@@ -104,7 +104,8 @@ async def test_agent_runs_the_heuristic_sweep_when_the_llm_stays_down(monkeypatc
         metadata_info={"source_tool": "github_deep_scanner"},
     )
 
-    async def sweep(investigation_id, target):
+    async def sweep(investigation_id, target, *, initial_context):
+        assert initial_context.username == target.username
         return SweepResult(findings=[finding], rounds=1)
 
     monkeypatch.setattr(rule_engine, "collect_findings", sweep)

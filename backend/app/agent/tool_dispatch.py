@@ -72,9 +72,16 @@ def build_tool_schemas() -> List[Dict[str, Any]]:
         })
     for schema in schemas:
         if schema["function"]["name"] == "search_dorker":
+            from app.schemas.workspace import SearchQuery
             parameters = schema["function"]["parameters"]
+            query_schema = SearchQuery.model_json_schema()
+            parameters["properties"]["queries"] = {
+                "type": "array", "minItems": 1, "maxItems": 5, "items": query_schema,
+                "description": "Consultas propias: ancla literal entre comillas, justificación e include_domains; cada ancla independiente se exige en la evidencia. Alternativas en consultas separadas.",
+            }
+            parameters["properties"]["university"] = {"type": "string", "description": "Afiliación para contextualizar búsquedas"}
             parameters["required"] = []
-            parameters["anyOf"] = [{"required": [field]} for field in ("full_name", "username", "email", "dni", "phone")]
+            parameters["anyOf"] = [{"required": [field]} for field in ("full_name", "username", "email", "dni", "phone", "queries")]
     return schemas
 
 
@@ -112,6 +119,13 @@ def build_call_context(
     candidate_urls = list(dict.fromkeys(candidate_urls))
 
     base = base_context or TargetContext()
+    extra = dict(base.extra)
+    # A query applies to this call only; budgets and caches remain investigation-wide.
+    extra.pop("search_queries", None)
+    if args.get("queries"):
+        from app.schemas.workspace import ToolInputs
+        validated = ToolInputs(queries=args["queries"])
+        extra["search_queries"] = [query.model_dump() for query in validated.queries]
     return TargetContext(
         full_name=args.get("full_name") or base.full_name or target.full_name,
         email=args.get("email") or base.email or target.email,
@@ -125,7 +139,7 @@ def build_call_context(
         discovered_usernames=list(base.discovered_usernames),
         discovered_names=list(base.discovered_names),
         extra={
-            **dict(base.extra),
+            **extra,
             "candidate_urls": candidate_urls,
             # Sin esto, el agente autónomo nunca podría ejecutar las fuentes que
             # exigen consentimiento, ni siquiera habiéndolo dado: construye su
@@ -180,6 +194,7 @@ async def dispatch_tool_call(
         if base_context is not None:
             # Keep per-investigation caches and budgets even when call inputs differ.
             base_context.extra.update(ctx.extra)
+            base_context.extra.pop("search_queries", None)
 
     for f in findings:
         f.metadata_info["source_tool"] = (

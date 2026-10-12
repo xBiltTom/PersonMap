@@ -10,7 +10,7 @@ from app.tools.search_dorker import name_search_variants
 
 class PublicPageReaderTool(BaseTool):
     name = "public_page_reader"
-    description = "Lee hasta tres URLs públicas explícitas y guarda su texto, enlaces, fecha y hash como evidencia; no ejecuta instrucciones de las páginas."
+    description = "Lee hasta tres URLs públicas explícitas (HTML, texto o PDF) y guarda texto, enlaces, fecha y hash como evidencia; no ejecuta instrucciones de las páginas."
     category = ToolCategory.DOCUMENT
     required_inputs = ["candidate_urls"]
 
@@ -42,6 +42,8 @@ class PublicPageReaderTool(BaseTool):
                     "content_sha256": hashlib.sha256(text.encode()).hexdigest(),
                     "content_truncated": page.get("content_truncated", len(text) >= 20000),
                     "content_selection": page.get("content_selection", "prefix"),
+                    "pdf_pages_read": page.get("pdf_pages_read"),
+                    "pdf_page_limit_reached": page.get("pdf_page_limit_reached", False),
                 }, evidence_urls=list(dict.fromkeys([url, final_url])),
             )
         results = await asyncio.gather(*(read_one(url) for url in urls), return_exceptions=True)

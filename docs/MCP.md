@@ -238,3 +238,13 @@ La segunda prueba necesita PostgreSQL y permiso para crear esquemas. Crea un esq
 ## SDK
 
 Se utiliza el SDK oficial Python, rama 1.x mantenida (`mcp>=1.20,<2`, versión exacta en `uv.lock`), con FastMCP y Streamable HTTP. Esta elección evita mezclar interfaces incompatibles de las ramas 1.x y 2.x. [Documentación del SDK utilizado](https://py.sdk.modelcontextprotocol.io/v1/).
+
+### Cobertura web por ámbitos
+
+`get_investigation_context` incluye `search_coverage`: presupuesto, consultas usadas y pendientes, resumen por ámbito y hasta veinte propuestas en `next_queries`. Distingue coincidencias verificadas literalmente, consultas sin coincidencias verificadas e indisponibilidad del proveedor. Es una cobertura de consultas del expediente; no representa todos los contenidos de una plataforma.
+
+Revisa `scopes` antes de gastar consultas adicionales. Los ámbitos incluyen perfiles, documentos, foros/comentarios indexados, publicaciones, academia y PDFs abiertos. El agente interno también puede formular `queries` con el contrato validado de MCP. Las anclas literales independientes se exigen todas; las alternativas de nombre se deben expresar como consultas separadas.
+
+`SEARCH_MAX_QUERIES` controla el presupuesto común a los proveedores. Si no se define, se conserva `TAVILY_MAX_QUERIES` por compatibilidad. El respaldo opcional es Tavily → TinyFish → Brave → DuckDuckGo. `BRAVE_API_KEY` habilita Brave; sin clave se omite. Una consulta puede consumir solicitudes en varios proveedores.
+
+El lector público admite HTML, texto y PDFs con texto nativo. Un PDF de imagen, un parser ausente o un límite de extracción dejan un estado explícito. Revisa ese estado antes de interpretar una búsqueda vacía. Consulta la [auditoría OSINT](AUDITORIA_OSINT_2026-10-12.md) para límites, configuración y pruebas.

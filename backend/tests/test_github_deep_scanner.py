@@ -107,3 +107,31 @@ async def test_profile_without_name_does_not_invent_one():
     assert findings[0].metadata_info["name"] == ""
     assert findings[0].metadata_info["emails"] == []
     assert findings[0].display_name == "@JorgeWueder"
+
+
+@pytest.mark.asyncio
+async def test_alias_coverage_is_durable_and_token_stays_only_in_requests(monkeypatch):
+    import json
+    from pydantic import SecretStr
+    from app.core.config import settings
+    from app.core.runtime import durable_runtime
+    from app.tools.base import ToolFinding
+    monkeypatch.setattr(settings, 'github_api_token', SecretStr('fixture-public-token'))
+    monkeypatch.setattr(settings, 'username_scan_max_aliases', 2)
+    tool = GitHubDeepScannerTool()
+    scanned = []
+    async def scan(client, username):
+        assert client.headers['Authorization'] == 'Bearer fixture-public-token'
+        scanned.append(username)
+        return ToolFinding(entity_type='social_account', platform='github', value=f'https://github.com/{username}')
+    monkeypatch.setattr(tool, '_scan_github_profile', scan)
+    context = TargetContext(username='fixture')
+    assert len(await tool.execute(context)) == 1
+    context.discovered_usernames.extend(['FIXTURE', 'second-fixture', '../invalid'])
+    assert len(await tool.execute(context)) == 1
+    assert scanned == ['fixture', 'second-fixture']
+    context.discovered_usernames.append('third-fixture')
+    assert not tool.can_run(context) and await tool.execute(context) == []
+    runtime = durable_runtime(context.extra)
+    assert runtime['github_checked_usernames'] == ['fixture', 'second-fixture']
+    assert 'fixture-public-token' not in json.dumps(runtime)

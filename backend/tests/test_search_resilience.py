@@ -77,7 +77,10 @@ async def test_keyless_tinyfish_never_called(monkeypatch):
 async def test_tinyfish_success_and_request_shape(monkeypatch):
     monkeypatch.setattr(settings, 'tinyfish_api_key', SecretStr('fixture-tiny'))
     respx.post(TAVILY).respond(500)
-    tiny = respx.get(TINY).respond(200, json={'results': [{'title': 'alpha', 'snippet': 'Public alpha profile', 'url': 'https://github.com/alpha'}]})
+    def matching_source(request):
+        domain = request.url.params.get('include_domains', 'github.com').split(',')[0]
+        return httpx.Response(200, json={'results': [{'title': 'alpha', 'snippet': 'Public alpha mention', 'url': f'https://{domain}/alpha'}]})
+    tiny = respx.get(TINY).mock(side_effect=matching_source)
     backup = respx.post(DDG).respond(500)
     findings = await SearchDorkerTool().execute(TargetContext(username='alpha'))
     assert findings[0].metadata_info['engine'] == 'tinyfish'

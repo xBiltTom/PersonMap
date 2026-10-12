@@ -5,7 +5,10 @@ RUNTIME_KEYS = (
     "username_finder_coverage", "username_finder_scanned", "username_finder_stats",
     "search_queries_executed", "search_queries_used", "search_provider_attempts", "search_seen_urls",
     "search_disabled_backends", "search_diagnostics", "search_query_limit",
+    "search_query_plan", "search_last_status", "search_read_urls", "search_fetch_disabled",
     "domain_finder_checked", "personal_domain_urls",
+    "academic_checked_names", "academic_diagnostics",
+    "github_checked_usernames",
 )
 
 

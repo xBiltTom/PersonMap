@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -67,6 +68,11 @@ class RuleEngine:
                 parts.append(f"{req}:{val}")
         if tool.name == "dni_lookup":
             parts.append("public:" + ",".join(sorted(context.extra.get("dni_source_urls", []))))
+        if tool.name == "search_dorker":
+            parts.append(f"university:{context.university or ''}")
+            parts.append("queries:" + json.dumps(context.extra.get("search_queries", []), sort_keys=True))
+            # Search batches can continue without new identifiers; each batch covers pending scopes.
+            parts.append(f"used:{context.extra.get('search_queries_used', 0)}")
         return "|".join(parts)
 
     async def collect_findings(
@@ -76,6 +82,7 @@ class RuleEngine:
         db: Optional[AsyncSession] = None,
         trace_engine: str = "rules",
         trace_layer: str = "heuristic",
+        initial_context: Optional[TargetContext] = None,
     ) -> SweepResult:
         """
         Ejecuta la barrida heuristica completa y devuelve los hallazgos en bruto.
@@ -90,7 +97,7 @@ class RuleEngine:
         Todos los eventos que emite viajan con `layer: "heuristic"`, para que la
         consola pueda distinguir a simple vista qué capa produjo cada línea.
         """
-        context = TargetContext(
+        context = initial_context or TargetContext(
             full_name=target.full_name,
             email=target.email,
             username=target.username,
@@ -108,6 +115,7 @@ class RuleEngine:
                 "self_consent": bool((target.extra_data or {}).get("self_consent")),
             },
         )
+        context.extra["investigation_id"] = investigation_id
 
         all_findings: List[ToolFinding] = []
         executed_runs: Set[str] = set()
@@ -282,7 +290,8 @@ class RuleEngine:
         investigation = await db.get(Investigation, UUID(str(investigation_id)))
         if investigation is not None:
             investigation.metrics = {**(investigation.metrics or {}),
-                                     "collection_runtime": durable_runtime(sweep.context.extra)}
+                                     "collection_runtime": durable_runtime(sweep.context.extra),
+                                     "search_coverage": tool_registry.get_tool("search_dorker").coverage(sweep.context)}
 
         # Deduplicación, scoring y persistencia compartidos con el agente autónomo
         entities = await persist_findings(
@@ -342,6 +351,7 @@ class RuleEngine:
                 "tool_execution_id": tool_execution_id,
                 "findings_count": len(findings),
                 "search_diagnostics": context.extra.get("search_diagnostics", []) if tool.name == "search_dorker" else [],
+                "search_coverage": tool.coverage(context) if tool.name == "search_dorker" else None,
                 "duration_seconds": duration_seconds,
                 "message": f"[{tool.name}] completado: {len(findings)} hallazgos · {duration_seconds:.1f} s.",
                 "timestamp": time.time(),

@@ -63,7 +63,7 @@ services:
       BACKEND_PORT: "8000"
       # CORS: el frontend dentro de la red Docker llama al backend directamente,
       # pero el navegador llama a localhost:8000 → lo incluimos en origins.
-      CORS_ORIGINS: "http://localhost:3000,http://frontend:3000"
+      CORS_ORIGINS: '["http://localhost:3000","http://127.0.0.1:3000","http://frontend:3000"]'
     ports:
       - "8000:8000"
     healthcheck:

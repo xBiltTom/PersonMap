@@ -51,7 +51,7 @@ async def test_reader_restrictions(kind):
     responses = {'private_redirect': httpx.Response(302, headers={'location': 'http://127.0.0.1/private'}), 'login': httpx.Response(200, text='<input type="password">', headers={'content-type': 'text/html'}), 'large': httpx.Response(200, content=b'a' * (MAX_BYTES + 1), headers={'content-type': 'text/plain'}), 'pdf': httpx.Response(200, content=b'%PDF', headers={'content-type': 'application/pdf'})}
     respx.get(URL).mock(return_value=responses[kind])
     page = await read_public_page(URL)
-    assert page['status'] == {'private_redirect': 'unsafe_redirect', 'login': 'login_required', 'large': 'too_large', 'pdf': 'unsupported_content'}[kind]
+    assert page['status'] == {'private_redirect': 'unsafe_redirect', 'login': 'login_required', 'large': 'too_large', 'pdf': 'invalid_pdf'}[kind]
 
 @pytest.mark.asyncio
 @respx.mock
