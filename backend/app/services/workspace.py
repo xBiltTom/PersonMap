@@ -41,6 +41,7 @@ from app.tools.public_page_reader import PublicPageReaderTool
 from app.tools.registry import tool_registry
 from app.tools.search_dorker import name_search_variants
 from app.services.workspace_updates import WorkspaceUpdates, compact_finding
+from app.services.external_evidence import ExternalEvidenceImport, IMPORT_TOOL
 
 logger = logging.getLogger(__name__)
 EXTERNAL_TOOLS = {tool.name: tool for tool in tool_registry.get_all()}
@@ -117,7 +118,7 @@ def call_fingerprint(tool_name: str, context: TargetContext) -> str:
     return hashlib.sha256(json.dumps([tool_name, values], sort_keys=True).encode()).hexdigest()
 
 
-class WorkspaceService(WorkspaceUpdates):
+class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
     def __init__(self, session_factory=async_session_maker):
         self.session_factory = session_factory
         self.tasks: dict[UUID, asyncio.Task] = {}
@@ -274,6 +275,10 @@ class WorkspaceService(WorkspaceUpdates):
                     "review_baseline": (inv.metrics or {}).get("review_baseline"),
                     "known_identifiers": context.model_dump(exclude={"extra"}),
                     "name_search_variants": name_search_variants(context.full_name or ""),
+                    "reported_candidates": [{"entity_id": str(entity.id), "source_url": report["source_url"],
+                        "observed_at": report["observed_at"], "identifier": identifier}
+                        for entity in entities for report in (entity.metadata_info or {}).get("external_reports", [])
+                        if report["evidence_level"] == "page_content" for identifier in report.get("identifiers", [])][:100],
                     "candidate_urls": context.extra.get("candidate_urls", [])[:100],
                     "executions": [ToolExecutionRead.model_validate(e).model_dump(mode="json") for e in executions],
                     "notes": [NoteRead.model_validate(n).model_dump(mode="json") for n in notes],
@@ -281,6 +286,8 @@ class WorkspaceService(WorkspaceUpdates):
                     "total_findings": len(entities),
                     "execution_policy": {"max_parallel_tools": parallel_limit(),
                         "new_execution_requires_pivot": bool((inv.metrics or {}).get("review_baseline")),
+                        "external_evidence_batch_limit": 10,
+                        "external_candidates_automatically_promoted": False,
                         "pivot_fields": ["question", "expected_signal", "stop_condition"],
                         "active_tools": active_tools,
                         "username_default_mode": "fast", "fast_sites": max(1, settings.mcp_username_fast_sites),
@@ -634,7 +641,8 @@ class WorkspaceService(WorkspaceUpdates):
                                    author_type="agent", kind="summary", title="Resumen de sesión", content=summary)
                 db.add(summary_note)
             executions = list((await db.scalars(select(ToolExecution).where(ToolExecution.investigation_id == inv.id))).all())
-            external_executions = [e for e in executions if e.engine == "external"]
+            imports = [e for e in executions if e.engine == "external" and e.tool_name == IMPORT_TOOL]
+            external_executions = [e for e in executions if e.engine == "external" and e.tool_name != IMPORT_TOOL]
             sessions = list((await db.scalars(select(InvestigationSession).where(InvestigationSession.investigation_id == inv.id))).all())
             entities = list((await db.scalars(select(Entity.id).where(Entity.investigation_id == inv.id))).all())
             groups = list((await db.scalars(select(CorrelationGroup.id).where(CorrelationGroup.investigation_id == inv.id))).all())
@@ -643,6 +651,9 @@ class WorkspaceService(WorkspaceUpdates):
                 "external_sessions": len(sessions), "external_tools_registered": len(EXTERNAL_TOOLS),
                 "external_scan_coverage": (inv.metrics or {}).get("external_runtime", {}).get("username_finder_coverage", {}),
                 "tools_executed": len(external_executions), "entities_discovered": len(entities), "correlation_groups": len(groups),
+                "external_import_batches": len(imports), "external_import_observations": sum(e.findings_count for e in imports),
+                "external_import_seconds": sum(max(0, (e.completed_at - e.started_at).total_seconds()) for e in imports if e.completed_at),
+                "external_acquisition_time_measured": False,
                 "new_findings": max(0, len(entities) - (inv.metrics or {}).get("imported_findings", 0)),
                 "tool_execution_seconds": sum(max(0, (e.completed_at - e.started_at).total_seconds()) for e in external_executions if e.completed_at),
                 "execution_time_seconds": sum(max(0, ((s.ended_at or now) - s.started_at).total_seconds()) for s in sessions),

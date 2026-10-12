@@ -25,6 +25,11 @@ def compact_finding(entity):
         metadata.pop(key)
     if omitted:
         metadata["content_available"] = True
+    if metadata.get("external_reports"):
+        metadata["external_reports_count"] = len(metadata["external_reports"])
+        metadata["external_reports"] = [{key: value for key, value in report.items() if key not in {"excerpt", "query"}}
+                                        for report in metadata["external_reports"][-5:]]
+        metadata["content_available"] = True
     return finding
 
 

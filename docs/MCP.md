@@ -95,6 +95,43 @@ Un agente que navegue con herramientas propias puede documentar lo observado med
 
 ## Sincronización y trazabilidad
 
+### Investigación autónoma y evidencia del navegador
+
+El flujo principal del agente externo parte de los identificadores iniciales; no requiere ejecutar antes un barrido tradicional. Las instrucciones MCP orientan al agente a formular hipótesis, elegir pocas consultas útiles, variar el nombre con prudencia, explorar documentos y fuentes institucionales, contrastar resultados y detener vías sin evidencia nueva. Se recomienda navegación y búsqueda propias del cliente cuando estén disponibles, utilizando las herramientas PersonMap según las necesidades y el presupuesto. El servidor no invoca otro LLM ni proporciona un navegador al cliente.
+
+El prompt MCP `investigate_person(investigation_id, objective, max_external_searches=6)` ofrece ese flujo. Su límite de búsquedas externas es una instrucción orientativa: el servidor no puede controlar llamadas del navegador del cliente. Las instrucciones generales también se entregan al conectar, aunque el cliente no exponga prompts MCP. Una petición normal puede ser: «Investiga este caso desde cero, combina tu navegación con PersonMap, persiste evidencia con fuentes y contrasta las hipótesis antes de concluir».
+
+`import_external_evidence(investigation_id, session_id, batch)` guarda hasta diez observaciones por lote, dentro de un expediente externo con sesión activa:
+
+```json
+{
+  "rationale": "El documento publica el nombre con apellidos primero",
+  "idempotency_key": "document-roll-reading-001",
+  "records": [{
+    "entity_type": "document",
+    "url": "https://example.org/roll",
+    "source_url": "https://example.org/roll",
+    "title": "Padrón académico",
+    "acquisition_method": "agent_browser",
+    "evidence_level": "page_content",
+    "observed_at": "2026-10-12T12:00:00Z",
+    "excerpt": "PÉREZ ROJAS ANA MARÍA — Ingeniería",
+    "locator": "Página 22, fila correspondiente",
+    "identifiers": [{"kind": "name", "value": "Pérez Rojas Ana María"}]
+  }]
+}
+```
+
+Usa la fecha real de lectura con zona horaria; la fecha del ejemplo es ilustrativa. `agent_browser` corresponde a `page_content`; `agent_search` a `search_result`. En este último caso no se admiten identificadores ni enlaces como hechos extraídos de una página. Las URL deben ser públicas y los identificadores declarados deben aparecer completos en el extracto. Si la URL del recurso difiere de la fuente, debe aparecer en el extracto. Los enlaces declarados también requieren presencia textual. El contrato permite documento, página, perfil candidato y mención de búsqueda, sin campos libres para inventar verificación, confianza o procedencia de otra herramienta.
+
+El servidor **no descarga ni verifica** estas fuentes: conserva lo que declara el cliente. Los registros mantienen método, autor, sesión, fecha, extracto, ubicación y UUID de observación dentro de `external_reports`. Se deduplican entidades, conservando observaciones distintas y sus extractos. Aparecen en mapa, grupos, inspector, REST y actualizaciones incrementales. El inspector muestra las cinco lecturas externas más recientes; `get_finding` devuelve el historial completo. Las lecturas de buscador y de página permanecen diferenciadas aunque correspondan a la misma URL.
+
+`get_investigation_context.reported_candidates` ofrece identificadores declarados con su entidad y fuente. No se convierten automáticamente en semillas ni relaciones de identidad: el agente selecciona explícitamente el siguiente pivote y cita su entidad de origen. Los enlaces declarados tampoco se incorporan automáticamente como conexiones verificadas. Las correlaciones se evalúan mediante `add_correlation_assessment`, conservando incertidumbre y revisión.
+
+Repetir el mismo lote reutiliza su importación. Una `idempotency_key` fija admite reintentos del mismo contenido; reutilizarla con contenido diferente devuelve 409. Cada lote es atómico y valida referencias del mismo expediente. La sesión debe seguir activa incluso al reutilizar un lote.
+
+La traza identifica `external_evidence_import`, con duración **solo de persistencia**. `tools_executed` y `tool_execution_seconds` siguen contando herramientas recolectoras; `external_import_batches`, `external_import_observations` y `external_import_seconds` contabilizan importaciones por separado. El tiempo/coste de navegación externa no se infiere de la importación (`external_acquisition_time_measured=false`); debe declararse en el registro de búsqueda del agente y en el protocolo de evaluación.
+
 ### Cobertura documental y navegación del agente
 
 El barrido de búsqueda reserva una consulta documental en una ronda inicial de al menos cinco consultas, sin aumentar el presupuesto total. Incluye Scribd, SlideShare, Studocu y College Sidekick. La búsqueda general del nombre no exige que el documento contenga literalmente la universidad; esa combinación queda como consulta secundaria.

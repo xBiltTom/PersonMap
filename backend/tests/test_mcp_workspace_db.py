@@ -6,6 +6,7 @@ No external OSINT requests; tools use controlled fixtures. Existing dossiers are
 import asyncio
 import json
 import uuid
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import httpx
@@ -33,6 +34,7 @@ from app.core.fingerprint import run_fingerprint
 from fastapi import HTTPException
 from app.schemas.investigation import InvestigationCreate
 from app.schemas.target import TargetCreate
+from app.schemas.external_evidence import ExternalEvidence, ExternalEvidenceBatch
 from app.schemas.workspace import CorrelationAssessmentCreate, NoteCreate, PivotPlan, SearchQuery, SessionCreate, ToolInputs, ToolRequest
 from app.services.workspace import EXTERNAL_TOOLS, WorkspaceService, call_fingerprint
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
@@ -88,6 +90,64 @@ class FixtureTool(BaseTool):
         return [ToolFinding(entity_type="social_account", platform="github", value="https://github.com/fixture",
                             metadata_info={"username": "fixture", "bio": "Public fixture biography"},
                             evidence_urls=["https://example.test/source"])]
+
+
+@pytest.mark.asyncio
+async def test_external_evidence_enters_map_trace_updates_and_preserves_provenance(isolated_workspace):
+    service, _ = isolated_workspace
+    async with service.session_factory() as db:
+        inv = await service.create(InvestigationCreate(target=TargetCreate(username="seed"), execution_mode="external"), db)
+    session = await service.open_session(inv.id, SessionCreate(client="browser-fixture"))
+    sid = uuid.UUID(session["id"])
+    observed = datetime.now(timezone.utc) - timedelta(minutes=2)
+    page = ExternalEvidence(entity_type="document", url="https://example.test/roll", source_url="https://example.test/roll",
+        title="Public academic roll", acquisition_method="agent_browser", evidence_level="page_content", observed_at=observed,
+        excerpt="Pérez Rojas Ana María, public_alias, Ingeniería.", locator="Page 22, relevant row",
+        identifiers=[{"kind":"name", "value":"Pérez Rojas Ana María"}, {"kind":"username", "value":"public_alias"}])
+    snippet = ExternalEvidence(**{**page.model_dump(), "acquisition_method":"agent_search", "evidence_level":"search_result",
+        "identifiers": [], "excerpt":"Pérez Rojas Ana María appears in a search snippet", "query":'"Pérez Rojas Ana María"'})
+    batch = ExternalEvidenceBatch(rationale="Read document and distinguish indexed snippet", records=[page,snippet], idempotency_key="fixture-batch")
+    imported = await service.import_evidence(inv.id, sid, batch)
+    assert len(imported["findings"]) == 1 and not imported["server_fetched_sources"]
+    entity_id = uuid.UUID(imported["entity_ids"][0])
+    assert "excerpt" not in imported["findings"][0]["metadata_info"]["external_reports"][0]
+    detail = await service.detail(inv.id)
+    assert len(detail["entities"]) == 1 and len(detail["correlation_groups"]) == 1
+    full = await service.findings(inv.id, 1, entity_id=entity_id, include_content=True)
+    reports = full["findings"][0]["metadata_info"]["external_reports"]
+    assert {report["evidence_level"] for report in reports} == {"page_content","search_result"}
+    assert all(report["reported_by"] == "browser-fixture" and report["server_verified"] is False for report in reports)
+    async with service.session_factory() as db:
+        observations = list((await db.scalars(select(EntityObservation).where(EntityObservation.investigation_id == inv.id))).all())
+        assert len(observations) == 2 and all(obs.observed_at == observed for obs in observations)
+        assert {str(obs.id) for obs in observations} == {report["observation_id"] for report in reports}
+        execution = await db.get(ToolExecution, uuid.UUID(imported["execution_id"]))
+        assert execution.engine_layer == "external_import" and execution.input_summary["duration_scope"] == "persistence_only"
+        assert "excerpt" not in json.dumps(execution.input_summary)
+    reused = await service.import_evidence(inv.id, sid, batch)
+    assert reused["reused"] and reused["execution_id"] == imported["execution_id"]
+    assert reused["entity_ids"] == imported["entity_ids"]
+    assert set(reused["observation_ids"]) == set(imported["observation_ids"])
+    with pytest.raises(HTTPException) as exc:
+        await service.import_evidence(inv.id, sid, batch.model_copy(update={"rationale":"Changed content"}))
+    assert exc.value.status_code == 409
+    context = await service.context(inv.id)
+    assert len(context["reported_candidates"]) == 2
+    assert context["known_identifiers"]["discovered_usernames"] == []
+    assert context["known_identifiers"]["discovered_names"] == []
+    updates = await service.updates(inv.id, 0)
+    assert any(change["kind"] == "finding" and change["data"]["id"] == str(entity_id) for change in updates["changes"])
+    with pytest.raises(HTTPException) as exc:
+        await service.import_evidence(inv.id, sid, batch.model_copy(update={"source_entity_ids":[uuid.uuid4()], "idempotency_key":"new"}))
+    assert exc.value.status_code == 422
+    await service.close_session(inv.id, sid, "finish")
+    async with service.session_factory() as db:
+        completed = await db.get(Investigation, inv.id)
+        assert completed.metrics["tools_executed"] == 0 and completed.metrics["tool_execution_seconds"] == 0
+        assert completed.metrics["external_import_batches"] == 1 and completed.metrics["external_import_observations"] == 2
+    with pytest.raises(HTTPException) as exc:
+        await service.import_evidence(inv.id, sid, batch)
+    assert exc.value.status_code == 409
 
 
 @pytest.mark.asyncio

@@ -53,6 +53,14 @@ async def test_http_mcp_requires_token_and_exposes_registry(mcp_app):
             assert tools["get_finding"]["annotations"]["readOnlyHint"] is True
             assert tools["get_workspace_updates"]["annotations"]["readOnlyHint"] is True
             assert tools["add_correlation_assessment"]["annotations"]["readOnlyHint"] is False
+            assert tools["import_external_evidence"]["annotations"]["readOnlyHint"] is False
+            assert tools["import_external_evidence"]["annotations"]["openWorldHint"] is False
+            prompts = await rpc(client, "prompts/list")
+            assert "investigate_person" in {prompt["name"] for prompt in prompts.json()["result"]["prompts"]}
+            prompt = await rpc(client, "prompts/get", {"name":"investigate_person", "arguments":{
+                "investigation_id":str(uuid.uuid4()), "objective":"Public documentary footprint", "max_external_searches":"4"}})
+            assert prompt.status_code == 200
+            assert "Advisory external search budget: 4" in prompt.json()["result"]["messages"][0]["content"]["text"]
             assert tools["create_investigation"]["outputSchema"]["type"] == "object"
 
 

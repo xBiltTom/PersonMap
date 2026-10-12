@@ -121,6 +121,10 @@ function stringList(value: unknown): string[] {
   });
 }
 
+function externalReports(metadata: Metadata): Metadata[] {
+  return Array.isArray(metadata.external_reports) ? metadata.external_reports.filter(isRecord).slice(-5) : [];
+}
+
 function numberValue(value: unknown): string | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? value.toLocaleString("es-PE")
@@ -173,6 +177,7 @@ function formatTool(tool: string): string {
     google_account_osint: "OSINT de cuenta Google",
     reverse_image_search: "Búsqueda visual",
     email_enumerator: "Enumerador de correo",
+    external_evidence_import: "Evidencia aportada por agente",
   };
   return labels[key] ?? humanize(key);
 }
@@ -289,6 +294,11 @@ export function getInspectorSearchText(node: GraphNode): string {
   const values = [node.data.label, node.data.display_name, node.data.value, node.data.platform, node.data.entity_type];
   for (const key of scalarKeys) values.push(stringValue(metadata[key]));
   for (const key of listKeys) values.push(...stringList(metadata[key]));
+  for (const report of externalReports(metadata)) {
+    for (const identifier of Array.isArray(report.identifiers) ? report.identifiers : []) {
+      if (isRecord(identifier)) values.push(stringValue(identifier.value));
+    }
+  }
   return values.filter((value): value is string => Boolean(value)).join(" ").toLocaleLowerCase();
 }
 
@@ -307,6 +317,21 @@ function buildObservedFields(node: GraphNode, metadata: Metadata, isRoot: boolea
   };
 
   if (isRoot) add("full_name", "Nombre", metadata.full_name);
+  const reports = externalReports(metadata);
+  if (reports.length) add("external_origin", "Procedencia", "Evidencia declarada por agente; fuente sin comprobar por el servidor");
+  if (Array.isArray(metadata.external_reports) && metadata.external_reports.length > 5) {
+    add("external_count", "Lecturas", `${metadata.external_reports.length} registros; se muestran los 5 más recientes`);
+  }
+  reports.forEach((report, index) => {
+    add(`external_${index}_method`, "Obtención", report.evidence_level === "page_content" ? "Contenido de página leído por el agente" : "Fragmento de resultado de búsqueda");
+    add(`external_${index}_author`, "Agente", report.reported_by);
+    add(`external_${index}_time`, "Observado", report.observed_at, "date");
+    add(`external_${index}_source`, "Fuente", report.source_url, "url");
+    add(`external_${index}_locator`, "Ubicación", report.locator);
+    for (const [position, identifier] of (Array.isArray(report.identifiers) ? report.identifiers : []).entries()) {
+      if (isRecord(identifier)) add(`external_${index}_identifier_${position}`, "Dato declarado", identifier.value);
+    }
+  });
   add("username", metadata.resource_kind === "channel_id" || metadata.resource_kind === "profile_id" ? "ID del perfil" : "Usuario", firstString(metadata, ["username", "preferred_username"]));
   const verificationLabels: Record<string, string> = {
     candidate: "Perfil candidato; pendiente de verificar",
@@ -398,6 +423,9 @@ function buildDescriptions(metadata: Metadata): InspectorDescription[] {
   add("Resumen", metadata.summary);
   add("Extracto encontrado", metadata.snippet);
   add("Fragmento del documento", metadata.excerpt);
+  for (const report of externalReports(metadata)) {
+    add(report.evidence_level === "page_content" ? "Extracto leído por el agente" : "Fragmento encontrado por el agente", report.excerpt);
+  }
   return descriptions;
 }
 
