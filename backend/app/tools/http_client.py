@@ -27,6 +27,7 @@ raised exception.
 import asyncio
 import random
 import time
+from contextlib import asynccontextmanager
 from collections import deque
 from typing import Any, Deque, Optional
 
@@ -136,6 +137,16 @@ def reset_concurrency_gates() -> None:
     global _global_semaphore
     _global_semaphore = None
     _host_semaphores.clear()
+
+
+@asynccontextmanager
+async def outgoing_budget(host: str):
+    """Shared limits for httpx and browser TLS transports alike."""
+    limiter = _host_rate_limits.get(host)
+    if limiter is not None:
+        await limiter.acquire()
+    async with _get_global_semaphore(), _get_host_semaphore(host):
+        yield
 
 
 def random_user_agent() -> str:

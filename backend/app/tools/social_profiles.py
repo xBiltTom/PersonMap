@@ -30,6 +30,7 @@ PROFILE_ROUTES = {
     "soundcloud.com": ("soundcloud", r"/([A-Za-z0-9_-]+)"),
     "twitch.tv": ("twitch", r"/([A-Za-z0-9_]+)"),
     "dev.to": ("devto", r"/([A-Za-z0-9_-]+)"),
+    "disqus.com": ("disqus", r"/by/([A-Za-z0-9_.-]+)"),
     "stackoverflow.com": ("stackoverflow", r"/users/\d+/([A-Za-z0-9_-]+)"),
 }
 RESERVED_ROUTES = {

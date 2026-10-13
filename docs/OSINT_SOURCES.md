@@ -12,6 +12,11 @@ De ahí que cada fase del plan empiece re-verificando esta tabla.
 
 ## Cómo revisar
 
+`username_finder` utiliza ahora Maigret 0.6.6 como biblioteca completa en un
+worker aislado, con transporte y controles de precisión de Person Map.
+WhatsMyName complementa las plataformas sin receta nativa. Véase
+[integración, configuración y pruebas de Maigret](MAIGRET.md).
+
 1. Re-comprobar con `curl` cada endpoint de la tabla "Fuentes en uso".
 2. Revisar los repos de la tabla "Proyectos de referencia" por cambios de
    licencia, abandono o técnicas nuevas.
@@ -58,8 +63,8 @@ disponibilidad en vivo de las fuentes de la tabla siguiente.
 
 | Fuente | Endpoint / dato | Key | Estado | Última verificación | Usada por |
 |---|---|---|---|---|---|
-| **WhatsMyName** | `wmn-data.json` bundleado, **667** sitios utilizables | No | 🟢 | 2026-09-04 | `username_finder`, vía `dataset_adapter` |
-| **Maigret** | `maigret-data.json` vendorizado @ `8f42a42` | No | 🟢 | 2026-09-04 | `username_finder`. De 4.020 sitios quedan **1.774** tras descartar deshabilitados, protegidos, adultos y los que no traen validación de contenido |
+| **WhatsMyName** | `wmn-data.json` separado; **298** plataformas complementarias | No | 🟢 | 2026-10-12 (integración local) | `username_finder`; se consulta cuando no hay receta nativa equivalente |
+| **Maigret** | Biblioteca **0.6.6** y catálogo fijados por `uv.lock`; **5.103** plataformas nativas | No | 🟢 | 2026-10-12 (integración local) | `username_finder`: worker aislado, recetas completas, extracción y controles negativos. [Configuración y alcance](MAIGRET.md) |
 | **crt.sh** | `crt.sh/?q={dominio}&output=json` | No | 🟡 **intermitente** | 2026-09-04 | `domain_finder` — Certificate Transparency. Medido el mismo día: 1 de 4 por la mañana, 6 de 6 por la tarde |
 | **XposedOrNot** | `api.xposedornot.com/v1/check-email/{email}` | No | 🟢 | 2026-09-04 | `breach_checker` |
 | **OpenAlex** | API de autores y trabajos | No | 🟢 | 2026-09-04 | `academic_finder` |

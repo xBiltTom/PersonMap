@@ -20,7 +20,7 @@ from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 from app.tools.phone_numbers import extract_phone_observations
 from app.tools.telegram_profiles import observe_telegram_page
-from app.tools.dataset_adapter import build_catalog
+from app.tools.maigret_catalog import build_profile_catalog as build_catalog
 from app.tools.public_network import UnsafePublicURL, public_address
 from app.tools.social_profiles import PROFILE_ROUTES, SocialProfile, normalize_web_url, parse_social_profile, social_host
 

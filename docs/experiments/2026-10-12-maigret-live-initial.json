@@ -1,0 +1,817 @@
+{
+  "generated_at": "2026-10-12T23:25:25.189278+00:00",
+  "baseline": {
+    "id": "f3e7cc69-ff1f-486b-a7ca-634065e5a6ec",
+    "status": "completed",
+    "strategy": "rule_based",
+    "username": "xBiltTom",
+    "metrics": {
+      "engine_used": "rules",
+      "execution_time_seconds": 135.93,
+      "entities_discovered": 17,
+      "correlation_groups": 16,
+      "ai_enhanced": true,
+      "config_username_scan_engine_version": 2,
+      "config_username_catalog_scanned": 500,
+      "config_username_catalog_available": 2479,
+      "config_maigret_version": null,
+      "config_maigret_catalog_sha256": null,
+      "config_catalog_from_maigret": 0,
+      "config_catalog_from_whatsmyname": 500
+    },
+    "runtime": {
+      "username_finder_coverage": {
+        "biltonjr": 500,
+        "xbilttom": 500,
+        "bjnovoaar": 500
+      },
+      "username_finder_scanned": [
+        "biltonjr",
+        "bjnovoaar",
+        "xbilttom"
+      ],
+      "username_finder_stats": {
+        "checked": 1500,
+        "skipped_by_regex": 0,
+        "rejected_by_control": 0
+      },
+      "search_queries_used": 5
+    },
+    "entity_types": {
+      "social_account": 7,
+      "search_mention": 6,
+      "academic": 1,
+      "email_registration": 1,
+      "email": 2
+    },
+    "profiles": [
+      {
+        "platform": "Picsart",
+        "url": "https://picsart.com/u/biltonjr",
+        "sources": [
+          "username_finder"
+        ],
+        "verification": "candidate",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "X",
+        "url": "https://x.com/biltonjr",
+        "sources": [
+          "username_finder",
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": true,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "Roblox",
+        "url": "https://www.roblox.com/search/users?keyword=biltonjr",
+        "sources": [
+          "username_finder"
+        ],
+        "verification": "candidate",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "github",
+        "url": "https://github.com/xBiltTom",
+        "sources": [
+          "username_finder",
+          "github_deep_scanner",
+          "email_checker",
+          "social_url_extractor",
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": true,
+        "has_avatar": true,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "Disqus",
+        "url": "https://disqus.com/by/biltonjr/",
+        "sources": [
+          "username_finder",
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "linkedin",
+        "url": "https://linkedin.com/in/bilton-junior-novoa-arce-6a52a3281",
+        "sources": [
+          "social_url_extractor"
+        ],
+        "verification": "candidate",
+        "negative_control": null,
+        "has_bio": false,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "snapchat",
+        "url": "https://snapchat.com/@biltonjr",
+        "sources": [
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": null,
+        "has_bio": true,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      }
+    ],
+    "native_profiles": [],
+    "tools": [
+      {
+        "name": "username_finder",
+        "status": "completed",
+        "findings": 1,
+        "round": 1,
+        "elapsed": 41.838622,
+        "error": null
+      },
+      {
+        "name": "keybase_resolver",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.825971,
+        "error": null
+      },
+      {
+        "name": "wikipedia_edits",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.824443,
+        "error": null
+      },
+      {
+        "name": "email_checker",
+        "status": "completed",
+        "findings": 1,
+        "round": 1,
+        "elapsed": 41.823108,
+        "error": null
+      },
+      {
+        "name": "email_enumerator",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.821495,
+        "error": null
+      },
+      {
+        "name": "gravatar_deep",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.819433,
+        "error": null
+      },
+      {
+        "name": "google_account_osint",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.817409,
+        "error": null
+      },
+      {
+        "name": "github_deep_scanner",
+        "status": "completed",
+        "findings": 1,
+        "round": 1,
+        "elapsed": 41.81579,
+        "error": null
+      },
+      {
+        "name": "search_dorker",
+        "status": "completed",
+        "findings": 6,
+        "round": 1,
+        "elapsed": 41.813763,
+        "error": null
+      },
+      {
+        "name": "academic_finder",
+        "status": "completed",
+        "findings": 1,
+        "round": 1,
+        "elapsed": 41.811926,
+        "error": null
+      },
+      {
+        "name": "dni_lookup",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.810381,
+        "error": null
+      },
+      {
+        "name": "breach_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.809193,
+        "error": null
+      },
+      {
+        "name": "infostealer_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.808104,
+        "error": null
+      },
+      {
+        "name": "username_finder",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.843117,
+        "error": null
+      },
+      {
+        "name": "keybase_resolver",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.840205,
+        "error": null
+      },
+      {
+        "name": "wikipedia_edits",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.83672,
+        "error": null
+      },
+      {
+        "name": "email_checker",
+        "status": "completed",
+        "findings": 3,
+        "round": 2,
+        "elapsed": 41.8336,
+        "error": null
+      },
+      {
+        "name": "email_enumerator",
+        "status": "completed",
+        "findings": 1,
+        "round": 2,
+        "elapsed": 41.830403,
+        "error": null
+      },
+      {
+        "name": "gravatar_deep",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.827594,
+        "error": null
+      },
+      {
+        "name": "google_account_osint",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.824597,
+        "error": null
+      },
+      {
+        "name": "github_deep_scanner",
+        "status": "completed",
+        "findings": 1,
+        "round": 2,
+        "elapsed": 41.822021,
+        "error": null
+      },
+      {
+        "name": "social_url_extractor",
+        "status": "completed",
+        "findings": 2,
+        "round": 2,
+        "elapsed": 41.82003,
+        "error": null
+      },
+      {
+        "name": "social_verifier",
+        "status": "completed",
+        "findings": 1,
+        "round": 2,
+        "elapsed": 41.817588,
+        "error": null
+      },
+      {
+        "name": "search_dorker",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.813531,
+        "error": null
+      },
+      {
+        "name": "academic_finder",
+        "status": "completed",
+        "findings": 1,
+        "round": 2,
+        "elapsed": 41.809986,
+        "error": null
+      },
+      {
+        "name": "breach_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.806439,
+        "error": null
+      },
+      {
+        "name": "infostealer_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.803805,
+        "error": null
+      },
+      {
+        "name": "username_finder",
+        "status": "completed",
+        "findings": 4,
+        "round": 3,
+        "elapsed": 46.415549,
+        "error": null
+      },
+      {
+        "name": "keybase_resolver",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 46.414356,
+        "error": null
+      },
+      {
+        "name": "wikipedia_edits",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 46.412855,
+        "error": null
+      },
+      {
+        "name": "google_account_osint",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 46.411169,
+        "error": null
+      },
+      {
+        "name": "github_deep_scanner",
+        "status": "completed",
+        "findings": 1,
+        "round": 3,
+        "elapsed": 46.409807,
+        "error": null
+      },
+      {
+        "name": "social_url_extractor",
+        "status": "completed",
+        "findings": 2,
+        "round": 3,
+        "elapsed": 46.408657,
+        "error": null
+      },
+      {
+        "name": "social_verifier",
+        "status": "completed",
+        "findings": 2,
+        "round": 3,
+        "elapsed": 46.407523,
+        "error": null
+      },
+      {
+        "name": "search_dorker",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 46.406155,
+        "error": null
+      },
+      {
+        "name": "infostealer_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 46.404345,
+        "error": null
+      },
+      {
+        "name": "social_url_extractor",
+        "status": "completed",
+        "findings": 2,
+        "round": 4,
+        "elapsed": 4.709159,
+        "error": null
+      },
+      {
+        "name": "social_verifier",
+        "status": "completed",
+        "findings": 1,
+        "round": 4,
+        "elapsed": 4.707624,
+        "error": null
+      }
+    ]
+  },
+  "current": {
+    "id": "e1f8f71c-c3f3-4641-8511-07dc26c9c649",
+    "status": "completed",
+    "strategy": "rule_based",
+    "username": "xBiltTom",
+    "metrics": {
+      "engine_used": "rules",
+      "execution_time_seconds": 100.48,
+      "entities_discovered": 13,
+      "correlation_groups": 12,
+      "ai_enhanced": false,
+      "config_username_scan_engine_version": 3,
+      "config_username_catalog_scanned": 500,
+      "config_username_catalog_available": 5401,
+      "config_maigret_version": "0.6.6",
+      "config_maigret_catalog_sha256": "ef6ca66efa174209c10205ff86f7e975b591128681710639fdc786ff05e662da",
+      "config_catalog_from_maigret": 291,
+      "config_catalog_from_whatsmyname": 209
+    },
+    "runtime": {
+      "username_finder_coverage": {
+        "xbilttom": 0
+      },
+      "username_finder_scanned": [
+        "xbilttom"
+      ],
+      "username_finder_stats": {
+        "checked": 0,
+        "skipped_by_regex": 3,
+        "rejected_by_control": 0
+      },
+      "username_finder_catalog_id": "753c370b3f655620a494cf26e26d65b798b20f4cf26e45d7008b511ef0369562",
+      "username_finder_outcomes": {
+        "xBiltTom": {
+          "Claimed": 3,
+          "Unknown": 264,
+          "Available": 588
+        }
+      },
+      "search_queries_used": 5
+    },
+    "entity_types": {
+      "email_registration": 1,
+      "social_account": 2,
+      "email": 2,
+      "academic": 2,
+      "search_mention": 6
+    },
+    "profiles": [
+      {
+        "platform": "linkedin",
+        "url": "https://linkedin.com/in/bilton-junior-novoa-arce-6a52a3281",
+        "sources": [
+          "social_url_extractor"
+        ],
+        "verification": "candidate",
+        "negative_control": null,
+        "has_bio": false,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "github",
+        "url": "https://github.com/xBiltTom",
+        "sources": [
+          "github_deep_scanner",
+          "email_checker",
+          "social_url_extractor",
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": null,
+        "has_bio": true,
+        "has_avatar": true,
+        "has_links": false,
+        "extractor": null
+      }
+    ],
+    "native_profiles": [],
+    "tools": [
+      {
+        "name": "username_finder",
+        "status": "failed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 33.577754,
+        "error": "Error -3 while decompressing data: incorrect header check"
+      },
+      {
+        "name": "keybase_resolver",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 33.572102,
+        "error": null
+      },
+      {
+        "name": "wikipedia_edits",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 33.570847,
+        "error": null
+      },
+      {
+        "name": "email_checker",
+        "status": "completed",
+        "findings": 1,
+        "round": 1,
+        "elapsed": 33.569732,
+        "error": null
+      },
+      {
+        "name": "email_enumerator",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 33.56888,
+        "error": null
+      },
+      {
+        "name": "gravatar_deep",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 33.568099,
+        "error": null
+      },
+      {
+        "name": "google_account_osint",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 33.567288,
+        "error": null
+      },
+      {
+        "name": "github_deep_scanner",
+        "status": "completed",
+        "findings": 1,
+        "round": 1,
+        "elapsed": 33.566552,
+        "error": null
+      },
+      {
+        "name": "search_dorker",
+        "status": "completed",
+        "findings": 6,
+        "round": 1,
+        "elapsed": 33.56581,
+        "error": null
+      },
+      {
+        "name": "academic_finder",
+        "status": "completed",
+        "findings": 2,
+        "round": 1,
+        "elapsed": 33.565013,
+        "error": null
+      },
+      {
+        "name": "dni_lookup",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 33.563984,
+        "error": null
+      },
+      {
+        "name": "breach_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 33.562931,
+        "error": null
+      },
+      {
+        "name": "infostealer_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 33.561779,
+        "error": null
+      },
+      {
+        "name": "username_finder",
+        "status": "failed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 33.49549,
+        "error": "Error -3 while decompressing data: incorrect header check"
+      },
+      {
+        "name": "keybase_resolver",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 33.493664,
+        "error": null
+      },
+      {
+        "name": "wikipedia_edits",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 33.492044,
+        "error": null
+      },
+      {
+        "name": "email_checker",
+        "status": "completed",
+        "findings": 3,
+        "round": 2,
+        "elapsed": 33.490525,
+        "error": null
+      },
+      {
+        "name": "email_enumerator",
+        "status": "completed",
+        "findings": 1,
+        "round": 2,
+        "elapsed": 33.489321,
+        "error": null
+      },
+      {
+        "name": "gravatar_deep",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 33.487995,
+        "error": null
+      },
+      {
+        "name": "google_account_osint",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 33.486787,
+        "error": null
+      },
+      {
+        "name": "github_deep_scanner",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 33.485792,
+        "error": null
+      },
+      {
+        "name": "social_url_extractor",
+        "status": "completed",
+        "findings": 2,
+        "round": 2,
+        "elapsed": 33.484879,
+        "error": null
+      },
+      {
+        "name": "social_verifier",
+        "status": "completed",
+        "findings": 1,
+        "round": 2,
+        "elapsed": 33.483906,
+        "error": null
+      },
+      {
+        "name": "breach_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 33.483143,
+        "error": null
+      },
+      {
+        "name": "infostealer_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 33.482063,
+        "error": null
+      },
+      {
+        "name": "username_finder",
+        "status": "failed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 32.249778,
+        "error": "Error -3 while decompressing data: incorrect header check"
+      },
+      {
+        "name": "keybase_resolver",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 32.2483,
+        "error": null
+      },
+      {
+        "name": "wikipedia_edits",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 32.246529,
+        "error": null
+      },
+      {
+        "name": "google_account_osint",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 32.244574,
+        "error": null
+      },
+      {
+        "name": "github_deep_scanner",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 32.242831,
+        "error": null
+      },
+      {
+        "name": "social_url_extractor",
+        "status": "completed",
+        "findings": 2,
+        "round": 3,
+        "elapsed": 32.241315,
+        "error": null
+      },
+      {
+        "name": "social_verifier",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 32.239811,
+        "error": null
+      },
+      {
+        "name": "infostealer_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 32.238461,
+        "error": null
+      }
+    ]
+  },
+  "comparison": {
+    "old_profiles": 7,
+    "new_profiles": 2,
+    "shared": [
+      "https://github.com/xbilttom",
+      "https://linkedin.com/in/bilton-junior-novoa-arce-6a52a3281"
+    ],
+    "new": [],
+    "not_recovered": [
+      "https://disqus.com/by/biltonjr",
+      "https://picsart.com/u/biltonjr",
+      "https://snapchat.com/@biltonjr",
+      "https://www.roblox.com/search/users?keyword=biltonjr",
+      "https://x.com/biltonjr"
+    ]
+  }
+}

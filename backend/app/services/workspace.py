@@ -111,6 +111,10 @@ def call_fingerprint(tool_name: str, context: TargetContext) -> str:
             values["university"] = context.university
             values["discovered_names"] = context.discovered_names
     if tool_name == "username_finder":
+        config = run_fingerprint()
+        for key in ("username_scan_engine_version", "maigret_version", "maigret_catalog_sha256",
+                    "maigret_enrich", "maigret_tags", "maigret_site_names", "maigret_excluded_tags", "maigret_keywords"):
+            values[key] = config[key]
         values["scan_mode"] = context.extra.get("username_scan_mode", "deep")
         values["site_limit"] = max(1, settings.username_scan_max_sites)
         if values["scan_mode"] == "fast":
@@ -180,7 +184,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
             current_config = run_fingerprint()
             coverage_known = "username_finder_coverage" in runtime and all(
                 (source.metrics or {}).get(f"config_{key}") == current_config[key]
-                for key in ("username_scan_engine_version", "username_catalog_scanned", "maigret_commit"))
+                for key in ("username_scan_engine_version", "username_catalog_scanned", "maigret_commit",
+                            "maigret_version", "maigret_catalog_sha256", "maigret_tags",
+                            "maigret_site_names", "maigret_excluded_tags", "maigret_enrich", "maigret_keywords"))
             if not coverage_known:
                 for key in ("username_finder_coverage", "username_finder_scanned", "username_finder_stats"):
                     runtime.pop(key, None)

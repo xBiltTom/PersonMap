@@ -91,6 +91,13 @@ class Settings(BaseSettings):
     # demo, y se acota abajo a una fracción del presupuesto global para que
     # ninguna herramienta pueda dejar sin ranuras al resto de la ronda.
     username_scan_concurrency: int = 60
+    maigret_request_timeout: float = 10.0
+    maigret_worker_timeout: float = 900.0
+    maigret_enrich: bool = True
+    maigret_tags: list[str] = []
+    maigret_site_names: list[str] = []
+    maigret_excluded_tags: list[str] = []
+    maigret_keywords: list[str] = []
     # Fracción máxima del presupuesto global que puede tomar una sola tool.
     tool_concurrency_share: float = 0.6
 

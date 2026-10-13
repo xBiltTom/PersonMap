@@ -21,6 +21,7 @@ from app.models.entity import Entity
 from app.models.relationship import Relationship
 from app.models.target import Target
 from app.tools.base import ToolFinding
+from app.tools.social_profiles import parse_social_profile
 
 # Tope de aristas por nodo. El emparejamiento es O(n^2) sobre las entidades de la
 # investigación: con ~30 entidades son ~450 pares, pero al ampliar el catálogo de
@@ -34,7 +35,8 @@ MAX_EDGES_PER_ENTITY = 6
 
 
 def finding_dedupe_key(f: ToolFinding) -> Tuple[str, str, str]:
-    value = f.value.strip().rstrip("/").lower()
+    profile = parse_social_profile(f.value) if f.entity_type in {"social_account", "sensitive_account"} else None
+    value = (profile.url if profile else f.value).strip().rstrip("/").lower()
     if value.startswith(("http://", "https://")):
         # Una URL identifica el perfil por sí sola, así que la plataforma no
         # entra en la clave: cada herramienta la bautiza a su manera ("github"
@@ -47,7 +49,8 @@ def finding_dedupe_key(f: ToolFinding) -> Tuple[str, str, str]:
 
 def entity_dedupe_key(entity: Entity) -> Tuple[str, str, str]:
     """La misma clave de deduplicación aplicada a una entidad ya persistida."""
-    value = entity.value.strip().rstrip("/").lower()
+    profile = parse_social_profile(entity.value) if entity.entity_type in {"social_account", "sensitive_account"} else None
+    value = (profile.url if profile else entity.value).strip().rstrip("/").lower()
     if value.startswith(("http://", "https://")):
         address = value.split("://", 1)[1].removeprefix("www.")
         return (entity.entity_type, "url", address)

@@ -1,23 +1,15 @@
-"""
-Rastreo de alias a través del catálogo unificado de plataformas.
+"""Maigret-backed enumeration with complementary WhatsMyName checks.
 
-El catálogo lo construye `app.tools.dataset_adapter` normalizando en memoria
-WhatsMyName (CC BY-SA 4.0) y Maigret (MIT). Aquí solo se comprueba.
-
-Lo que aporta la unificación no es sobre todo volumen, es **precisión**:
-
-- `regexCheck` descarta un alias que un sitio no puede aceptar **sin gastar la
-  petición** (QQ solo admite identificadores numéricos), lo que quita tráfico y
-  quita falsos positivos a la vez.
-- `absenceStrs` añade cadenas que delatan una página de "no existe" en sitios
-  que responden 200 a cualquier cosa.
-- `alexaRank` ordena por popularidad real, así que recortar el catálogo conserva
-  los sitios donde una persona tiene cuentas de verdad.
-- `protection` deja fuera los sitios inalcanzables sin `curl_cffi`, en vez de
-  quemar reintentos contra ellos.
+The public tool name, negative controls, coverage, budgets and evidence
+contract remain stable. The isolated worker executes upstream site recipes
+and extractors; only WMN-only platforms use the compact legacy checker.
 """
 
 import asyncio
+import base64
+import ast
+import hashlib
+import json
 import secrets
 import string
 import time
@@ -33,7 +25,9 @@ from app.core.events import event_bus
 from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 from app.tools.social_profiles import core_profile_candidates, parse_social_profile, social_host, TELEGRAM_HOSTS
-from app.tools.dataset_adapter import SiteCheck, build_catalog, catalog_stats
+from app.tools.dataset_adapter import SiteCheck, catalog_stats
+from app.tools.maigret_catalog import build_scan_catalog as build_catalog, database_info
+from app.tools.maigret_runner import run_maigret, decoded_headers
 
 HTML_ACCEPT = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
@@ -41,17 +35,12 @@ HTML_ACCEPT = {
 
 
 class UsernameFinderTool(BaseTool):
-    """
-    Motor de enumeración de alias con triple validación (código de estado,
-    cadena de presencia y cadena de ausencia) más la comprobación previa del
-    formato del alias.
-    """
+    """Complete native search, preserving candidate/verified semantics."""
 
     name = "username_finder"
     description = (
-        "Rastreo de alias en miles de plataformas con los catálogos de "
-        "WhatsMyName y Maigret, validación por código/cadenas y descarte previo "
-        "de sitios cuyo formato de alias no encaja"
+        "Búsqueda con Maigret completo: detección, extracción de perfiles y "
+        "enlaces, controles negativos y cobertura adicional de WhatsMyName"
     )
     category = ToolCategory.USERNAME
     required_inputs = ["username"]
@@ -69,7 +58,7 @@ class UsernameFinderTool(BaseTool):
 
     def __init__(self) -> None:
         self._catalog: Optional[List[SiteCheck]] = None
-        self._catalog_limit: Optional[int] = None
+        self._catalog_limit: Optional[tuple] = None
         self._generic_users: Set[str] = set()
         self._load_generic_users()
 
@@ -100,9 +89,11 @@ class UsernameFinderTool(BaseTool):
         el tope anterior daría cifras que no corresponden a la configuración.
         """
         limit = max(1, settings.username_scan_max_sites)
-        if self._catalog is None or self._catalog_limit != limit:
+        cache_key = (limit, tuple(settings.maigret_tags), tuple(settings.maigret_site_names),
+                     tuple(settings.maigret_excluded_tags))
+        if self._catalog is None or self._catalog_limit != cache_key:
             self._catalog = build_catalog(limit=limit)
-            self._catalog_limit = limit
+            self._catalog_limit = cache_key
         return self._catalog
 
     def catalog_size(self) -> Dict[str, int]:
@@ -112,7 +103,7 @@ class UsernameFinderTool(BaseTool):
 
     def catalog_breakdown(self) -> Dict[str, Any]:
         """Composición del catálogo, para la interfaz y el artículo."""
-        return catalog_stats(self._load_sites())
+        return {**catalog_stats(self._load_sites()), "maigret_commit": None, **database_info()}
 
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
         findings: List[ToolFinding] = []
@@ -123,6 +114,14 @@ class UsernameFinderTool(BaseTool):
         sites = self._load_sites()
         if not sites:
             return findings
+        catalogue_id = hashlib.sha256(json.dumps({**database_info(),
+            "sites": [(s.name, getattr(s, "url", ""), getattr(s, "native_name", None)) for s in sites],
+            "enrich": settings.maigret_enrich, "keywords": settings.maigret_keywords,
+            "engine_version": 3}, sort_keys=True).encode()).hexdigest()
+        if context.extra.get("username_finder_catalog_id") != catalogue_id:
+            for field in ("username_finder_coverage", "username_finder_scanned", "username_finder_stats"):
+                context.extra.pop(field, None)
+        context.extra["username_finder_catalog_id"] = catalogue_id
         fast = context.extra.get("username_scan_mode") == "fast"
         if fast:
             sites = sites[:max(1, settings.mcp_username_fast_sites)]
@@ -141,7 +140,8 @@ class UsernameFinderTool(BaseTool):
         #
         # Vive en `context.extra` y no en la instancia porque la herramienta es
         # un singleton del registry compartido por todas las investigaciones.
-        scanned: Set[str] = context.extra.setdefault("username_finder_scanned", set())
+        scanned: Set[str] = set(context.extra.setdefault("username_finder_scanned", []))
+        context.extra["username_finder_scanned"] = scanned
         # Coverage lets a later deep pass continue past the fast prefix.
         coverage = context.extra.setdefault("username_finder_coverage", {})
 
@@ -159,7 +159,7 @@ class UsernameFinderTool(BaseTool):
         remaining = max(0, settings.username_scan_max_aliases - len(scanned))
         processed = 0
 
-        async with http_client.build_client(timeout=6.0) as client:
+        async with http_client.build_client(timeout=6.0, public_only=True) as client:
             for username in usernames:
                 if fast and processed >= 1:
                     break
@@ -203,6 +203,8 @@ class UsernameFinderTool(BaseTool):
                     })
 
                 progress_counter = {"checked": 0, "control_rejected": 0}
+                native = [s for s in applicable if getattr(s, "native_name", None)]
+                complementary = [s for s in applicable if not getattr(s, "native_name", None)]
                 tasks = [
                     self._check_site(
                         client,
@@ -213,11 +215,62 @@ class UsernameFinderTool(BaseTool):
                         progress_counter,
                         len(applicable),
                     )
-                    for site in applicable
+                    for site in complementary
                 ]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+                async def collect_native():
+                    native_findings = []
+                    by_name = {s.native_name: s for s in native}
+                    controls = {s.native_name: self._invented_alias(s, clean_user) for s in native}
+
+                    async def collect(result):
+                        site = by_name[result["site"]]
+                        outcomes = context.extra.setdefault("username_finder_outcomes", {})
+                        counts = outcomes.setdefault(clean_user, {})
+                        state = result.get("status", "Unknown")
+                        counts[state] = counts.get(state, 0) + 1
+                        finding = self._native_finding(site, clean_user, result, progress_counter)
+                        progress_counter["checked"] += 1
+                        if finding:
+                            native_findings.append(finding)
+                        if investigation_id and progress_counter["checked"] % self.PROGRESS_EVERY == 0:
+                            await event_bus.publish(investigation_id, {
+                                "type": "log", "phase": "progress", "tool": self.name,
+                                "checked": progress_counter["checked"], "total": len(applicable),
+                                "pct": round(progress_counter["checked"] / len(applicable) * 100, 1),
+                                "subject": clean_user, "message": f"[username_finder] Maigret: {progress_counter['checked']}/{len(applicable)}",
+                                "timestamp": time.time(),
+                            })
+                    async def progress(message):
+                        checked = message["checked"]
+                        if investigation_id and (checked % self.PROGRESS_EVERY == 0 or checked == len(native)):
+                            await event_bus.publish(investigation_id, {
+                                "type": "log", "phase": "maigret_detection", "tool": self.name,
+                                "checked": checked, "total": len(native),
+                                "pct": round(checked / len(native) * 100, 1), "subject": clean_user,
+                                "message": f"[username_finder] Maigret: {checked}/{len(native)} consultas; validando controles negativos.",
+                                "timestamp": time.time(),
+                            })
+                    if native:
+                        await run_maigret(clean_user, native, controls, collect, progress, request_semaphore=semaphore)
+                    return native_findings
+
+                native_task = asyncio.create_task(collect_native())
+                try:
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    results.extend(await native_task)
+                finally:
+                    if not native_task.done():
+                        native_task.cancel()
+                    await asyncio.gather(native_task, return_exceptions=True)
                 coverage[key] = len(sites)
                 stats["checked"] += len(applicable)
+                if investigation_id:
+                    await event_bus.publish(investigation_id, {
+                        "type": "log", "phase": "progress", "tool": self.name,
+                        "checked": len(applicable), "total": len(applicable), "pct": 100.0,
+                        "subject": clean_user, "message": f"[username_finder] Barrido y controles terminados para @{clean_user}.",
+                        "timestamp": time.time(),
+                    })
 
                 rejected = progress_counter["control_rejected"]
                 stats["rejected_by_control"] = stats.get("rejected_by_control", 0) + rejected
@@ -241,6 +294,88 @@ class UsernameFinderTool(BaseTool):
                         findings.append(res)
 
         return findings
+
+    @staticmethod
+    def _response(result):
+        wire = result.get("response")
+        if not wire:
+            return None
+        response = httpx.Response(wire["status"], headers=decoded_headers(wire.get("headers", {}).items()),
+            content=base64.b64decode(wire["body"]), request=httpx.Request("GET", wire["url"]))
+        response.encoding = wire.get("encoding") or "utf-8"
+        return response
+
+    def _native_finding(self, site, username, result, counter):
+        if result.get("status") != "Claimed" or result.get("is_similar"):
+            return None
+        response = self._response(result)
+        if response is None:
+            return None
+        title = BeautifulSoup(response.text, "html.parser").title if "html" in response.headers.get("content-type", "") else None
+        if title and any(marker in title.get_text().lower() for marker in (
+                "just a moment", "captcha", "access denied", "verify you are human", "log in", "sign in")):
+            return None
+        profile = parse_social_profile(result.get("url_user", ""))
+        if profile and profile.platform == "telegram" and not self._matches(site, response, username):
+            return None
+        final_profile = parse_social_profile(str(response.url))
+        if profile and final_profile and (profile.platform != final_profile.platform or
+                                         profile.username.casefold() != final_profile.username.casefold()):
+            return None
+        controlled = result.get("control") or {}
+        control_response = self._response(controlled)
+        control = None
+        if control_response is not None and controlled.get("status") in {"Claimed", "Available"}:
+            blocked = (control_response.status_code in {401, 403, 429, 999} or control_response.status_code >= 500
+                       or any(marker in control_response.text.lower() for marker in
+                              ("just a moment", "verify you are human", "captcha", "access denied")))
+            if not blocked:
+                control = controlled["status"] == "Claimed"
+                if profile and profile.platform == "telegram" and control_response.status_code == 200:
+                    control = True if self._matches(site, control_response, controlled["username"]) else None
+        if control is True:
+            counter["control_rejected"] += 1
+            return None
+        data = result.get("ids_data") or {}
+        def values(*keys):
+            collected = []
+            for key in keys:
+                value = data.get(key)
+                if isinstance(value, str) and value.startswith("["):
+                    try:
+                        value = ast.literal_eval(value)
+                    except (ValueError, SyntaxError):
+                        pass
+                entries = value if isinstance(value, list) else [value]
+                collected.extend(v for v in entries if isinstance(v, str) and v)
+            return list(dict.fromkeys(collected))
+        typed = result.get("ids_usernames") or {}
+        users = [value for value, kind in typed.items() if kind == "username"]
+        links = list(dict.fromkeys([link for link in [*result.get("ids_links", []),
+            *values("links", "website", "blog", "blog_url", "url")] if isinstance(link, str) and link.startswith(("http://", "https://"))]))
+        raw_url = result.get("url_user") or site.build_pretty_url(username)
+        canonical = profile.url if profile else raw_url
+        metadata = {
+            "username": username, "url": canonical, "profile_url": canonical,
+            "source_tool": self.name, "search_engine": "maigret", **database_info(),
+            "verification_status": "candidate", "catalog_source": "maigret",
+            "negative_control": "passed" if control is False else "untested",
+            "checked_status": result.get("http_status"), "category": site.category,
+            "sensitive_platform": site.sensitive, "maigret_status": result["status"],
+            "maigret_data": data, "discovered_identifiers": typed,
+            "extracted_usernames": users, "extracted_emails": values("email", "emails"),
+            "extracted_phones": values("phone", "phones", "phone_number"),
+            "linked_profiles": links, "bio": next(iter(values("bio", "about", "description")), ""),
+            "name": next(iter(values("fullname", "full_name", "name")), ""),
+            "location": next(iter(values("location", "city", "country")), ""),
+            "avatar_url": next(iter(values("image", "avatar", "avatar_url")), None),
+            "site_rank": site.rank if site.rank < 5_000_000 else None,
+            "keyword_match": result.get("keyword_match"),
+        }
+        return ToolFinding(entity_type="sensitive_account" if site.sensitive else "social_account",
+            platform=profile.platform if profile else site.name, value=canonical,
+            display_name=f"{site.name}: @{username}", confidence=0.85 if control is False else 0.65,
+            evidence_urls=list(dict.fromkeys([raw_url, result.get("url_probe") or raw_url])), metadata_info=metadata)
 
     async def _check_site(
         self,

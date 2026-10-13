@@ -132,6 +132,8 @@ class SiteCheck:
     # Plataforma de contenido adulto. No excluye el sitio: lo etiqueta, para que
     # el hallazgo se presente en su propia categoría y con su propia advertencia.
     sensitive: bool = False
+    # A recipe executed by the complete upstream engine, never by _matches.
+    native_name: Optional[str] = None
 
     def accepts_username(self, username: str) -> bool:
         """

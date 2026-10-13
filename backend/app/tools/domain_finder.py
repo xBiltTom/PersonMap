@@ -29,7 +29,7 @@ from urllib.parse import urlparse
 from app.core.events import event_bus
 from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
-from app.tools.dataset_adapter import platform_hosts
+from app.tools.maigret_catalog import platform_hosts
 
 CRT_SH_URL = "https://crt.sh/"
 
