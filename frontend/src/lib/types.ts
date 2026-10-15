@@ -423,6 +423,19 @@ export interface TargetInput {
   university?: string | null;
   description?: string | null;
   extra_data?: Record<string, unknown> | null;
+  identifiers?: TypedIdentifier[];
+}
+
+export type IdentifierType = "orcid" | "steam_id" | "gaia_id" | "vk_id" | "qq_id" | "bilibili_id" |
+  "yandex_public_id" | "yelp_userid" | "ok_id" | "wikimapia_uid" | "uidme_uguid";
+export interface TypedIdentifier { value: string; id_type: IdentifierType }
+export type MaigretScanMode = "fast" | "deep" | "all";
+export type MaigretReportFormat = "json" | "ndjson" | "csv" | "txt" | "markdown" | "html" | "pdf" | "xmind" | "graph" | "neo4j";
+export interface MaigretCapabilities {
+  catalogue_with_variants: number;
+  report_formats: MaigretReportFormat[];
+  maigret_enrich: boolean;
+  maigret_parse: boolean;
 }
 
 /**
@@ -441,4 +454,5 @@ export interface CreateInvestigationPayload {
    * `false`: esas herramientas fallan cerradas.
    */
   self_consent?: boolean;
+  maigret_plan?: { scan_mode: MaigretScanMode; options?: { parse?: boolean; enrich?: boolean; permutation_parts?: string[] } };
 }

@@ -116,9 +116,17 @@ def call_fingerprint(tool_name: str, context: TargetContext) -> str:
                     "maigret_enrich", "maigret_tags", "maigret_site_names", "maigret_excluded_tags", "maigret_keywords"):
             values[key] = config[key]
         values["scan_mode"] = context.extra.get("username_scan_mode", "deep")
-        values["site_limit"] = max(1, settings.username_scan_max_sites)
+        values["maigret_options"] = context.extra.get("maigret_options", {})
+        from app.tools.maigret_catalog import execution_config
+        values.update(execution_config())
+        values["site_limit"] = tool_registry.get_tool("username_finder").catalog_size()["available"] if values["scan_mode"] == "all" or settings.username_scan_max_sites == 0 else max(1, settings.username_scan_max_sites)
         if values["scan_mode"] == "fast":
             values["site_limit"] = min(values["site_limit"], max(1, settings.mcp_username_fast_sites))
+    if tool_name == "maigret_enricher":
+        from app.tools.maigret_catalog import execution_config, database_info
+        values["identifiers"] = context.extra.get("maigret_identifiers", [])
+        values["maigret_options"] = context.extra.get("maigret_options", {})
+        values.update({**execution_config(), **database_info(), "version": 1})
     return hashlib.sha256(json.dumps([tool_name, values], sort_keys=True).encode()).hexdigest()
 
 
@@ -138,8 +146,13 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
         return inv
 
     async def create(self, payload: InvestigationCreate, db):
-        target = Target(**payload.target.model_dump(exclude={"extra_data"}), extra_data={
-            **(payload.target.extra_data or {}), "self_consent": payload.self_consent,
+        extra_data = dict(payload.target.extra_data or {})
+        extra_data.pop("maigret_plan", None)
+        if payload.maigret_plan:
+            extra_data["maigret_plan"] = payload.maigret_plan.model_dump(exclude_none=True)
+        target = Target(**payload.target.model_dump(exclude={"extra_data", "identifiers"}), extra_data={
+            **extra_data, "self_consent": payload.self_consent,
+            **({"identifiers": [item.model_dump() for item in payload.target.identifiers]} if payload.target.identifiers else {}),
         })
         db.add(target)
         await db.flush()
@@ -265,6 +278,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                     "coverage_known": coverage_known, "review_query_budget": runtime["search_query_limit"]}
 
     async def context(self, investigation_id: UUID) -> dict:
+        from app.tools.maigret_catalog import capabilities
         async with self.session_factory() as db:
             inv = await self._investigation(db, investigation_id)
             entities = list((await db.scalars(select(Entity).where(Entity.investigation_id == investigation_id))).all())
@@ -286,6 +300,15 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                         for entity in entities for report in (entity.metadata_info or {}).get("external_reports", [])
                         if report["evidence_level"] == "page_content" for identifier in report.get("identifiers", [])][:100],
                     "candidate_urls": context.extra.get("candidate_urls", [])[:100],
+                    "maigret": {"capabilities": capabilities(),
+                        "identifiers": context.extra.get("maigret_identifiers", []),
+                        "identifier_sources": context.extra.get("maigret_identifier_sources", {}),
+                        "url_identifiers": context.extra.get("maigret_url_identifiers", {}),
+                        "scanned_identifiers": context.extra.get("maigret_enricher_scanned", []),
+                        "parsed_urls": context.extra.get("maigret_enricher_parsed", []),
+                        "url_attempts": context.extra.get("maigret_enricher_url_attempts", []),
+                        "diagnostics": context.extra.get("maigret_enricher_diagnostics", {}),
+                        "username_diagnostics": context.extra.get("username_finder_diagnostics", {})},
                     "executions": [ToolExecutionRead.model_validate(e).model_dump(mode="json") for e in executions],
                     "notes": [NoteRead.model_validate(n).model_dump(mode="json") for n in notes],
                     "sessions": [SessionRead.model_validate(s).model_dump(mode="json") for s in sessions],
@@ -297,7 +320,8 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                         "pivot_fields": ["question", "expected_signal", "stop_condition"],
                         "active_tools": active_tools,
                         "username_default_mode": "fast", "fast_sites": max(1, settings.mcp_username_fast_sites),
-                        "deep_sites": max(1, settings.username_scan_max_sites),
+                        "deep_sites": settings.username_scan_max_sites or tool_registry.get_tool("username_finder").catalog_size()["available"],
+                        "all_sites": tool_registry.get_tool("username_finder").catalog_size()["available"],
                         "search_queries_remaining": max(0, search_limit(context, settings.search_query_budget) - context.extra.get("search_queries_used", len(context.extra.get("search_queries_executed", []))))},
                     "tool_readiness": [{"name": tool.name, "can_run": tool.can_run(context),
                         "running": tool.name in active_tools}
@@ -317,6 +341,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
         findings = [ToolFinding(entity_type=e.entity_type, platform=e.platform, value=e.value,
                                 display_name=e.display_name, metadata_info=dict(e.metadata_info or {})) for e in entities]
         extract_and_apply_pivots(findings, ctx)
+        from app.tools.maigret_ids import apply_url_identifiers
+        for url, identifiers in list(ctx.extra.get("maigret_url_identifiers", {}).items()):
+            apply_url_identifiers(ctx, url, identifiers)
         ctx.extra["investigation_id"] = str(inv.id)
         return ctx
 
@@ -427,6 +454,12 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
             context.extra.pop("search_queries", None)
             context.extra.pop("username_scan_mode", None)
             context.extra.pop("search_force", None)
+            if payload.inputs.maigret_options is not None and tool.name not in {"username_finder", "maigret_enricher"}:
+                raise HTTPException(422, "maigret_options solo está disponible en las herramientas Maigret")
+            if payload.inputs.identifiers and tool.name != "maigret_enricher":
+                raise HTTPException(422, "identifiers solo está disponible en maigret_enricher")
+            if payload.inputs.identifiers:
+                context.extra["maigret_identifiers"] = [item.model_dump() for item in payload.inputs.identifiers]
             if tool.name == "search_dorker":
                 context.extra["search_force"] = payload.force
             if payload.inputs.queries:
@@ -436,7 +469,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
             if payload.inputs.scan_mode and tool.name != "username_finder":
                 raise HTTPException(422, "scan_mode solo está disponible en username_finder")
             if tool.name == "username_finder":
-                context.extra["username_scan_mode"] = payload.inputs.scan_mode or "fast"
+                context.extra["username_scan_mode"] = payload.inputs.scan_mode or (inv.target.extra_data or {}).get("maigret_plan", {}).get("scan_mode") or "fast"
             for field, discovered in (("username", "discovered_usernames"), ("email", "discovered_emails"),
                                       ("phone", "discovered_phones"), ("full_name", "discovered_names")):
                 if getattr(payload.inputs, field):
@@ -487,7 +520,10 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 execution.input_summary["queries"] = context.extra["search_queries"]
             if tool.name == "username_finder":
                 execution.input_summary["scan_mode"] = context.extra["username_scan_mode"]
-                execution.input_summary["site_limit"] = min(max(1, settings.username_scan_max_sites), max(1, settings.mcp_username_fast_sites)) if context.extra["username_scan_mode"] == "fast" else max(1, settings.username_scan_max_sites)
+                extent = tool_registry.get_tool("username_finder").catalog_size()["available"] if context.extra["username_scan_mode"] == "all" or settings.username_scan_max_sites == 0 else max(1, settings.username_scan_max_sites)
+                execution.input_summary["site_limit"] = min(extent, max(1, settings.mcp_username_fast_sites)) if context.extra["username_scan_mode"] == "fast" else extent
+            if tool.name in {"username_finder", "maigret_enricher"}:
+                execution.input_summary["maigret_options"] = context.extra.get("maigret_options", {})
             session.updated_at = datetime.now(timezone.utc)
             inv.metrics = {**(inv.metrics or {}), "external_peak_parallel_tools":
                 max((inv.metrics or {}).get("external_peak_parallel_tools", 0), len(running) + 1)}
@@ -503,7 +539,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
     async def _run_tool(self, investigation_id, execution_id, tool, context, baseline):
         findings, error = [], None
         try:
-            async with asyncio.timeout(600):
+            async with asyncio.timeout(settings.maigret_tool_timeout if tool.name in {"username_finder", "maigret_enricher"} else 600):
                 findings = await tool.execute(context)
             for finding in findings:
                 finding.metadata_info.update({"source_tool": tool.name, "engine_layer": "external"})
@@ -544,6 +580,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                     latest.extra.pop("search_queries", None)
                     latest.extra.pop("username_scan_mode", None)
                     latest.extra.pop("search_force", None)
+                    latest.extra.pop("maigret_options", None)
                     before = len(latest.extra.get("candidate_urls", []))
                     extract_and_apply_pivots(findings, latest)
                     await trace_recorder.record_event(db, investigation_id=str(inv.id), event_type="pivot", engine="external",
@@ -555,6 +592,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                     latest.extra.pop("search_queries", None)
                     latest.extra.pop("username_scan_mode", None)
                     latest.extra.pop("search_force", None)
+                    latest.extra.pop("maigret_options", None)
                 inv.metrics = {**(inv.metrics or {}), "external_runtime": durable_runtime(latest.extra)}
                 inv.revision += 1
                 await self._record_change(db, inv, executions=[execution.id],

@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, model_validator, field_validator
+from pydantic import BaseModel, ConfigDict, model_validator, field_validator, Field
+from app.schemas.identifiers import TypedIdentifier
 
 
 class TargetCreate(BaseModel):
@@ -13,6 +14,7 @@ class TargetCreate(BaseModel):
     university: Optional[str] = None
     description: Optional[str] = None
     extra_data: Optional[Dict[str, Any]] = None
+    identifiers: list[TypedIdentifier] = Field(default_factory=list, max_length=30)
 
     @field_validator("dni", mode="before")
     @classmethod
@@ -33,11 +35,12 @@ class TargetCreate(BaseModel):
             bool(self.username and self.username.strip()),
             bool(self.phone and self.phone.strip()),
             bool(self.dni and self.dni.strip()),
+            bool(self.identifiers),
         ])
         if not has_identifier:
             raise ValueError(
                 "Debe ingresar al menos un dato identificador del objetivo: "
-                "nombre completo, correo, nombre de usuario, teléfono o DNI."
+                "nombre completo, correo, nombre de usuario, teléfono, DNI o identificador tipado."
             )
         return self
 

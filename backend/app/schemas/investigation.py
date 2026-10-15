@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict
 from app.schemas.target import TargetCreate, TargetRead
 from app.schemas.entity import EntityRead
 from app.schemas.identity import CorrelationGroupRead
-from app.schemas.workspace import NoteRead, SessionRead
+from app.schemas.workspace import NoteRead, SessionRead, MaigretPlan
 
 
 # Estrategias de orquestación seleccionables. `hybrid` se añadió en la Fase 3
@@ -35,6 +35,7 @@ class InvestigationCreate(BaseModel):
     # y el motor ni siquiera la despacha. Refuerza además el marco pedagógico
     # del proyecto, que es auditar la propia huella, no la de otra persona.
     self_consent: bool = False
+    maigret_plan: MaigretPlan | None = None
 
 
 class InvestigationRead(BaseModel):

@@ -14,6 +14,7 @@ relaciones completa.
 """
 
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +23,7 @@ from app.models.relationship import Relationship
 from app.models.target import Target
 from app.tools.base import ToolFinding
 from app.tools.social_profiles import parse_social_profile
+from app.schemas.identifiers import CASE_SENSITIVE_TYPES
 
 # Tope de aristas por nodo. El emparejamiento es O(n^2) sobre las entidades de la
 # investigación: con ~30 entidades son ~450 pares, pero al ampliar el catálogo de
@@ -34,9 +36,23 @@ from app.tools.social_profiles import parse_social_profile
 MAX_EDGES_PER_ENTITY = 6
 
 
+def _dedupe_value(entity_type, value, metadata):
+    profile = parse_social_profile(value) if entity_type in {"social_account", "sensitive_account"} else None
+    value = (profile.url if profile else value).strip().rstrip("/")
+    query = metadata.get("queried_identifier")
+    kind = metadata.get("id_type") or (query.get("id_type") if isinstance(query, dict) else None)
+    preserve_case = kind in CASE_SENSITIVE_TYPES
+    if kind is None and value.startswith(("http://", "https://")):
+        from app.tools.maigret_ids import identifiers_from_url
+        preserve_case = any(item["id_type"] in CASE_SENSITIVE_TYPES for item in identifiers_from_url(value))
+    if preserve_case:
+        parsed = urlsplit(value)
+        return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path, parsed.query, parsed.fragment))
+    return value.lower()
+
+
 def finding_dedupe_key(f: ToolFinding) -> Tuple[str, str, str]:
-    profile = parse_social_profile(f.value) if f.entity_type in {"social_account", "sensitive_account"} else None
-    value = (profile.url if profile else f.value).strip().rstrip("/").lower()
+    value = _dedupe_value(f.entity_type, f.value, f.metadata_info or {})
     if value.startswith(("http://", "https://")):
         # Una URL identifica el perfil por sí sola, así que la plataforma no
         # entra en la clave: cada herramienta la bautiza a su manera ("github"
@@ -49,8 +65,7 @@ def finding_dedupe_key(f: ToolFinding) -> Tuple[str, str, str]:
 
 def entity_dedupe_key(entity: Entity) -> Tuple[str, str, str]:
     """La misma clave de deduplicación aplicada a una entidad ya persistida."""
-    profile = parse_social_profile(entity.value) if entity.entity_type in {"social_account", "sensitive_account"} else None
-    value = (profile.url if profile else entity.value).strip().rstrip("/").lower()
+    value = _dedupe_value(entity.entity_type, entity.value, entity.metadata_info or {})
     if value.startswith(("http://", "https://")):
         address = value.split("://", 1)[1].removeprefix("www.")
         return (entity.entity_type, "url", address)
@@ -189,6 +204,7 @@ async def persist_findings(
 # por evidencia descubierta.
 ENUMERATION_TOOLS = {
     "username_finder",
+    "maigret_enricher",
     "email_enumerator",
     "phone_enumerator",
     # Consulta por el correo y el alias del objetivo, así que dos registros

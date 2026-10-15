@@ -57,6 +57,15 @@ def build_tool_schemas() -> List[Dict[str, Any]]:
                 "type": "array", "items": {"type": "string"},
                 "description": "URLs públicas candidatas de perfiles",
             }
+        if "identifiers" in properties:
+            from app.schemas.identifiers import TypedIdentifier
+            properties["identifiers"] = {"type": "array", "items": TypedIdentifier.model_json_schema(),
+                                         "maxItems": 30, "description": "Identificadores públicos con tipo explícito"}
+        if tool.name in {"username_finder", "maigret_enricher"}:
+            from app.schemas.workspace import MaigretOptions
+            properties["maigret_options"] = MaigretOptions.model_json_schema()
+        if tool.name == "username_finder":
+            properties["scan_mode"] = {"type": "string", "enum": ["fast", "deep", "all"]}
 
         schemas.append({
             "type": "function",
@@ -71,6 +80,10 @@ def build_tool_schemas() -> List[Dict[str, Any]]:
             },
         })
     for schema in schemas:
+        if schema["function"]["name"] == "maigret_enricher":
+            parameters = schema["function"]["parameters"]
+            parameters["required"] = []
+            parameters["anyOf"] = [{"required": [field]} for field in ("candidate_urls", "identifiers")]
         if schema["function"]["name"] == "search_dorker":
             from app.schemas.workspace import SearchQuery
             parameters = schema["function"]["parameters"]
@@ -120,8 +133,31 @@ def build_call_context(
 
     base = base_context or TargetContext()
     extra = dict(base.extra)
+    if not base_context:
+        from app.tools.maigret_ids import identifier_values
+        extra["maigret_identifiers"] = identifier_values((target.extra_data or {}).get("identifiers", []))
     # A query applies to this call only; budgets and caches remain investigation-wide.
     extra.pop("search_queries", None)
+    extra.pop("maigret_options", None)
+    extra.pop("username_scan_mode", None)
+    if (target.extra_data or {}).get("maigret_plan"):
+        from app.schemas.workspace import MaigretPlan
+        plan = MaigretPlan.model_validate(target.extra_data["maigret_plan"])
+        extra["maigret_options"] = plan.options.model_dump(exclude_none=True)
+        extra["username_scan_mode"] = plan.scan_mode
+    if args.get("maigret_options") is not None or args.get("identifiers") or args.get("scan_mode"):
+        from app.schemas.workspace import ToolInputs
+        validated = ToolInputs(**{key: args[key] for key in ("maigret_options", "identifiers", "scan_mode") if key in args})
+        if validated.maigret_options is not None:
+            extra["maigret_options"] = {**extra.get("maigret_options", {}),
+                **validated.maigret_options.model_dump(exclude_none=True, exclude_unset=True)}
+        if validated.scan_mode:
+            extra["username_scan_mode"] = validated.scan_mode
+        ids = list(extra.get("maigret_identifiers", []))
+        for item in validated.identifiers:
+            if item.model_dump() not in ids:
+                ids.append(item.model_dump())
+        extra["maigret_identifiers"] = ids
     if args.get("queries"):
         from app.schemas.workspace import ToolInputs
         validated = ToolInputs(queries=args["queries"])

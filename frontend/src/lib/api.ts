@@ -16,6 +16,8 @@ import type {
   SurveyPayload,
   SurveyRead,
   SurveyStats,
+  MaigretCapabilities,
+  MaigretReportFormat,
 } from "@/lib/types";
 
 export const API_BASE =
@@ -131,6 +133,20 @@ export function getInvestigationGraph(id: string): Promise<GraphResponse> {
 /** URL de descarga del GraphML para Gephi/Cytoscape (la abre el navegador). */
 export function getGraphmlUrl(id: string): string {
   return `${API_BASE}/investigations/${id}/graphml`;
+}
+
+export function getMaigretCapabilities(): Promise<MaigretCapabilities> {
+  return request<MaigretCapabilities>("/maigret/capabilities");
+}
+
+export async function downloadMaigretReport(id: string, format: MaigretReportFormat): Promise<Blob> {
+  const response = await fetch(`${API_BASE}/investigations/${id}/maigret/report?format=${format}`);
+  if (!response.ok) {
+    let body: unknown = null;
+    try { body = await response.json(); } catch { /* Non-JSON upstream failure */ }
+    throw new Error(parseErrorDetail(body, `No se pudo exportar el informe (${response.status})`));
+  }
+  return response.blob();
 }
 
 // ---------------------------------------------------------------------

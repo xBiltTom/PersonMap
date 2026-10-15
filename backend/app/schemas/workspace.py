@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from app.tools.dni_public import public_source_url
+from app.schemas.identifiers import PublicIdentifier, TypedIdentifier
 
 
 class SessionCreate(BaseModel):
@@ -96,6 +97,34 @@ class SearchQuery(BaseModel):
         return result
 
 
+class MaigretOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    tags: list[str] | None = Field(default=None, max_length=30)
+    names: list[str] | None = Field(default=None, max_length=100)
+    excluded: list[str] | None = Field(default=None, max_length=30)
+    keywords: list[str] | None = Field(default=None, max_length=30)
+    enrich: bool | None = None
+    parse: bool | None = None
+    retries: int | None = Field(default=None, ge=0, le=5)
+    permutation_parts: list[str] = Field(default_factory=list, max_length=3)
+
+    @field_validator("tags", "names", "excluded", "keywords", "permutation_parts")
+    @classmethod
+    def bounded_strings(cls, values):
+        if values is None:
+            return None
+        if any(not value.strip() or len(value) > 100 or any(ord(ch) < 32 for ch in value) for value in values):
+            raise ValueError("Usa valores de una línea, entre uno y 100 caracteres.")
+        return list(dict.fromkeys(value.strip() for value in values))
+
+    @field_validator("permutation_parts")
+    @classmethod
+    def username_parts(cls, values):
+        for value in values:
+            PublicIdentifier(value=value, id_type="username")
+        return values
+
+
 class ToolInputs(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     full_name: str | None = Field(default=None, max_length=255)
@@ -106,8 +135,16 @@ class ToolInputs(BaseModel):
     university: str | None = Field(default=None, max_length=255)
     candidate_urls: list[str] = Field(default_factory=list, max_length=30)
     queries: list[SearchQuery] = Field(default_factory=list, max_length=5)
-    scan_mode: Literal["fast", "deep"] | None = None
+    scan_mode: Literal["fast", "deep", "all"] | None = None
+    identifiers: list[TypedIdentifier] = Field(default_factory=list, max_length=30)
+    maigret_options: MaigretOptions | None = None
     _public_urls = field_validator("candidate_urls")(NoteCreate.public_urls.__func__)
+
+
+class MaigretPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scan_mode: Literal["fast", "deep", "all"] = "deep"
+    options: MaigretOptions = Field(default_factory=MaigretOptions)
 
 
 class PivotPlan(BaseModel):

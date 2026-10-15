@@ -1,124 +1,220 @@
-# Integración de Maigret
+# Maigret en Person Map
 
-`username_finder` ejecuta **Maigret 0.6.6 completo como biblioteca**, en un
-proceso Python por alias. Conserva su nombre público en el registry, REST, MCP
-y el agente. WhatsMyName aporta únicamente las plataformas sin una receta
-equivalente de Maigret. GitHub, Keybase, Wikipedia, Gravatar y las demás fuentes
-especializadas conservan sus funciones.
+El motor fijado es **Maigret 0.6.6**, con el extra oficial `pdf`. La biblioteca
+original ejecuta recetas, motores, activaciones, métodos HTTP, extracción,
+enriquecimiento, mutaciones y reintentos en procesos aislados. Person Map adapta
+el transporte, los presupuestos y las evidencias a su orquestador.
 
-## Ejecución
+## Funciones disponibles
 
-1. `maigret_catalog.py` lee el catálogo incluido en la distribución fijada en
-   `uv.lock`. Prioriza las plataformas conocidas y elimina consultas duplicadas
-   por plataforma. Los datasets originales siguen separados.
-2. `maigret_worker.py` carga `MaigretDatabase` y llama a `maigret.search`, con
-   extracción y enriquecimiento. Upstream ejecuta herencia de motores,
-   `urlProbe`, métodos, cabeceras, cuerpos, activaciones, detección, extracción,
-   mutaciones y reintentos.
-3. El worker delega sus consultas por JSONL a `maigret_runner.py`. Las consultas
-   normales, las activaciones y los postprocesadores síncronos utilizan el
-   transporte HTTP de Person Map. `curl_cffi` conserva la emulación TLS del
-   navegador, con el mismo presupuesto global y por host, verificación de
-   certificados y DNS público fijado; cada redirección se valida por separado.
-   Los barridos nativo y complementario comparten también una única cuota de
-   concurrencia de `username_finder`, respetando el presupuesto de las otras
-   herramientas. El puente elimina las cabeceras de compresión y encuadre al
-   trasladar cuerpos que el cliente ya descomprimió.
-4. Para cada detección positiva se ejecuta un control negativo con la misma
-   receta nativa. Una plataforma que también encuentra ese alias se descarta;
-   un control bloqueado o fallido queda inconcluso. Telegram conserva su parser
-   de peers: la plantilla genérica de contacto no prueba existencia ni ausencia.
-   Disqus conserva su consulta API original y corrige únicamente la URL pública
-   a `/by/{username}/`, que también reconoce el normalizador de perfiles.
-5. Los resultados se convierten a `ToolFinding` con datos extraídos, enlaces,
-   identificadores tipados y URLs de evidencia. Continúan siendo candidatos;
-   `social_verifier` mantiene la verificación especializada y los especialistas
-   añaden sus evidencias. La detección de una cuenta no atribuye su pertenencia.
+| Función de Maigret | Adaptación |
+|---|---|
+| Usernames | `username_finder`; WhatsMyName aporta solo cobertura complementaria |
+| Catálogo completo | `scan_mode=all` o `USERNAME_SCAN_MAX_SITES=0`, incluidas variantes |
+| IDs y búsqueda recursiva | `maigret_enricher`, con tipo, origen, controles y presupuesto |
+| Extracción desde URLs | Extractores y mutaciones originales mediante el puente HTTP |
+| Permutaciones | Generador nativo, hasta tres fragmentos y variantes acotadas |
+| Categorías, países, sitios y palabras clave | Filtros globales o `maigret_options` por llamada |
+| Cookies | Archivo Netscape del servidor, con alcance por dominio |
+| Proxy, Tor e I2P | Transporte del padre y configuración del administrador |
+| Emulación de navegador | `curl_cffi` con TLS verificado y DNS público fijado |
+| Solver de Cloudflare | FlareSolverr JSON configurado; conserva el estado HTTP real |
+| Comprobaciones DNS | Opcionales, con resolución pública y controles; entidades `domain` |
+| Informes | Escritores nativos: JSON, NDJSON, CSV, TXT, Markdown, HTML, PDF, XMind, grafo HTML y Neo4j |
+| Auditoría | Self-check original sobre sitios elegidos; no modifica el snapshot |
+| Actualización de base | Snapshot separado con tag/commit explícito, procedencia y SHA-256 |
+| Web, identidad e IA | Se conservan los de Person Map; no se lanzan servicios CLI paralelos |
 
-El proceso separado permite adaptar el transporte sin modificar los módulos
-de Maigret cargados por otras herramientas. Las importaciones de su CLI y sus
-objetos mutables quedan confinadas al worker. El proceso se termina y se
-liberan las consultas pendientes al cancelar la herramienta o agotar su plazo.
-Un fallo del worker se registra como fallo; no cambia silenciosamente de motor.
+No se promete disponibilidad universal ni resolución de todos los CAPTCHA.
+Las recetas desactivadas y el control conocido de Fanslist se excluyen.
+Tor/I2P y el solver necesitan servicios externos. Sus ramas se prueban con
+respuestas controladas; disponer de integración no equivale a configurar o
+probar una conexión real a esos servicios.
+
+La base incluida tiene 5.897 entradas. La selección pública deduplicada reúne
+**5.401 plataformas**: 5.103 recetas Maigret y 298 complementarias. El modo
+completo agrega 60 variantes: **5.461 recetas**, sin gateways ni DNS activados.
+El límite de 500 conserva 291 nativas y 209 complementarias. Hay **25 recetas
+para once tipos adicionales**: `orcid`, `steam_id`, `gaia_id`, `vk_id`, `qq_id`,
+`bilibili_id`, `yandex_public_id`, `yelp_userid`, `ok_id`, `wikimapia_uid` y
+`uidme_uguid`. También hay cuatro recetas Tor, una I2P y siete DNS.
+
+Las capacidades efectivas están en `GET /api/v1/maigret/capabilities` y MCP
+`get_maigret_capabilities`.
+
+## Formulario y orquestador
+
+El formulario admite IDs, alcance rápido/habitual/completo, extracción,
+enriquecimiento y fragmentos para permutaciones. Se puede iniciar una
+investigación solo con un ID. El plan llega a los motores tradicional,
+agéntico e híbrido y queda guardado en `target.extra_data.maigret_plan`.
+Los IDs se guardan en `target.extra_data.identifiers`; no requieren migración.
+
+```json
+{
+  "target": {
+    "identifiers": [{"value": "0000-0002-1825-0097", "id_type": "orcid"}]
+  },
+  "strategy": "rule_based",
+  "maigret_plan": {
+    "scan_mode": "all",
+    "options": {"parse": true, "enrich": true}
+  }
+}
+```
+
+Los IDs encontrados conservan tipo y fuentes. Los alias admiten Unicode y
+mantienen el filtro de roles. Un ID numérico tipado no se convierte en username.
+Una lista adicional conserva namespaces aunque dos IDs tengan el mismo valor.
+ORCID valida su dígito de control y el control inventado también lo respeta.
+Los IDs opacos sensibles a mayúsculas se mantienen separados al deduplicar.
+
+Las URLs generadas o sin datos no crean menciones ni cuentas. Sus identificadores
+derivados se conservan como candidatos en el runtime. Una extracción de contenido
+registra una observación de página; no atribuye identidad.
+
+## MCP y llamadas dirigidas
+
+`fast` limita el prefijo; `deep` respeta el límite configurado; `all` extiende al
+catálogo completo. Ampliar cobertura no repite el prefijo compatible. Cambiar
+recetas, extractores, transportes u opciones invalida la caché correspondiente.
+La selección explícita de una receta sobrevive a la deduplicación por host.
+
+```json
+{
+  "tool_name": "username_finder",
+  "inputs": {
+    "username": "alias",
+    "scan_mode": "all",
+    "maigret_options": {
+      "names": ["GitHub", "GitHubGist"],
+      "keywords": ["universidad"],
+      "parse": true,
+      "enrich": true,
+      "retries": 1,
+      "permutation_parts": ["nombre", "apellido"]
+    }
+  }
+}
+```
+
+```json
+{
+  "tool_name": "maigret_enricher",
+  "inputs": {
+    "identifiers": [{"value": "76561198012345678", "id_type": "steam_id"}],
+    "candidate_urls": ["https://github.com/alias"],
+    "maigret_options": {"tags": ["gaming"], "enrich": true}
+  }
+}
+```
+
+También se admite `excluded` para excluir etiquetas. Las llamadas no aceptan
+cookies, proxies, endpoints ni rutas del servidor. El contexto MCP muestra
+fuentes de IDs, intentos, cobertura, diagnósticos y presupuestos efectivos.
+
+## Transporte y coexistencia
+
+Las solicitudes normales, activaciones y postprocesadores síncronos pasan por
+JSONL al padre; el worker no abre sockets de red propios. El puente elimina las
+cabeceras de compresión de cuerpos ya decodificados. Maigret y WhatsMyName
+comparten una cuota; la rama complementaria deja espacio durante el arranque
+del worker. El check tiene margen para la cola y el enriquecimiento, mientras
+cada petición conserva su timeout y los límites global y por host. La
+cancelación termina el proceso y libera sus consultas.
+
+Cada redirección curl se valida. Los proxies públicos se conectan a una IP
+validada conservando Host/TLS. Tor/I2P se limitan al catálogo y requieren su
+gateway; una consulta pública de una receta Tor conserva ese gateway. No se
+sustituye por acceso directo cuando falta configuración.
+
+El solver es un servicio administrado y de confianza, potencialmente local.
+Se valida el destino antes de enviarlo y la URL final de su respuesta. Su red,
+DNS y redirecciones internas pertenecen al servicio y necesitan aislamiento
+de salida propio. Sus checks tienen plazo y concurrencia separados. Cookies
+marcan `access_context=configured_session`; sin ellas se marca `anonymous`.
+Diagnósticos y huellas omiten credenciales y rutas, usando tipos de error,
+hashes y flags de configuración.
+
+Los especialistas siguen registrados y sus evidencias se fusionan.
+`social_verifier` reconoce recetas e IDs sin depender de los filtros del barrido;
+`domain_finder` conserva su catálogo amplio de proveedores. Ambas herramientas
+Maigret se excluyen de relaciones inducidas solo por una semilla de enumeración.
+Disqus conserva su probe API y corrige la URL pública a `/by/{username}/`.
+Telegram mantiene el parser de peers y no toma el contacto genérico como prueba.
 
 ## Configuración
 
-| Variable | Valor predeterminado | Función |
-|---|---|---|
-| `USERNAME_SCAN_MAX_SITES` | `3400` | Máximo de plataformas por alias; el entorno puede sobrescribirlo |
-| `USERNAME_SCAN_MAX_ALIASES` | `3` | Presupuesto de alias por investigación |
-| `MAIGRET_ENRICH` | `true` | Consultas secundarias para ampliar los datos extraídos |
-| `MAIGRET_REQUEST_TIMEOUT` | `10` | Plazo de petición nativa, en segundos |
-| `MAIGRET_WORKER_TIMEOUT` | `900` | Plazo total por worker, en segundos |
-| `MAIGRET_TAGS` | `[]` | Etiquetas de sitios; lista JSON |
-| `MAIGRET_SITE_NAMES` | `[]` | Nombres de sitios seleccionados; lista JSON |
-| `MAIGRET_EXCLUDED_TAGS` | `[]` | Etiquetas excluidas; lista JSON |
-| `MAIGRET_KEYWORDS` | `[]` | Palabras que Maigret busca en las páginas |
+| Variable | Predeterminado | Función |
+|---|---:|---|
+| `USERNAME_SCAN_MAX_SITES` | `3400` | Límite habitual; cero activa todo |
+| `USERNAME_SCAN_MAX_ALIASES` | `3` | Usuarios por investigación |
+| `MAIGRET_PARSE` / `MAIGRET_ENRICH` | `true` | Extracción y consultas secundarias |
+| `MAIGRET_RETRIES` | `1` | Reintentos, entre cero y cinco |
+| `MAIGRET_REQUEST_TIMEOUT` | `10` | Plazo HTTP, segundos |
+| `MAIGRET_WORKER_TIMEOUT` | `900` | Plazo de proceso, segundos |
+| `MAIGRET_TOOL_TIMEOUT` | `1800` | Plazo de herramienta MCP, segundos |
+| `MAIGRET_QUEUE_GRACE` | `30` | Margen del check para cola y enriquecimiento |
+| `MAIGRET_MAX_IDENTIFIERS` | `10` | IDs consultados por investigación |
+| `MAIGRET_MAX_PARSE_URLS` | `10` | URLs adicionales intentadas por el enriquecedor |
+| `MAIGRET_MAX_PERMUTATIONS` | `10` | Variantes; sigue aplicando el límite de alias |
+| `MAIGRET_TAGS`, `MAIGRET_SITE_NAMES`, `MAIGRET_EXCLUDED_TAGS`, `MAIGRET_KEYWORDS` | `[]` | Listas JSON |
+| `MAIGRET_COOKIE_FILE` | Vacío | Archivo Netscape del servidor |
+| `MAIGRET_PROXY`, `MAIGRET_TOR_PROXY`, `MAIGRET_I2P_PROXY` | Vacío | Gateways administrados |
+| `MAIGRET_SOLVER_URL` | Vacío | Endpoint JSON de FlareSolverr |
+| `MAIGRET_SOLVER_TIMEOUT` / `MAIGRET_SOLVER_CONCURRENCY` | `65` / `4` | Presupuesto del solver |
+| `MAIGRET_CHECK_DOMAINS` | `false` | Checks DNS, sin atribuir propiedad |
+| `MAIGRET_DATABASE_FILE` | Vacío | Snapshot propio; reiniciar al cambiarlo |
 
-Por ejemplo, `MAIGRET_SITE_NAMES=["GitHub","Reddit","Telegram"]` restringe
-el barrido. La selección no impide a `social_verifier` reconocer perfiles de
-otras plataformas ni hace que `domain_finder` las considere dominios personales.
+Se registran `username_scan_engine_version=4`, `maigret_enricher_version=1`,
+versión, SHA-256 y opciones. Si la base cambia durante el arranque o después
+de cachearse, el proceso falla y pide recargar, sin mezclar versiones.
 
-El catálogo de la distribución fijada contiene 5.897 entradas. Con los filtros
-operacionales y la deduplicación se obtienen **5.401 plataformas: 5.103 con motor
-Maigret y 298 complementarias de WhatsMyName**. Con un límite de 500, la selección
-actual incluye 291 recetas nativas y 209 complementarias. Estas cifras describen
-el catálogo, no garantizan que todos los sitios sean accesibles o extraíbles.
+## Informes y mantenimiento
 
-La integración actual busca alias en la web pública. Conserva los otros
-identificadores descubiertos en `discovered_identifiers`, sin convertir IDs
-numéricos en aliases. Tor/I2P, búsqueda por otros tipos de identificador, el
-servidor web propio, los reportes propios y el modo IA del CLI no se activan
-desde esta herramienta: necesitan configuración o contratos adicionales y
-varios duplican funciones de Person Map. Las protecciones que necesitan un
-solver externo pueden producir consultas inconclusas; la emulación TLS por
-`curl_cffi` sí está integrada.
+El menú del expediente ofrece los formatos disponibles. Por HTTP:
 
-## Compatibilidad y reproducibilidad
-
-- El `source_tool` sigue siendo `username_finder`; el motor figura como
-  `search_engine=maigret`. Esto conserva la exclusión de aristas inducidas por
-  compartir el alias utilizado como semilla.
-- Las URLs equivalentes de proveedores conocidos se normalizan antes de
-  deduplicar. Se conservan los metadatos y fuentes de los especialistas.
-- La cobertura rápida se puede ampliar a profunda sin repetir el prefijo.
-  Cambiar versión, catálogo u opciones invalida la cobertura incompatible.
-- Se registra `username_scan_engine_version=3`, versión de Maigret y SHA-256
-  de su catálogo. No se descarga una base cambiante durante la investigación.
-- El antiguo snapshot y adaptador permanecen como referencia para las
-  mediciones anteriores; el barrido actual utiliza el catálogo nativo fijado.
-
-## Comparación reproducible
-
-`backend/tests/test_maigret_integration.py` ejecuta el worker real contra
-respuestas simuladas y compara las mismas respuestas con el comprobador anterior:
-
-| Caso | Comprobador anterior | Maigret integrado |
-|---|---|---|
-| Perfil de GitHub mediante API | Detecta la cuenta | Detecta la misma cuenta y extrae bio, avatar y alias; consulta enlaces sociales |
-| Receta con herencia, endpoint de prueba y POST | No ejecuta la receta completa | Detecta la cuenta y valida el control con la misma receta |
-| Sitio que responde positivo a cualquier alias | El control permite rechazarlo | Se rechaza mediante control nativo |
-| Plataforma exclusiva de WhatsMyName | Disponible | Se mantiene sin un segundo barrido completo |
-
-También se verifican extracción síncrona, cancelación del proceso, destinos
-privados en redirecciones del navegador, actualización de cobertura y fusión
-con evidencias de otros especialistas. Estas pruebas demuestran capacidades y
-contratos de integración; no son una medición de precisión o latencia sobre
-sitios reales. Los límites configurados y la accesibilidad externa siguen
-determinando los resultados de cada investigación.
-
-La validación con un registro exitoso de la base y el orquestador tradicional
-real se documenta en [el ensayo del 13 de octubre de 2026](experiments/2026-10-13-maigret-live.md).
-Para repetirla en una investigación nueva, desde `backend`:
-
-```bash
-.venv/bin/python scripts/validate_maigret_live.py run --source UUID_DE_INVESTIGACION --output ../docs/experiments/maigret-live.json
+```text
+GET /api/v1/investigations/UUID/maigret/report?format=pdf
+GET /api/v1/investigations/UUID/maigret/report?format=csv
 ```
 
-El script reutiliza los campos y el consentimiento almacenado del objetivo,
-desactiva la IA únicamente en ese proceso y conserva la investigación original.
-El informe recoge URLs públicas, métricas, controles y estados de herramientas;
-omite los datos de contacto y el contenido de exposiciones.
+MCP `get_maigret_report` devuelve formato, tamaño, descarga y un extracto
+acotado de texto. No ejecuta otra búsqueda. Los escritores originales reciben
+checks guardados y detecciones enriquecidas. JSON/NDJSON filtran positivos
+como upstream; CSV conserva también errores y ausencia de detección. Los
+rechazos de Person Map se exportan inconclusos y no reaparecen como positivos.
+
+Los informes indican que no atribuyen pertenencia. El grafo nativo y Neo4j
+representan enlaces e IDs; el grafo de identidad y GraphML siguen independientes.
+PDF no carga imágenes remotas ni archivos indicados por un perfil. HTML/grafo
+llevan política de contenido y se sirven como adjuntos. Los temporales se
+eliminan y cada exportación se limita a 10 MiB.
+
+Desde `backend`:
+
+```bash
+.venv/bin/python scripts/maigret_catalog.py info
+.venv/bin/python scripts/maigret_catalog.py list --id-type orcid
+.venv/bin/python scripts/maigret_catalog.py check --sites GitHub Disqus --output ../docs/experiments/maigret-check.json
+.venv/bin/python scripts/maigret_catalog.py update --ref v0.6.6 --output app/tools/data/maigret-v0.6.6.json
+```
+
+La actualización exige tag de versión o commit completo, crea un archivo nuevo
+y guarda procedencia. No sobrescribe ni activa la base. El self-check usa
+controles originales sin desactivar sitios ni escribir cambios en el snapshot.
+
+## Validación
+
+Las suites Maigret ejecutan el worker real contra respuestas controladas:
+extracción API, POST, herencia, controles, namespaces, ORCID, Unicode, cookies,
+proxies, redirecciones, solver, DNS, cobertura, cancelación, auditoría y diez
+formatos. La suite general y las pruebas PostgreSQL cubren especialistas,
+trazabilidad, deduplicación y MCP.
+
+La primera integración está documentada en [el ensayo inicial](experiments/2026-10-13-maigret-live.md).
+La ampliación y el ensayo tradicional real están en
+[la validación de capacidades](experiments/2026-10-13-maigret-expanded-live.md).
 
 Fuentes: [Maigret](https://github.com/soxoj/maigret),
 [uso como biblioteca](https://maigret.readthedocs.io/en/latest/library-usage.html),

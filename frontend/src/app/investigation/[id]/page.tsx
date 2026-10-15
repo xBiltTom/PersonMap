@@ -2,8 +2,9 @@
 
 import { use, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
-import { GraphEdge, GraphNode, GraphResponse, InvestigationData } from "@/lib/types";
-import { getInvestigation, getInvestigationGraph, getGraphmlUrl } from "@/lib/api";
+import { GraphEdge, GraphNode, GraphResponse, InvestigationData, MaigretReportFormat } from "@/lib/types";
+import { getInvestigation, getInvestigationGraph, getGraphmlUrl, getMaigretCapabilities, downloadMaigretReport } from "@/lib/api";
+import { targetDisplayName } from "@/lib/targetLabel";
 import { ENGINE_META, resolveEngine } from "@/lib/engines";
 import { DigitalMapGraph } from "@/components/graph/DigitalMapGraph";
 import { FindingsTable } from "@/components/findings/FindingsTable";
@@ -71,6 +72,9 @@ export default function InvestigationDetailPage({
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [mapFocusNodeId, setMapFocusNodeId] = useState<string | null>(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [maigretFormats, setMaigretFormats] = useState<MaigretReportFormat[]>([]);
+  const [exportingMaigret, setExportingMaigret] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
   const [isMapCollapsed, setIsMapCollapsed] = useState(false);
@@ -79,6 +83,11 @@ export default function InvestigationDetailPage({
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const mapSectionRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getMaigretCapabilities().then((capabilities) => { if (!cancelled) setMaigretFormats(capabilities.report_formats); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -114,11 +123,7 @@ export default function InvestigationDetailPage({
   // Sync active investigation with WorkstationContext
   useEffect(() => {
     if (investigation) {
-      const targetName =
-        investigation.target?.full_name ||
-        investigation.target?.username ||
-        investigation.target?.email ||
-        "Objetivo Anónimo";
+      const targetName = targetDisplayName(investigation.target);
 
       setActiveInvestigation({
         id: investigation.id,
@@ -241,6 +246,28 @@ export default function InvestigationDetailPage({
     setIsExportOpen(false);
   };
 
+  const handleMaigretExport = async (format: MaigretReportFormat) => {
+    if (!investigation) return;
+    setExportingMaigret(format.toUpperCase());
+    setExportError(null);
+    setIsExportOpen(false);
+    try {
+      const blob = await downloadMaigretReport(investigation.id, format);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const extensions: Partial<Record<MaigretReportFormat, string>> = { markdown: "md", ndjson: "jsonl", graph: "html", neo4j: "cypher" };
+      const extension = extensions[format] || format;
+      anchor.href = url;
+      anchor.download = `maigret-${format}-${investigation.id}.${extension}`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "No se pudo exportar el informe Maigret");
+    } finally {
+      setExportingMaigret(null);
+    }
+  };
+
   const handleCopyId = () => {
     if (!investigation) return;
     navigator.clipboard.writeText(investigation.id).then(() => {
@@ -293,16 +320,13 @@ export default function InvestigationDetailPage({
     );
   }
 
-  const targetName =
-    investigation.target?.full_name ||
-    investigation.target?.username ||
-    investigation.target?.email ||
-    "Objetivo Anónimo";
+  const targetName = targetDisplayName(investigation.target);
 
   const code = `PM-${investigation.id.slice(0, 4).toUpperCase()}`;
   const isRunning = investigation.status === "running" || investigation.status === "pending";
   const isCompleted = investigation.status === "completed";
   const isFailed = investigation.status === "failed";
+  const hasMaigretEvidence = (investigation.entities ?? []).some((entity) => entity.metadata_info?.search_engine === "maigret");
   const engineMeta = ENGINE_META[resolveEngine(investigation.strategy, investigation.metrics)];
 
   const lowerTabs = [
@@ -433,16 +457,17 @@ export default function InvestigationDetailPage({
               <div className="relative shrink-0" ref={exportMenuRef}>
                 <button
                   type="button"
+                  disabled={Boolean(exportingMaigret)}
                   onClick={() => setIsExportOpen((prev) => !prev)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#142032] hover:bg-[#1c2e47] border border-[#213550] text-xs font-mono text-slate-200 transition-colors cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Exportar informe</span>
+                  <span>{exportingMaigret ? `Generando ${exportingMaigret}…` : "Exportar informe"}</span>
                   <ChevronDown className="w-3 h-3 text-slate-400" />
                 </button>
 
                 {isExportOpen && (
-                  <div className="absolute right-0 top-10 w-52 rounded-xl border border-[#22344d] bg-[#0c131f] p-1.5 shadow-2xl z-50 animate-fade-in font-mono text-xs">
+                  <div className="absolute right-0 top-10 w-60 max-h-[65vh] overflow-y-auto rounded-xl border border-[#22344d] bg-[#0c131f] p-1.5 shadow-2xl z-50 animate-fade-in font-mono text-xs">
                     <button
                       type="button"
                       onClick={handleExportJson}
@@ -473,8 +498,16 @@ export default function InvestigationDetailPage({
                       <FileDown className="w-3.5 h-3.5 text-purple-400" />
                       <span>Descargar GraphML</span>
                     </button>
+                    {hasMaigretEvidence && maigretFormats.length > 0 && <div className="mt-1 border-t border-[#22344d] pt-2">
+                      <p className="px-2.5 pb-1 text-[10px] text-slate-500">Maigret · detecciones y datos</p>
+                      {maigretFormats.map((format) => <button key={format} type="button" onClick={() => void handleMaigretExport(format)} className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors cursor-pointer">
+                        <FileDown className="w-3.5 h-3.5 text-sky-400" />
+                        <span>{format === "graph" ? "Grafo de enlaces (HTML)" : format === "neo4j" ? "Neo4j (Cypher)" : format.toUpperCase()}</span>
+                      </button>)}
+                    </div>}
                   </div>
                 )}
+                {exportError && <p role="alert" className="mt-2 max-w-60 text-xs text-rose-300">{exportError}</p>}
               </div>
 
               {/* More options menu */}

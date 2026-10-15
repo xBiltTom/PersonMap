@@ -73,7 +73,8 @@ async def snapshot(investigation_id):
         runtime = (investigation.metrics or {}).get("collection_runtime", {})
         runtime = {key: runtime[key] for key in ("username_finder_coverage", "username_finder_scanned",
                     "username_finder_stats", "username_finder_catalog_id", "username_finder_outcomes",
-                    "search_queries_used") if key in runtime}
+                    "search_queries_used", "maigret_enricher_scanned", "maigret_enricher_parsed",
+                    "maigret_enricher_diagnostics", "maigret_enricher_url_attempts") if key in runtime}
         return {"id": str(investigation.id), "status": investigation.status,
                 "strategy": investigation.strategy, "username": investigation.target.username,
                 "metrics": {key: investigation.metrics.get(key) for key in keys},
@@ -101,7 +102,8 @@ async def run(source_id, output):
             "full_name", "email", "username", "phone", "dni", "university", "description")}
         consent = bool((target.extra_data or {}).get("self_consent"))
         payload = InvestigationCreate(target=TargetCreate(**fields, extra_data={
-            **(target.extra_data or {}), "validation_source_id": str(source_id)}),
+            **(target.extra_data or {}), "validation_source_id": str(source_id)},
+            identifiers=(target.extra_data or {}).get("identifiers", [])),
             strategy="rule_based", execution_mode="internal", self_consent=consent)
         created = await workspace.create(payload, db)
         new_id = created.id
@@ -133,6 +135,8 @@ async def run(source_id, output):
                   "comparison": {"old_profiles": len(old_urls), "new_profiles": len(new_urls),
                                  "shared": sorted(old_urls & new_urls), "new": sorted(new_urls-old_urls),
                                  "not_recovered": sorted(old_urls-new_urls)}}
+        from app.tools.maigret_catalog import capabilities
+        report["capabilities"] = capabilities()
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps({"event": "finished", "id": str(new_id), "status": current["status"],

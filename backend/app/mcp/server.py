@@ -50,6 +50,10 @@ for progress and results together; use get_executions for specific jobs. Review 
 while other jobs run, then adjust targeted queries/pivots.
 username_finder defaults to a fast prefix of the catalogue, not exhaustive absence;
 use inputs.scan_mode="deep" to extend coverage only when warranted by the task/budget.
+Use scan_mode="all" for the complete active catalogue and alternate recipes.
+maigret_enricher accepts typed inputs.identifiers and public candidate_urls, extracts
+linked IDs and usernames, and retains candidate provenance. Numeric IDs are not aliases.
+Inspect get_maigret_capabilities for configured gateways, identifier types and exports.
 search_dorker accepts inputs.queries: agent-written queries, each with a rationale and
 include_domains. Quote at least one literal evidence anchor and supply domains as data,
 not site: operators. Keep quotes for independent literal AND anchors; split alternatives
@@ -161,8 +165,31 @@ async def get_investigation_context(investigation_id: UUID) -> dict[str, Any]:
 def list_osint_tools() -> list[dict]:
     """Discover OSINT tools and their required inputs; each is also exposed by name."""
     return [{"name": tool.name, "description": tool.description, "required_inputs": tool.required_inputs,
-             "planning_inputs": ["queries"] if tool.name == "search_dorker" else ["scan_mode"] if tool.name == "username_finder" else []}
+             "planning_inputs": ["queries"] if tool.name == "search_dorker" else ["scan_mode", "maigret_options"] if tool.name == "username_finder" else ["identifiers", "maigret_options"] if tool.name == "maigret_enricher" else []}
             for tool in EXTERNAL_TOOLS.values()]
+
+
+@mcp.tool(annotations=READ)
+def get_maigret_capabilities() -> dict[str, Any]:
+    """Inspect the installed engine, catalogue, ID types, gateways and report formats without scanning."""
+    from app.tools.maigret_catalog import capabilities
+    return capabilities()
+
+
+@mcp.tool(annotations=READ)
+async def get_maigret_report(investigation_id: UUID, format: str = "json") -> dict[str, Any]:
+    """Export stored native detections without a new search; native topology is not identity evidence."""
+    import base64
+    from app.core.database import async_session_maker
+    from app.services.maigret_exports import export_maigret
+    async with async_session_maker() as db:
+        result = await _call(export_maigret(investigation_id, format, db))
+    body = base64.b64decode(result.pop("body"))
+    result.update({"bytes": len(body), "download_path": f"/api/v1/investigations/{investigation_id}/maigret/report?format={format}"})
+    if result["mime_type"].startswith("text/") or format in {"json", "ndjson"}:
+        result["content_excerpt"] = body.decode("utf-8", errors="replace")[:30000]
+        result["truncated"] = len(body.decode("utf-8", errors="replace")) > 30000
+    return result
 
 
 def _register_osint_tool(tool):
@@ -177,7 +204,8 @@ def _register_osint_tool(tool):
         " Requiere un expediente y una sesión activos. Devuelve execution_id como id; consulta get_execution. "
         "Entradas: " + ", ".join(tool.required_inputs) +
         (". inputs.queries admite hasta cinco consultas propias con query, rationale e include_domains" if tool.name == "search_dorker" else "") +
-        (". inputs.scan_mode: fast (por defecto) o deep (amplía sin repetir cobertura)" if tool.name == "username_finder" else "") +
+        (". inputs.scan_mode: fast (prefijo), deep (límite configurado) o all (catálogo completo, incluidas variantes); amplía sin repetir cobertura. inputs.maigret_options permite filtros, extracción y permutaciones" if tool.name == "username_finder" else "") +
+        (". inputs.identifiers: lista de {value, id_type}; inputs.candidate_urls: páginas a extraer; inputs.maigret_options: filtros y extracción" if tool.name == "maigret_enricher" else "") +
         ". force permite repetir una consulta ya completada."), annotations=OSINT)
 
 

@@ -1,0 +1,1378 @@
+{
+  "generated_at": "2026-10-13T17:27:12.947254+00:00",
+  "baseline": {
+    "id": "f3e7cc69-ff1f-486b-a7ca-634065e5a6ec",
+    "status": "completed",
+    "strategy": "rule_based",
+    "username": "xBiltTom",
+    "metrics": {
+      "engine_used": "rules",
+      "execution_time_seconds": 135.93,
+      "entities_discovered": 17,
+      "correlation_groups": 16,
+      "ai_enhanced": true,
+      "config_username_scan_engine_version": 2,
+      "config_username_catalog_scanned": 500,
+      "config_username_catalog_available": 2479,
+      "config_maigret_version": null,
+      "config_maigret_catalog_sha256": null,
+      "config_catalog_from_maigret": 0,
+      "config_catalog_from_whatsmyname": 500
+    },
+    "runtime": {
+      "username_finder_coverage": {
+        "biltonjr": 500,
+        "xbilttom": 500,
+        "bjnovoaar": 500
+      },
+      "username_finder_scanned": [
+        "biltonjr",
+        "bjnovoaar",
+        "xbilttom"
+      ],
+      "username_finder_stats": {
+        "checked": 1500,
+        "skipped_by_regex": 0,
+        "rejected_by_control": 0
+      },
+      "search_queries_used": 5
+    },
+    "entity_types": {
+      "social_account": 7,
+      "search_mention": 6,
+      "academic": 1,
+      "email_registration": 1,
+      "email": 2
+    },
+    "profiles": [
+      {
+        "platform": "Picsart",
+        "url": "https://picsart.com/u/biltonjr",
+        "sources": [
+          "username_finder"
+        ],
+        "verification": "candidate",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "X",
+        "url": "https://x.com/biltonjr",
+        "sources": [
+          "username_finder",
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": true,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "Roblox",
+        "url": "https://www.roblox.com/search/users?keyword=biltonjr",
+        "sources": [
+          "username_finder"
+        ],
+        "verification": "candidate",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "github",
+        "url": "https://github.com/xBiltTom",
+        "sources": [
+          "username_finder",
+          "github_deep_scanner",
+          "email_checker",
+          "social_url_extractor",
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": true,
+        "has_avatar": true,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "Disqus",
+        "url": "https://disqus.com/by/biltonjr/",
+        "sources": [
+          "username_finder",
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "linkedin",
+        "url": "https://linkedin.com/in/bilton-junior-novoa-arce-6a52a3281",
+        "sources": [
+          "social_url_extractor"
+        ],
+        "verification": "candidate",
+        "negative_control": null,
+        "has_bio": false,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "snapchat",
+        "url": "https://snapchat.com/@biltonjr",
+        "sources": [
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": null,
+        "has_bio": true,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      }
+    ],
+    "native_profiles": [],
+    "tools": [
+      {
+        "id": "4f91e5ae-a1e6-4831-a76a-a16e6a64d408",
+        "name": "username_finder",
+        "status": "completed",
+        "findings": 1,
+        "round": 1,
+        "elapsed": 41.838622,
+        "error": null
+      },
+      {
+        "id": "9f87599b-a783-411f-b253-f91f0cefb25f",
+        "name": "keybase_resolver",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.825971,
+        "error": null
+      },
+      {
+        "id": "87980e22-380b-4489-b4f2-c876446d7062",
+        "name": "wikipedia_edits",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.824443,
+        "error": null
+      },
+      {
+        "id": "cc064965-098d-4453-b7cd-6c4ec0271e92",
+        "name": "email_checker",
+        "status": "completed",
+        "findings": 1,
+        "round": 1,
+        "elapsed": 41.823108,
+        "error": null
+      },
+      {
+        "id": "a4cb573e-2fd2-4b78-b6b7-c3151e230af3",
+        "name": "email_enumerator",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.821495,
+        "error": null
+      },
+      {
+        "id": "e10e4ccc-d9af-45cd-920c-2dcb97323e95",
+        "name": "gravatar_deep",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.819433,
+        "error": null
+      },
+      {
+        "id": "3eaeb584-e556-4257-a34e-b85332434060",
+        "name": "google_account_osint",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.817409,
+        "error": null
+      },
+      {
+        "id": "2ea04567-0cce-49d5-bbc9-2ae658e27553",
+        "name": "github_deep_scanner",
+        "status": "completed",
+        "findings": 1,
+        "round": 1,
+        "elapsed": 41.81579,
+        "error": null
+      },
+      {
+        "id": "46bb4777-5b32-40a6-a2d4-21b499e993ba",
+        "name": "search_dorker",
+        "status": "completed",
+        "findings": 6,
+        "round": 1,
+        "elapsed": 41.813763,
+        "error": null
+      },
+      {
+        "id": "616615da-db1b-43ec-a100-ac81c56e1d43",
+        "name": "academic_finder",
+        "status": "completed",
+        "findings": 1,
+        "round": 1,
+        "elapsed": 41.811926,
+        "error": null
+      },
+      {
+        "id": "88590215-130a-4715-a19e-3f183e726c63",
+        "name": "dni_lookup",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.810381,
+        "error": null
+      },
+      {
+        "id": "59c9f3d7-ea73-45ec-8843-716dc59fe370",
+        "name": "breach_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.809193,
+        "error": null
+      },
+      {
+        "id": "00fc765d-b3b3-45fa-8703-d718cf73e46a",
+        "name": "infostealer_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 41.808104,
+        "error": null
+      },
+      {
+        "id": "78f7d266-56d2-4953-ba06-076e7c86bbe7",
+        "name": "username_finder",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.843117,
+        "error": null
+      },
+      {
+        "id": "d2bc2e4d-2763-4665-964b-6a0f5cc0778b",
+        "name": "keybase_resolver",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.840205,
+        "error": null
+      },
+      {
+        "id": "c476c6e6-befc-4a3a-ab63-2e21d11a46fd",
+        "name": "wikipedia_edits",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.83672,
+        "error": null
+      },
+      {
+        "id": "5800f2a8-484e-458e-8160-0b9bbe1f0ce4",
+        "name": "email_checker",
+        "status": "completed",
+        "findings": 3,
+        "round": 2,
+        "elapsed": 41.8336,
+        "error": null
+      },
+      {
+        "id": "9585b8d3-d78f-4ada-921a-c53aa7d93b78",
+        "name": "email_enumerator",
+        "status": "completed",
+        "findings": 1,
+        "round": 2,
+        "elapsed": 41.830403,
+        "error": null
+      },
+      {
+        "id": "0143a8f4-08e8-40b1-b88c-aeaaffe02a76",
+        "name": "gravatar_deep",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.827594,
+        "error": null
+      },
+      {
+        "id": "13eb789f-f531-4eb0-9842-cabf47c2eb89",
+        "name": "google_account_osint",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.824597,
+        "error": null
+      },
+      {
+        "id": "8615b112-92ea-4a13-909a-29af0825ab89",
+        "name": "github_deep_scanner",
+        "status": "completed",
+        "findings": 1,
+        "round": 2,
+        "elapsed": 41.822021,
+        "error": null
+      },
+      {
+        "id": "acdf9a5d-4322-46a7-925a-88de7985a43a",
+        "name": "social_url_extractor",
+        "status": "completed",
+        "findings": 2,
+        "round": 2,
+        "elapsed": 41.82003,
+        "error": null
+      },
+      {
+        "id": "574a2a9e-f459-4f9d-91ac-7b3c6e6b6e44",
+        "name": "social_verifier",
+        "status": "completed",
+        "findings": 1,
+        "round": 2,
+        "elapsed": 41.817588,
+        "error": null
+      },
+      {
+        "id": "76f9e29c-7e2e-4e14-bf87-3dc935b55405",
+        "name": "search_dorker",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.813531,
+        "error": null
+      },
+      {
+        "id": "fc347e51-5416-4ad0-ba91-8f8f792d6f09",
+        "name": "academic_finder",
+        "status": "completed",
+        "findings": 1,
+        "round": 2,
+        "elapsed": 41.809986,
+        "error": null
+      },
+      {
+        "id": "ca039ade-2f66-4f80-b1fd-aeefa9b248f7",
+        "name": "breach_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.806439,
+        "error": null
+      },
+      {
+        "id": "c1645100-dd79-4fc9-b768-82498bbc83f3",
+        "name": "infostealer_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 41.803805,
+        "error": null
+      },
+      {
+        "id": "1401235b-6f42-4c74-8d41-d27622ba5362",
+        "name": "username_finder",
+        "status": "completed",
+        "findings": 4,
+        "round": 3,
+        "elapsed": 46.415549,
+        "error": null
+      },
+      {
+        "id": "f85e01dd-9cbc-433b-9d1a-b82480f45f90",
+        "name": "keybase_resolver",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 46.414356,
+        "error": null
+      },
+      {
+        "id": "a788e464-9a4c-4819-bfcd-fe83c8ae60db",
+        "name": "wikipedia_edits",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 46.412855,
+        "error": null
+      },
+      {
+        "id": "e65a9705-6d55-44b5-8936-faa926e55ae0",
+        "name": "google_account_osint",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 46.411169,
+        "error": null
+      },
+      {
+        "id": "46ece7ff-ceb0-4c6f-bb25-9b87d7348947",
+        "name": "github_deep_scanner",
+        "status": "completed",
+        "findings": 1,
+        "round": 3,
+        "elapsed": 46.409807,
+        "error": null
+      },
+      {
+        "id": "50811c1b-b6e2-433b-8e4e-8567270d6600",
+        "name": "social_url_extractor",
+        "status": "completed",
+        "findings": 2,
+        "round": 3,
+        "elapsed": 46.408657,
+        "error": null
+      },
+      {
+        "id": "20328c9c-e1f1-417f-ae42-7821bfa2bff5",
+        "name": "social_verifier",
+        "status": "completed",
+        "findings": 2,
+        "round": 3,
+        "elapsed": 46.407523,
+        "error": null
+      },
+      {
+        "id": "2fc2f2a8-36ce-43b8-a1b0-a45afe249a92",
+        "name": "search_dorker",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 46.406155,
+        "error": null
+      },
+      {
+        "id": "a91ec20e-3b72-4005-af78-ccbf44269d3f",
+        "name": "infostealer_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 46.404345,
+        "error": null
+      },
+      {
+        "id": "254487e0-95cb-4137-8f4f-06003d0b735f",
+        "name": "social_url_extractor",
+        "status": "completed",
+        "findings": 2,
+        "round": 4,
+        "elapsed": 4.709159,
+        "error": null
+      },
+      {
+        "id": "b990b765-2fed-43cd-99e2-449a24bcde4f",
+        "name": "social_verifier",
+        "status": "completed",
+        "findings": 1,
+        "round": 4,
+        "elapsed": 4.707624,
+        "error": null
+      }
+    ]
+  },
+  "current": {
+    "id": "a94e1894-fd31-4051-aff4-b4562edfcbce",
+    "status": "completed",
+    "strategy": "rule_based",
+    "username": "xBiltTom",
+    "metrics": {
+      "engine_used": "rules",
+      "execution_time_seconds": 181.94,
+      "entities_discovered": 19,
+      "correlation_groups": 17,
+      "ai_enhanced": false,
+      "config_username_scan_engine_version": 4,
+      "config_username_catalog_scanned": 500,
+      "config_username_catalog_available": 5461,
+      "config_maigret_version": "0.6.6",
+      "config_maigret_catalog_sha256": "ef6ca66efa174209c10205ff86f7e975b591128681710639fdc786ff05e662da",
+      "config_catalog_from_maigret": 291,
+      "config_catalog_from_whatsmyname": 209
+    },
+    "runtime": {
+      "username_finder_coverage": {
+        "biltonjr": 500,
+        "xbilttom": 500,
+        "bjnovoaar": 500
+      },
+      "username_finder_scanned": [
+        "biltonjr",
+        "bjnovoaar",
+        "xbilttom"
+      ],
+      "username_finder_stats": {
+        "checked": 1499,
+        "skipped_by_regex": 1,
+        "rejected_by_control": 6
+      },
+      "username_finder_catalog_id": "6ee3b6999d950a5e1b1d93249e4a22dd2cfd6afe5470e91e5463ac3082a9e0f4",
+      "username_finder_outcomes": {
+        "biltonjr": {
+          "Claimed": 6,
+          "Unknown": 75,
+          "Available": 210
+        },
+        "xBiltTom": {
+          "Claimed": 6,
+          "Unknown": 71,
+          "Available": 213
+        },
+        "bjnovoaar": {
+          "Claimed": 3,
+          "Unknown": 71,
+          "Available": 217
+        }
+      },
+      "search_queries_used": 5,
+      "maigret_enricher_scanned": [
+        "orcid:0009-0002-0165-5976"
+      ],
+      "maigret_enricher_parsed": [
+        "https://github.com/xBiltTom",
+        "https://leetcode.com/u/xBiltTom/",
+        "https://x.com/xBiltTom",
+        "https://instagram.com/xBiltTom",
+        "https://facebook.com/xBiltTom",
+        "https://tiktok.com/@xBiltTom",
+        "https://youtube.com/@xBiltTom",
+        "https://snapchat.com/@xBiltTom",
+        "https://t.me/xBiltTom",
+        "https://leetcode.com/u/xBiltTom",
+        "https://gist.github.com/xBiltTom",
+        "https://www.linkedin.com/pub/dir/+/Arce+Novoa",
+        "https://orcid.org/0009-0002-0165-5976",
+        "https://api.openalex.org/authors/orcid:0009-0002-0165-5976",
+        "https://disqus.com/by/biltonjr",
+        "https://picsart.com/u/biltonjr",
+        "https://snapchat.com/@biltonjr"
+      ],
+      "maigret_enricher_diagnostics": {
+        "https://t.me/xBiltTom": {
+          "error": null,
+          "status": "no_data",
+          "http_status": 200
+        },
+        "https://x.com/xBiltTom": {
+          "error": null,
+          "status": "no_data",
+          "http_status": 404
+        },
+        "https://tiktok.com/@xBiltTom": {
+          "error": null,
+          "status": "no_data",
+          "http_status": 200
+        },
+        "https://facebook.com/xBiltTom": {
+          "error": null,
+          "status": "no_data",
+          "http_status": 400
+        },
+        "https://youtube.com/@xBiltTom": {
+          "error": null,
+          "status": "no_data",
+          "http_status": 404
+        },
+        "https://instagram.com/xBiltTom": {
+          "error": null,
+          "status": "no_data",
+          "http_status": 200
+        },
+        "https://snapchat.com/@xBiltTom": {
+          "error": null,
+          "status": "no_data",
+          "http_status": 404
+        },
+        "orcid:0009-0002-0165-5976:DBLP": {
+          "error": "Bot protection",
+          "status": "Unknown",
+          "http_status": 202,
+          "control_rejected": false
+        },
+        "https://leetcode.com/u/xBiltTom": {
+          "error": null,
+          "status": "extracted",
+          "http_status": 403
+        },
+        "orcid:0009-0002-0165-5976:ORCID": {
+          "error": null,
+          "status": "Claimed",
+          "http_status": 200,
+          "control_rejected": false
+        },
+        "orcid:0009-0002-0165-5976:arXiv": {
+          "error": null,
+          "status": "Available",
+          "http_status": 404,
+          "control_rejected": false
+        },
+        "https://gist.github.com/xBiltTom": {
+          "error": null,
+          "status": "no_data",
+          "http_status": 200
+        },
+        "orcid:0009-0002-0165-5976:Scholia": {
+          "error": "Unexpected",
+          "status": "Unknown",
+          "http_status": 0,
+          "control_rejected": false
+        },
+        "orcid:0009-0002-0165-5976:OpenAlex": {
+          "error": null,
+          "status": "Claimed",
+          "http_status": 200,
+          "control_rejected": false
+        },
+        "https://www.linkedin.com/pub/dir/+/Arce+Novoa": {
+          "error": null,
+          "status": "no_data",
+          "http_status": 999
+        }
+      },
+      "maigret_enricher_url_attempts": [
+        "https://x.com/xBiltTom",
+        "https://instagram.com/xBiltTom",
+        "https://facebook.com/xBiltTom",
+        "https://tiktok.com/@xBiltTom",
+        "https://youtube.com/@xBiltTom",
+        "https://snapchat.com/@xBiltTom",
+        "https://t.me/xBiltTom",
+        "https://leetcode.com/u/xBiltTom",
+        "https://gist.github.com/xBiltTom",
+        "https://www.linkedin.com/pub/dir/+/Arce+Novoa"
+      ]
+    },
+    "entity_types": {
+      "academic": 2,
+      "social_account": 10,
+      "search_mention": 4,
+      "email_registration": 1,
+      "email": 2
+    },
+    "profiles": [
+      {
+        "platform": "github",
+        "url": "https://github.com/xBiltTom",
+        "sources": [
+          "username_finder",
+          "github_deep_scanner",
+          "email_checker",
+          "social_url_extractor",
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": true,
+        "has_avatar": true,
+        "has_links": false,
+        "extractor": "GitHub API"
+      },
+      {
+        "platform": "LeetCode",
+        "url": "https://leetcode.com/u/xBiltTom/",
+        "sources": [
+          "username_finder"
+        ],
+        "verification": "candidate",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": true,
+        "has_links": false,
+        "extractor": "LeetCode GraphQL"
+      },
+      {
+        "platform": "ORCID",
+        "url": "https://orcid.org/0009-0002-0165-5976",
+        "sources": [
+          "maigret_enricher"
+        ],
+        "verification": "candidate",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": "ORCID API"
+      },
+      {
+        "platform": "OpenAlex",
+        "url": "https://api.openalex.org/authors/orcid:0009-0002-0165-5976",
+        "sources": [
+          "maigret_enricher"
+        ],
+        "verification": "candidate",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": "OpenAlex Authors API"
+      },
+      {
+        "platform": "linkedin",
+        "url": "https://linkedin.com/in/bilton-junior-novoa-arce-6a52a3281",
+        "sources": [
+          "social_url_extractor"
+        ],
+        "verification": "candidate",
+        "negative_control": null,
+        "has_bio": false,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "X",
+        "url": "https://x.com/biltonjr",
+        "sources": [
+          "username_finder",
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": true,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": null
+      },
+      {
+        "platform": "disqus",
+        "url": "https://disqus.com/by/biltonjr",
+        "sources": [
+          "username_finder",
+          "social_url_extractor",
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": true,
+        "has_links": false,
+        "extractor": "Disqus API"
+      },
+      {
+        "platform": "Picsart",
+        "url": "https://picsart.com/u/biltonjr",
+        "sources": [
+          "username_finder"
+        ],
+        "verification": "candidate",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": true,
+        "has_links": false,
+        "extractor": "Picsart API"
+      },
+      {
+        "platform": "snapchat",
+        "url": "https://snapchat.com/@biltonjr",
+        "sources": [
+          "username_finder",
+          "social_verifier",
+          "social_url_extractor"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": true,
+        "has_avatar": true,
+        "has_links": true,
+        "extractor": "Snapchat"
+      },
+      {
+        "platform": "GitHubGist",
+        "url": "https://gist.github.com/xBiltTom",
+        "sources": [
+          "username_finder",
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": true,
+        "has_avatar": true,
+        "has_links": false,
+        "extractor": null
+      }
+    ],
+    "native_profiles": [
+      {
+        "platform": "github",
+        "url": "https://github.com/xBiltTom",
+        "sources": [
+          "username_finder",
+          "github_deep_scanner",
+          "email_checker",
+          "social_url_extractor",
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": true,
+        "has_avatar": true,
+        "has_links": false,
+        "extractor": "GitHub API"
+      },
+      {
+        "platform": "LeetCode",
+        "url": "https://leetcode.com/u/xBiltTom/",
+        "sources": [
+          "username_finder"
+        ],
+        "verification": "candidate",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": true,
+        "has_links": false,
+        "extractor": "LeetCode GraphQL"
+      },
+      {
+        "platform": "ORCID",
+        "url": "https://orcid.org/0009-0002-0165-5976",
+        "sources": [
+          "maigret_enricher"
+        ],
+        "verification": "candidate",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": "ORCID API"
+      },
+      {
+        "platform": "OpenAlex",
+        "url": "https://api.openalex.org/authors/orcid:0009-0002-0165-5976",
+        "sources": [
+          "maigret_enricher"
+        ],
+        "verification": "candidate",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": false,
+        "has_links": false,
+        "extractor": "OpenAlex Authors API"
+      },
+      {
+        "platform": "disqus",
+        "url": "https://disqus.com/by/biltonjr",
+        "sources": [
+          "username_finder",
+          "social_url_extractor",
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": true,
+        "has_links": false,
+        "extractor": "Disqus API"
+      },
+      {
+        "platform": "Picsart",
+        "url": "https://picsart.com/u/biltonjr",
+        "sources": [
+          "username_finder"
+        ],
+        "verification": "candidate",
+        "negative_control": "passed",
+        "has_bio": false,
+        "has_avatar": true,
+        "has_links": false,
+        "extractor": "Picsart API"
+      },
+      {
+        "platform": "snapchat",
+        "url": "https://snapchat.com/@biltonjr",
+        "sources": [
+          "username_finder",
+          "social_verifier",
+          "social_url_extractor"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": true,
+        "has_avatar": true,
+        "has_links": true,
+        "extractor": "Snapchat"
+      },
+      {
+        "platform": "GitHubGist",
+        "url": "https://gist.github.com/xBiltTom",
+        "sources": [
+          "username_finder",
+          "social_verifier"
+        ],
+        "verification": "verified",
+        "negative_control": "passed",
+        "has_bio": true,
+        "has_avatar": true,
+        "has_links": false,
+        "extractor": null
+      }
+    ],
+    "tools": [
+      {
+        "id": "7112bdff-ba58-45c8-a9c1-e5af677834a6",
+        "name": "username_finder",
+        "status": "completed",
+        "findings": 3,
+        "round": 1,
+        "elapsed": 57.302006,
+        "error": null,
+        "actual_duration_seconds": 57.29
+      },
+      {
+        "id": "0e09b1af-1674-4c91-a950-586155511343",
+        "name": "keybase_resolver",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 57.300568,
+        "error": null,
+        "actual_duration_seconds": 0.663
+      },
+      {
+        "id": "0948fbf5-ffa2-43f8-b05d-235bb044e5ee",
+        "name": "wikipedia_edits",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 57.299701,
+        "error": null,
+        "actual_duration_seconds": 0.707
+      },
+      {
+        "id": "12de472c-69d0-4f22-9ec4-73086d05c282",
+        "name": "email_checker",
+        "status": "completed",
+        "findings": 1,
+        "round": 1,
+        "elapsed": 57.298904,
+        "error": null,
+        "actual_duration_seconds": 0.739
+      },
+      {
+        "id": "c30dfa64-da8e-4581-acec-d19575317ab6",
+        "name": "email_enumerator",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 57.298121,
+        "error": null,
+        "actual_duration_seconds": 1.935
+      },
+      {
+        "id": "7f6fcc6f-088a-4f36-8754-e3cadde0e0a6",
+        "name": "gravatar_deep",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 57.297315,
+        "error": null,
+        "actual_duration_seconds": 0.585
+      },
+      {
+        "id": "e476c399-f0a3-4efb-be6b-559a2ad52ae7",
+        "name": "google_account_osint",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 57.296488,
+        "error": null,
+        "actual_duration_seconds": 1.489
+      },
+      {
+        "id": "2bda85eb-df74-4d9a-aa97-ed385c1df0f8",
+        "name": "github_deep_scanner",
+        "status": "completed",
+        "findings": 1,
+        "round": 1,
+        "elapsed": 57.295728,
+        "error": null,
+        "actual_duration_seconds": 2.873
+      },
+      {
+        "id": "3b1df4ad-823c-445a-a2ea-c25cb37fda23",
+        "name": "search_dorker",
+        "status": "completed",
+        "findings": 4,
+        "round": 1,
+        "elapsed": 57.294981,
+        "error": null,
+        "actual_duration_seconds": 5.488
+      },
+      {
+        "id": "b1c449ec-6b04-4936-9009-0bd0cee25894",
+        "name": "academic_finder",
+        "status": "completed",
+        "findings": 2,
+        "round": 1,
+        "elapsed": 57.294227,
+        "error": null,
+        "actual_duration_seconds": 0.985
+      },
+      {
+        "id": "87d8ced8-ed2b-4e3e-ab83-224778e0d3d7",
+        "name": "dni_lookup",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 57.293616,
+        "error": null,
+        "actual_duration_seconds": 0.159
+      },
+      {
+        "id": "3d51e597-66fe-448c-b262-32e6479e52e3",
+        "name": "breach_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 57.29274,
+        "error": null,
+        "actual_duration_seconds": 0.568
+      },
+      {
+        "id": "c06b8321-b1fe-4956-91ca-577a8f836285",
+        "name": "infostealer_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 1,
+        "elapsed": 57.291841,
+        "error": null,
+        "actual_duration_seconds": 0.549
+      },
+      {
+        "id": "ac90e878-c69c-4e8a-9b0e-348afae80123",
+        "name": "username_finder",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 61.866307,
+        "error": null,
+        "actual_duration_seconds": 61.85
+      },
+      {
+        "id": "7af1d38e-78ca-4e76-864f-1a0d014a1221",
+        "name": "maigret_enricher",
+        "status": "completed",
+        "findings": 2,
+        "round": 2,
+        "elapsed": 61.864984,
+        "error": null,
+        "actual_duration_seconds": 32.192
+      },
+      {
+        "id": "252a07eb-1fc0-4eb1-9c25-0899b27c1e12",
+        "name": "keybase_resolver",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 61.863819,
+        "error": null,
+        "actual_duration_seconds": 4.39
+      },
+      {
+        "id": "e6d1c7c2-7771-4151-a212-ec62b01af152",
+        "name": "wikipedia_edits",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 61.862534,
+        "error": null,
+        "actual_duration_seconds": 4.645
+      },
+      {
+        "id": "9e719914-0fc6-4691-a243-c108433f51e8",
+        "name": "email_checker",
+        "status": "completed",
+        "findings": 3,
+        "round": 2,
+        "elapsed": 61.861019,
+        "error": null,
+        "actual_duration_seconds": 4.251
+      },
+      {
+        "id": "c99a8b3b-87a1-4866-9277-1458422b608d",
+        "name": "email_enumerator",
+        "status": "completed",
+        "findings": 1,
+        "round": 2,
+        "elapsed": 61.859874,
+        "error": null,
+        "actual_duration_seconds": 7.13
+      },
+      {
+        "id": "6ee85100-51e7-476c-90f2-1e93bc941b09",
+        "name": "gravatar_deep",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 61.858773,
+        "error": null,
+        "actual_duration_seconds": 3.869
+      },
+      {
+        "id": "80b4fc80-e89c-4b66-8a7e-e8cb0af24e04",
+        "name": "google_account_osint",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 61.857717,
+        "error": null,
+        "actual_duration_seconds": 4.782
+      },
+      {
+        "id": "0bdd0aa1-bef8-4f87-a223-df94d12460af",
+        "name": "github_deep_scanner",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 61.856739,
+        "error": null,
+        "actual_duration_seconds": 3.732
+      },
+      {
+        "id": "9fbb33db-b293-4f0a-9d2a-1bfdc6016e6e",
+        "name": "social_url_extractor",
+        "status": "completed",
+        "findings": 2,
+        "round": 2,
+        "elapsed": 61.855845,
+        "error": null,
+        "actual_duration_seconds": 0.001
+      },
+      {
+        "id": "4f951eaa-86ef-4e56-bd38-12acafaaadd5",
+        "name": "social_verifier",
+        "status": "completed",
+        "findings": 2,
+        "round": 2,
+        "elapsed": 61.854845,
+        "error": null,
+        "actual_duration_seconds": 5.707
+      },
+      {
+        "id": "bf8fb821-de8e-4e6b-8981-df6929b138ef",
+        "name": "breach_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 61.853856,
+        "error": null,
+        "actual_duration_seconds": 0.516
+      },
+      {
+        "id": "40ea452b-bc89-41f9-b98c-21f96cc5eff4",
+        "name": "infostealer_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 2,
+        "elapsed": 61.852695,
+        "error": null,
+        "actual_duration_seconds": 1.268
+      },
+      {
+        "id": "fee497a8-6f0d-45df-9754-14a9bb9fb20d",
+        "name": "username_finder",
+        "status": "completed",
+        "findings": 4,
+        "round": 3,
+        "elapsed": 55.138088,
+        "error": null,
+        "actual_duration_seconds": 55.129
+      },
+      {
+        "id": "0a01a0f7-12ca-4db9-a806-fc21d55653b6",
+        "name": "keybase_resolver",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 55.136658,
+        "error": null,
+        "actual_duration_seconds": 1.42
+      },
+      {
+        "id": "64414ec2-8f3d-4baf-a9b9-830386f74b43",
+        "name": "wikipedia_edits",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 55.1355,
+        "error": null,
+        "actual_duration_seconds": 2.259
+      },
+      {
+        "id": "25a9bf5a-cc5a-4694-b68e-41e7642fd633",
+        "name": "google_account_osint",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 55.134482,
+        "error": null,
+        "actual_duration_seconds": 1.72
+      },
+      {
+        "id": "5bb2e5b7-5d70-48c6-9aad-3efdfd29369e",
+        "name": "github_deep_scanner",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 55.133515,
+        "error": null,
+        "actual_duration_seconds": 0.524
+      },
+      {
+        "id": "913c3d9b-efb7-4dc0-a693-0922e1477cca",
+        "name": "social_url_extractor",
+        "status": "completed",
+        "findings": 2,
+        "round": 3,
+        "elapsed": 55.13232,
+        "error": null,
+        "actual_duration_seconds": 0.001
+      },
+      {
+        "id": "4b525d47-e95c-4d1d-9fe2-d7dc43789679",
+        "name": "social_verifier",
+        "status": "completed",
+        "findings": 2,
+        "round": 3,
+        "elapsed": 55.131227,
+        "error": null,
+        "actual_duration_seconds": 4.641
+      },
+      {
+        "id": "c51e04a2-e4be-43b6-93ec-0654c84a45dc",
+        "name": "infostealer_checker",
+        "status": "completed",
+        "findings": 0,
+        "round": 3,
+        "elapsed": 55.13018,
+        "error": null,
+        "actual_duration_seconds": 1.611
+      },
+      {
+        "id": "01aebcee-901c-46e5-bddf-fdbbfb2c6d9e",
+        "name": "social_url_extractor",
+        "status": "completed",
+        "findings": 4,
+        "round": 4,
+        "elapsed": 3.661814,
+        "error": null,
+        "actual_duration_seconds": 0.001
+      },
+      {
+        "id": "fab3b066-95f6-4ad5-9aff-2ccc9c16ea6f",
+        "name": "social_verifier",
+        "status": "completed",
+        "findings": 1,
+        "round": 4,
+        "elapsed": 3.660901,
+        "error": null,
+        "actual_duration_seconds": 3.66
+      }
+    ]
+  },
+  "comparison": {
+    "old_profiles": 7,
+    "new_profiles": 10,
+    "shared": [
+      "https://disqus.com/by/biltonjr",
+      "https://github.com/xbilttom",
+      "https://linkedin.com/in/bilton-junior-novoa-arce-6a52a3281",
+      "https://picsart.com/u/biltonjr",
+      "https://snapchat.com/@biltonjr",
+      "https://x.com/biltonjr"
+    ],
+    "new": [
+      "https://api.openalex.org/authors/orcid:0009-0002-0165-5976",
+      "https://gist.github.com/xbilttom",
+      "https://leetcode.com/u/xbilttom",
+      "https://orcid.org/0009-0002-0165-5976"
+    ],
+    "not_recovered": [
+      "https://www.roblox.com/search/users?keyword=biltonjr"
+    ]
+  },
+  "capabilities": {
+    "maigret_version": "0.6.6",
+    "maigret_catalog_sha256": "ef6ca66efa174209c10205ff86f7e975b591128681710639fdc786ff05e662da",
+    "maigret_parse": true,
+    "maigret_enrich": true,
+    "maigret_retries": 1,
+    "maigret_keywords": [],
+    "maigret_check_domains": false,
+    "maigret_cookie_sha256": null,
+    "maigret_transport_sha256": "5508e5c5fef7959382197e5145293468a0826b7709ed84f857d52d1f8d1abd45",
+    "maigret_tor_configured": false,
+    "maigret_i2p_configured": false,
+    "maigret_proxy_configured": false,
+    "maigret_solver_configured": false,
+    "maigret_max_identifiers": 10,
+    "maigret_max_parse_urls": 10,
+    "maigret_max_permutations": 10,
+    "maigret_request_timeout": 10.0,
+    "maigret_worker_timeout": 900.0,
+    "maigret_tool_timeout": 1800.0,
+    "maigret_queue_grace": 30.0,
+    "maigret_solver_timeout": 65.0,
+    "maigret_solver_concurrency": 4,
+    "username_engine_version": 4,
+    "enricher_version": 1,
+    "identifier_types": {
+      "username": 5175,
+      "qq_id": 1,
+      "bilibili_id": 1,
+      "gaia_id": 3,
+      "vk_id": 2,
+      "yelp_userid": 1,
+      "yandex_public_id": 5,
+      "ok_id": 1,
+      "steam_id": 4,
+      "wikimapia_uid": 1,
+      "uidme_uguid": 1,
+      "orcid": 5
+    },
+    "protocol_recipes": {
+      "web": 5188,
+      "dns": 7,
+      "tor": 4,
+      "i2p": 1
+    },
+    "catalogue_platforms": 5401,
+    "catalogue_with_variants": 5461,
+    "scan_modes": [
+      "fast",
+      "deep",
+      "all"
+    ],
+    "report_formats": [
+      "json",
+      "ndjson",
+      "csv",
+      "txt",
+      "markdown",
+      "html",
+      "xmind",
+      "graph",
+      "neo4j",
+      "pdf"
+    ],
+    "pdf_extra_installed": true,
+    "custom_catalogue": false
+  }
+}

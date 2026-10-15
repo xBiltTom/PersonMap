@@ -68,6 +68,11 @@ class RuleEngine:
                 parts.append(f"{req}:{val}")
         if tool.name == "dni_lookup":
             parts.append("public:" + ",".join(sorted(context.extra.get("dni_source_urls", []))))
+        if tool.name == "maigret_enricher":
+            parts.append("ids:" + json.dumps(context.extra.get("maigret_identifiers", []), sort_keys=True))
+        if tool.name in {"username_finder", "maigret_enricher"}:
+            parts.append("maigret_options:" + json.dumps(context.extra.get("maigret_options", {}), sort_keys=True))
+            parts.append("scan_mode:" + context.extra.get("username_scan_mode", "deep"))
         if tool.name == "search_dorker":
             parts.append(f"university:{context.university or ''}")
             parts.append("queries:" + json.dumps(context.extra.get("search_queries", []), sort_keys=True))
@@ -116,6 +121,13 @@ class RuleEngine:
             },
         )
         context.extra["investigation_id"] = investigation_id
+        from app.tools.maigret_ids import add_identifiers
+        add_identifiers(context, (target.extra_data or {}).get("identifiers", []), source_tool="target_input")
+        if (target.extra_data or {}).get("maigret_plan"):
+            from app.schemas.workspace import MaigretPlan
+            plan = MaigretPlan.model_validate(target.extra_data["maigret_plan"])
+            context.extra.setdefault("maigret_options", plan.options.model_dump(exclude_none=True))
+            context.extra.setdefault("username_scan_mode", plan.scan_mode)
 
         all_findings: List[ToolFinding] = []
         executed_runs: Set[str] = set()

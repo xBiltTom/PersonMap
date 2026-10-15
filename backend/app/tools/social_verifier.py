@@ -23,6 +23,7 @@ from app.tools.telegram_profiles import observe_telegram_page
 from app.tools.maigret_catalog import build_profile_catalog as build_catalog
 from app.tools.public_network import UnsafePublicURL, public_address
 from app.tools.social_profiles import PROFILE_ROUTES, SocialProfile, normalize_web_url, parse_social_profile, social_host
+from app.schemas.identifiers import CASE_SENSITIVE_TYPES
 
 logger = logging.getLogger(__name__)
 HEADERS = {"Accept": "text/html,application/xhtml+xml"}
@@ -45,6 +46,8 @@ def _catalog_routes():
 def _candidate_profile(url):
     profile = parse_social_profile(url)
     if profile:
+        if profile.platform == "vk" and re.fullmatch(r"id[0-9]+", profile.username):
+            return SocialProfile("vk", profile.username[2:], profile.url, "vk_id")
         return profile
     normalized = normalize_web_url(url, keep_query=True)
     if not normalized:
@@ -54,7 +57,7 @@ def _candidate_profile(url):
     for pattern, site in _catalog_routes():
         match = pattern.fullmatch(normalized)
         if match and site.accepts_username(match[1]):
-            return SocialProfile(site.name, match[1], normalized)
+            return SocialProfile(site.name, match[1], normalized, site.id_type)
     return None
 
 
@@ -193,7 +196,8 @@ class SocialVerifierTool(BaseTool):
                             and requested.resource_kind == "channel_id" and yt_identity == requested.username)
             if (not requested or not final_profile
                     or requested.platform != final_profile.platform
-                    or (requested.username.lower() != final_profile.username.lower() and not yt_alias)
+                    or ((requested.username != final_profile.username if requested.resource_kind in CASE_SENSITIVE_TYPES
+                         else requested.username.lower() != final_profile.username.lower()) and not yt_alias)
                     or any(marker in title_lower for marker in ("log in", "login", "sign in", "page not found", "user not found", "profile not found", "page isn't available", "page doesn’t exist", "iniciar sesión", "página no encontrada"))):
                 self._record(context, url, "not_profile", **details)
                 return None
@@ -262,6 +266,10 @@ class SocialVerifierTool(BaseTool):
                 "verification_status": "verified", "profile_signals": signals,
                 "verification_breakdown": breakdown,
             }
+            if final_profile.resource_kind not in {"username", "channel_id", "profile_id"}:
+                metadata.pop("username", None)
+                metadata["queried_identifier"] = {"value": username, "id_type": final_profile.resource_kind}
+                metadata["id_type"] = final_profile.resource_kind
             self._record(context, url, "verified", **details)
             return ToolFinding(entity_type="social_account", platform=final_profile.platform,
                 value=canonical, display_name=title or canonical, metadata_info=metadata,

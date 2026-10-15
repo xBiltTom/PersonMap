@@ -9,7 +9,7 @@ from app.tools.base import TargetContext, ToolFinding
 
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
-USERNAME_REGEX = re.compile(r"^[a-zA-Z0-9._-]{3,35}$")
+USERNAME_REGEX = re.compile(r"^[\w.-]{3,100}$")
 
 IGNORE_EMAIL_PREFIXES = {"noreply", "no-reply", "mailer-daemon", "postmaster", "notifications", "support", "help", "contact"}
 IGNORE_USERNAMES = {
@@ -60,6 +60,19 @@ def extract_and_apply_pivots(findings: List[ToolFinding], context: TargetContext
 
     for f in findings:
         metadata = f.metadata_info or {}
+        from app.tools.maigret_ids import add_identifiers, identifiers_from_url
+        typed = metadata.get("discovered_identifiers", {})
+        if add_identifiers(context, metadata.get("extracted_identifiers", []), f.value, metadata.get("source_tool")):
+            pivoted = True
+        if add_identifiers(context, typed, f.value, metadata.get("source_tool")):
+            pivoted = True
+        for link in [f.value, metadata.get("orcid"), *metadata.get("linked_profiles", [])]:
+            if isinstance(link, str) and add_identifiers(context, identifiers_from_url(link), f.value, metadata.get("source_tool")):
+                pivoted = True
+        if metadata.get("search_engine") == "maigret" and metadata.get("maigret_data"):
+            parsed = context.extra.setdefault("maigret_enricher_parsed", [])
+            if f.value not in parsed:
+                parsed.append(f.value)
         observed_profile = f.entity_type == "social_account" and (
             metadata.get("verification_status") == "verified"
             or any(str(tool).split(":")[-1] in {"github_deep_scanner", "social_verifier", "gravatar_deep"}

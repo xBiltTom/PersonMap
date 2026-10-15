@@ -78,6 +78,8 @@ class AutonomousOSINTAgent:
                     f"- Nombre: {target.full_name or 'N/A'}\n"
                     f"- Correo: {target.email or 'N/A'}\n"
                     f"- Alias: {target.username or 'N/A'}\n"
+                    f"- IDs tipados: {json.dumps((target.extra_data or {}).get('identifiers', []), ensure_ascii=False)}\n"
+                    f"- Plan Maigret: {json.dumps((target.extra_data or {}).get('maigret_plan', {}), ensure_ascii=False)}\n"
                     f"- Teléfono: {target.phone or 'N/A'}\n"
                     f"- DNI: {target.dni or 'N/A'}\n"
                     f"- Universidad: {target.university or 'N/A'}\n"

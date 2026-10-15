@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { checkHealth, createInvestigation } from "@/lib/api";
-import type { Strategy } from "@/lib/types";
+import { checkHealth, createInvestigation, getMaigretCapabilities } from "@/lib/api";
+import type { Strategy, TypedIdentifier, MaigretScanMode } from "@/lib/types";
 import {
   User,
   Mail,
@@ -70,6 +70,20 @@ const STRATEGY_OPTIONS: StrategyOption[] = [
   },
 ];
 
+const IDENTIFIER_OPTIONS: { id: TypedIdentifier["id_type"]; label: string; example: string }[] = [
+  { id: "orcid", label: "ORCID", example: "0000-0002-1825-0097" },
+  { id: "steam_id", label: "Steam ID", example: "76561198012345678" },
+  { id: "gaia_id", label: "GAIA ID (Google)", example: "Identificador numérico" },
+  { id: "vk_id", label: "VK ID", example: "123456789" },
+  { id: "qq_id", label: "QQ ID", example: "Identificador numérico" },
+  { id: "bilibili_id", label: "Bilibili ID", example: "Identificador numérico" },
+  { id: "yandex_public_id", label: "Yandex ID público", example: "Identificador público" },
+  { id: "yelp_userid", label: "Yelp ID", example: "Identificador del perfil" },
+  { id: "ok_id", label: "OK ID", example: "Identificador numérico" },
+  { id: "wikimapia_uid", label: "Wikimapia ID", example: "Identificador numérico" },
+  { id: "uidme_uguid", label: "uID.me ID", example: "Identificador del perfil" },
+];
+
 export function InvestigationForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -85,6 +99,12 @@ export function InvestigationForm() {
   const [strategy, setStrategy] = useState<Strategy>("auto");
   const [selfConsent, setSelfConsent] = useState(false);
   const [aiEnabled, setAiEnabled] = useState<boolean | null>(null);
+  const [identifiers, setIdentifiers] = useState<TypedIdentifier[]>([{ value: "", id_type: "orcid" }]);
+  const [scanMode, setScanMode] = useState<MaigretScanMode>("deep");
+  const [enrich, setEnrich] = useState(true);
+  const [extract, setExtract] = useState(true);
+  const [permutationParts, setPermutationParts] = useState("");
+  const [catalogueSize, setCatalogueSize] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,6 +115,13 @@ export function InvestigationForm() {
       .catch(() => {
         if (!cancelled) setAiEnabled(null);
       });
+    getMaigretCapabilities().then((capabilities) => {
+      if (!cancelled) {
+        setCatalogueSize(capabilities.catalogue_with_variants);
+        setEnrich(capabilities.maigret_enrich);
+        setExtract(capabilities.maigret_parse);
+      }
+    }).catch(() => { /* A disconnected backend keeps the form usable. */ });
     return () => {
       cancelled = true;
     };
@@ -124,14 +151,17 @@ export function InvestigationForm() {
       email.trim() ||
       username.trim() ||
       phone.trim() ||
-      dni.trim();
+      dni.trim() || identifiers.some((item) => item.value.trim());
 
     if (!hasIdentifier) {
       setError(
-        "Ingresa al menos un dato identificador del objetivo (nombre, correo, usuario, teléfono o DNI) para iniciar el pivoteo."
+        "Ingresa al menos un nombre, correo, usuario, teléfono, DNI o ID de perfil."
       );
       return;
     }
+
+    const parts = permutationParts.split(",").map((part) => part.trim()).filter(Boolean);
+    if (parts.length > 3) { setError("Combina como máximo tres fragmentos de usuario."); return; }
 
     setLoading(true);
 
@@ -145,9 +175,11 @@ export function InvestigationForm() {
           dni: dni.trim() || null,
           university: university.trim() || null,
           description: description.trim() || null,
+          identifiers: identifiers.filter((item) => item.value.trim()).map((item) => ({ ...item, value: item.value.trim() })),
         },
         strategy,
         self_consent: selfConsent,
+        maigret_plan: { scan_mode: scanMode, options: { parse: extract, enrich: extract && enrich, permutation_parts: parts } },
       });
 
       router.push(`/investigation/${inv.id}`);
@@ -265,7 +297,7 @@ export function InvestigationForm() {
           <div className="flex items-center justify-between">
             <h3 className="text-[11px] font-mono font-semibold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
               <AtSign className="w-3.5 h-3.5" />
-              2. Pivotes Digitales (Barrido en 3,000+ Plataformas)
+              2. Pivotes digitales y perfiles
             </h3>
             {/*<span className="text-[10px] font-mono text-slate-500">
               Sensores masivos
@@ -315,6 +347,49 @@ export function InvestigationForm() {
               />
             </div>
           </div>
+
+          <details className="rounded-lg border border-[#1a2636] bg-[#090f18] p-3.5">
+            <summary className="cursor-pointer text-xs font-mono text-sky-300 focus-visible:outline focus-visible:outline-sky-400">Maigret · IDs de perfiles y alcance de búsqueda</summary>
+            <div className="mt-4 space-y-4">
+              <p className="text-[11px] text-slate-400">Un ID puede iniciar la investigación. Conservamos su tipo; las coincidencias se evalúan como candidatos.</p>
+              {identifiers.map((item, index) => (
+                <div key={index} className="grid grid-cols-1 sm:grid-cols-[1fr_2fr_auto] gap-2 items-end">
+                  <div>
+                    <label htmlFor={`maigret-type-${index}`} className="block text-xs text-slate-300 mb-1.5">Tipo de ID</label>
+                    <select id={`maigret-type-${index}`} value={item.id_type} onChange={(event) => setIdentifiers((current) => current.map((entry, position) => position === index ? { ...entry, id_type: event.target.value as TypedIdentifier["id_type"] } : entry))} className="w-full rounded-lg border border-[#1a2636] bg-[#080d15] px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+                      {IDENTIFIER_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor={`maigret-value-${index}`} className="block text-xs text-slate-300 mb-1.5">Identificador</label>
+                    <input id={`maigret-value-${index}`} maxLength={100} value={item.value} placeholder={IDENTIFIER_OPTIONS.find((option) => option.id === item.id_type)?.example} onChange={(event) => setIdentifiers((current) => current.map((entry, position) => position === index ? { ...entry, value: event.target.value } : entry))} className="w-full rounded-lg border border-[#1a2636] bg-[#080d15] px-3 py-2 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-sky-500" />
+                  </div>
+                  <button type="button" disabled={identifiers.length === 1} onClick={() => setIdentifiers((current) => current.filter((_, position) => position !== index))} aria-label={`Quitar identificador ${index + 1}`} className="rounded-lg border border-[#1a2636] px-3 py-2 text-xs text-slate-400 hover:text-rose-300 disabled:opacity-30 focus-visible:outline focus-visible:outline-sky-400">Quitar</button>
+                </div>
+              ))}
+              <button type="button" disabled={identifiers.length >= 30} onClick={() => setIdentifiers((current) => [...current, { value: "", id_type: "orcid" }])} className="text-xs text-sky-300 hover:text-sky-200 disabled:opacity-40 focus-visible:outline focus-visible:outline-sky-400">Añadir otro ID</button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-[#162234] pt-4">
+                <div>
+                  <label htmlFor="maigret-scope" className="block text-xs text-slate-300 mb-1.5">Alcance por usuario</label>
+                  <select id="maigret-scope" value={scanMode} onChange={(event) => setScanMode(event.target.value as MaigretScanMode)} className="w-full rounded-lg border border-[#1a2636] bg-[#080d15] px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+                    <option value="fast">Rápido · primeras plataformas</option>
+                    <option value="deep">Habitual · límite configurado</option>
+                    <option value="all">Completo{catalogueSize ? ` · ${catalogueSize.toLocaleString("es-PE")} recetas` : " · todo el catálogo"}</option>
+                  </select>
+                  <p className="mt-1.5 text-[11px] text-slate-500">El modo completo incluye recetas alternativas y tarda más. Mantiene el límite de usuarios por investigación.</p>
+                </div>
+                <div className="space-y-2.5 text-xs text-slate-300">
+                  <label className="flex gap-2 items-center"><input type="checkbox" checked={extract} onChange={(event) => setExtract(event.target.checked)} className="accent-sky-500" />Extraer información de perfiles</label>
+                  <label className="flex gap-2 items-center"><input type="checkbox" checked={enrich} disabled={!extract} onChange={(event) => setEnrich(event.target.checked)} className="accent-sky-500" />Ampliar datos y enlaces encontrados</label>
+                </div>
+              </div>
+              <div>
+                <label htmlFor="maigret-parts" className="block text-xs text-slate-300 mb-1.5">Combinar fragmentos de usuario (opcional)</label>
+                <input id="maigret-parts" value={permutationParts} onChange={(event) => setPermutationParts(event.target.value)} maxLength={300} placeholder="jane, doe" className="w-full rounded-lg border border-[#1a2636] bg-[#080d15] px-3 py-2 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-sky-500" />
+                <p className="mt-1.5 text-[11px] text-slate-500">Hasta tres fragmentos separados por comas. Las variantes no demuestran pertenencia.</p>
+              </div>
+            </div>
+          </details>
 
           <div>
             <label className="block text-xs font-mono text-slate-300 mb-1.5 flex items-center gap-1.5">

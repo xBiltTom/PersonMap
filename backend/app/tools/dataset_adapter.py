@@ -134,6 +134,9 @@ class SiteCheck:
     sensitive: bool = False
     # A recipe executed by the complete upstream engine, never by _matches.
     native_name: Optional[str] = None
+    id_type: str = "username"
+    protocol: str = ""
+    probe_url: Optional[str] = None
 
     def accepts_username(self, username: str) -> bool:
         """

@@ -170,6 +170,7 @@ function formatTool(tool: string): string {
     social_verifier: "Verificador social",
     social_url_extractor: "Extractor de URL social",
     username_finder: "Buscador de alias",
+    maigret_enricher: "Maigret · IDs y enlaces",
     search_dorker: "Búsqueda avanzada",
     domain_finder: "Certificate Transparency",
     academic_finder: "Buscador académico",

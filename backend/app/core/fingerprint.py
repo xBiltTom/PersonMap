@@ -22,6 +22,7 @@ from typing import Any, Dict
 
 from app.core.config import settings
 from app.tools.registry import tool_registry
+from app.tools.maigret_catalog import execution_config
 
 
 def run_fingerprint() -> Dict[str, Any]:
@@ -55,7 +56,7 @@ def run_fingerprint() -> Dict[str, Any]:
         "maigret_commit": breakdown.get("maigret_commit"),
         "username_catalog_available": catalog.get("available", 0),
         "username_catalog_scanned": catalog.get("scanned", 0),
-        "username_scan_engine_version": 3,
+        "username_scan_engine_version": 4,
         "maigret_version": breakdown.get("maigret_version"),
         "maigret_catalog_sha256": breakdown.get("maigret_catalog_sha256"),
         "maigret_enrich": settings.maigret_enrich,
@@ -63,6 +64,8 @@ def run_fingerprint() -> Dict[str, Any]:
         "maigret_site_names": settings.maigret_site_names,
         "maigret_excluded_tags": settings.maigret_excluded_tags,
         "maigret_keywords": settings.maigret_keywords,
+        **execution_config(),
+        "maigret_enricher_version": 1,
         "mcp_max_parallel_tools": max(1, min(6, settings.mcp_max_parallel_tools)),
         "mcp_username_fast_sites": max(1, settings.mcp_username_fast_sites),
         "mcp_review_max_queries": max(0, settings.mcp_review_max_queries),

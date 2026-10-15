@@ -26,7 +26,7 @@ from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 from app.tools.social_profiles import core_profile_candidates, parse_social_profile, social_host, TELEGRAM_HOSTS
 from app.tools.dataset_adapter import SiteCheck, catalog_stats
-from app.tools.maigret_catalog import build_scan_catalog as build_catalog, database_info
+from app.tools.maigret_catalog import build_scan_catalog as build_catalog, database_info, execution_config
 from app.tools.maigret_runner import run_maigret, decoded_headers
 
 HTML_ACCEPT = {
@@ -46,7 +46,7 @@ class UsernameFinderTool(BaseTool):
     required_inputs = ["username"]
 
     def can_run(self, context: TargetContext) -> bool:
-        return bool(context.all_usernames())
+        return bool(context.all_usernames() or context.extra.get("maigret_options", {}).get("permutation_parts"))
 
     DATA_DIR = Path(__file__).parent / "data"
     GENERIC_USERS_FILE = DATA_DIR / "generic_usernames.txt"
@@ -59,6 +59,7 @@ class UsernameFinderTool(BaseTool):
     def __init__(self) -> None:
         self._catalog: Optional[List[SiteCheck]] = None
         self._catalog_limit: Optional[tuple] = None
+        self._full_catalog = None
         self._generic_users: Set[str] = set()
         self._load_generic_users()
 
@@ -88,17 +89,19 @@ class UsernameFinderTool(BaseTool):
         tests y las mediciones lo ajustan en caliente y un catálogo cacheado con
         el tope anterior daría cifras que no corresponden a la configuración.
         """
-        limit = max(1, settings.username_scan_max_sites)
+        limit = max(0, settings.username_scan_max_sites)
         cache_key = (limit, tuple(settings.maigret_tags), tuple(settings.maigret_site_names),
-                     tuple(settings.maigret_excluded_tags))
+                     tuple(settings.maigret_excluded_tags), bool(settings.maigret_tor_proxy),
+                     bool(settings.maigret_i2p_proxy), settings.maigret_check_domains)
         if self._catalog is None or self._catalog_limit != cache_key:
-            self._catalog = build_catalog(limit=limit)
+            self._full_catalog = build_catalog(include_variants=True)
+            self._catalog = self._full_catalog[:limit] if limit else self._full_catalog
             self._catalog_limit = cache_key
         return self._catalog
 
     def catalog_size(self) -> Dict[str, int]:
         """Tamaño del catálogo efectivo, para la huella de configuración."""
-        available = len(build_catalog())
+        available = len(build_catalog(include_variants=True))
         return {"available": available, "scanned": len(self._load_sites())}
 
     def catalog_breakdown(self) -> Dict[str, Any]:
@@ -107,19 +110,39 @@ class UsernameFinderTool(BaseTool):
 
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
         findings: List[ToolFinding] = []
+        options = context.extra.get("maigret_options", {})
+        parts = options.get("permutation_parts", [])
+        if parts and settings.maigret_max_permutations:
+            key = json.dumps(parts)
+            permutations = context.extra.setdefault("username_finder_permutations", {})
+            if key not in permutations:
+                async def permuted(result):
+                    permutations[key] = result["usernames"]
+                await run_maigret("", [], {}, permuted, operation="permute", parts=parts,
+                                 limit=settings.maigret_max_permutations)
+            for alias in permutations.get(key, []):
+                if alias.casefold() not in self._generic_users and alias not in context.all_usernames():
+                    context.discovered_usernames.append(alias)
         usernames = context.all_usernames()
         if not usernames:
             return findings
 
         sites = self._load_sites()
+        full_catalog = self._full_catalog or sites
+        filters = {key: options[key] for key in ("tags", "names", "excluded") if key in options}
+        if filters:
+            full_catalog = build_catalog(include_variants=True, **filters)
+            sites = full_catalog[:settings.username_scan_max_sites] if settings.username_scan_max_sites > 0 else full_catalog
+        if context.extra.get("username_scan_mode") == "all":
+            sites = full_catalog
         if not sites:
             return findings
-        catalogue_id = hashlib.sha256(json.dumps({**database_info(),
-            "sites": [(s.name, getattr(s, "url", ""), getattr(s, "native_name", None)) for s in sites],
-            "enrich": settings.maigret_enrich, "keywords": settings.maigret_keywords,
-            "engine_version": 3}, sort_keys=True).encode()).hexdigest()
+        catalogue_id = hashlib.sha256(json.dumps({**database_info(), **execution_config(),
+            "sites": [(s.name, getattr(s, "url", ""), getattr(s, "native_name", None)) for s in full_catalog],
+            "options": options, "engine_version": 4}, sort_keys=True).encode()).hexdigest()
         if context.extra.get("username_finder_catalog_id") != catalogue_id:
-            for field in ("username_finder_coverage", "username_finder_scanned", "username_finder_stats"):
+            for field in ("username_finder_coverage", "username_finder_scanned", "username_finder_stats",
+                          "username_finder_outcomes", "username_finder_diagnostics", "username_finder_checks"):
                 context.extra.pop(field, None)
         context.extra["username_finder_catalog_id"] = catalogue_id
         fast = context.extra.get("username_scan_mode") == "fast"
@@ -205,16 +228,15 @@ class UsernameFinderTool(BaseTool):
                 progress_counter = {"checked": 0, "control_rejected": 0}
                 native = [s for s in applicable if getattr(s, "native_name", None)]
                 complementary = [s for s in applicable if not getattr(s, "native_name", None)]
+                legacy_quota = asyncio.Semaphore(max(1, settings.tool_concurrency_budget(settings.username_scan_concurrency) // 2))
+                async def complementary_check(site):
+                    # Keep capacity available while the native worker starts;
+                    # hundreds of fallback tasks must not fill its RPC queue.
+                    async with legacy_quota:
+                        return await self._check_site(client, clean_user, site, semaphore,
+                            investigation_id, progress_counter, len(applicable))
                 tasks = [
-                    self._check_site(
-                        client,
-                        clean_user,
-                        site,
-                        semaphore,
-                        investigation_id,
-                        progress_counter,
-                        len(applicable),
-                    )
+                    complementary_check(site)
                     for site in complementary
                 ]
                 async def collect_native():
@@ -228,7 +250,19 @@ class UsernameFinderTool(BaseTool):
                         counts = outcomes.setdefault(clean_user, {})
                         state = result.get("status", "Unknown")
                         counts[state] = counts.get(state, 0) + 1
+                        if state in {"Unknown", "Illegal"}:
+                            diagnostics = context.extra.setdefault("username_finder_diagnostics", {}).setdefault(clean_user, {})
+                            if len(diagnostics) < 1000:
+                                diagnostics[result["site"]] = {"status": state, "error": result.get("error"),
+                                                              "http_status": result.get("http_status")}
                         finding = self._native_finding(site, clean_user, result, progress_counter)
+                        check = {"status": state, "error": result.get("error"), "http_status": result.get("http_status"),
+                                 "url": result.get("url_user") or site.build_pretty_url(clean_user), "id_type": "username"}
+                        if site.protocol == "dns":
+                            check["url"] = site.build_pretty_url(clean_user)
+                        if state == "Claimed" and finding is None:
+                            check.update(status="Unknown", error="Detection rejected by profile or negative-control checks")
+                        context.extra.setdefault("username_finder_checks", {}).setdefault(clean_user, {})[site.name] = check
                         progress_counter["checked"] += 1
                         if finding:
                             native_findings.append(finding)
@@ -251,7 +285,8 @@ class UsernameFinderTool(BaseTool):
                                 "timestamp": time.time(),
                             })
                     if native:
-                        await run_maigret(clean_user, native, controls, collect, progress, request_semaphore=semaphore)
+                        await run_maigret(clean_user, native, controls, collect, progress,
+                                         request_semaphore=semaphore, options=options)
                     return native_findings
 
                 native_task = asyncio.create_task(collect_native())
@@ -289,7 +324,7 @@ class UsernameFinderTool(BaseTool):
 
                 for res in results:
                     if isinstance(res, ToolFinding):
-                        res.metadata_info["scan_mode"] = "fast" if fast else "deep"
+                        res.metadata_info["scan_mode"] = context.extra.get("username_scan_mode", "deep")
                         res.metadata_info["catalogue_sites_covered"] = len(sites)
                         findings.append(res)
 
@@ -337,6 +372,7 @@ class UsernameFinderTool(BaseTool):
             counter["control_rejected"] += 1
             return None
         data = result.get("ids_data") or {}
+        from app.tools.maigret_ids import identifier_values
         def values(*keys):
             collected = []
             for key in keys:
@@ -354,6 +390,9 @@ class UsernameFinderTool(BaseTool):
         links = list(dict.fromkeys([link for link in [*result.get("ids_links", []),
             *values("links", "website", "blog", "blog_url", "url")] if isinstance(link, str) and link.startswith(("http://", "https://"))]))
         raw_url = result.get("url_user") or site.build_pretty_url(username)
+        protocol = getattr(site, "protocol", "")
+        if protocol == "dns" and not raw_url.startswith(("https://", "http://")):
+            raw_url = "https://" + raw_url
         canonical = profile.url if profile else raw_url
         metadata = {
             "username": username, "url": canonical, "profile_url": canonical,
@@ -363,6 +402,7 @@ class UsernameFinderTool(BaseTool):
             "checked_status": result.get("http_status"), "category": site.category,
             "sensitive_platform": site.sensitive, "maigret_status": result["status"],
             "maigret_data": data, "discovered_identifiers": typed,
+            "extracted_identifiers": identifier_values(result.get("identifiers", typed)),
             "extracted_usernames": users, "extracted_emails": values("email", "emails"),
             "extracted_phones": values("phone", "phones", "phone_number"),
             "linked_profiles": links, "bio": next(iter(values("bio", "about", "description")), ""),
@@ -371,8 +411,17 @@ class UsernameFinderTool(BaseTool):
             "avatar_url": next(iter(values("image", "avatar", "avatar_url")), None),
             "site_rank": site.rank if site.rank < 5_000_000 else None,
             "keyword_match": result.get("keyword_match"),
+            "id_type": getattr(site, "id_type", "username"), "protocol": protocol,
+            "maigret_site": getattr(site, "native_name", None) or site.name,
+            "maigret_recipes": [getattr(site, "native_name", None) or site.name],
+            "maigret_queries": [{"value": username, "id_type": getattr(site, "id_type", "username"),
+                                 "site": getattr(site, "native_name", None) or site.name}],
+            "access_context": "configured_session" if settings.maigret_cookie_file else "anonymous",
         }
-        return ToolFinding(entity_type="sensitive_account" if site.sensitive else "social_account",
+        if metadata["id_type"] != "username":
+            metadata.pop("username", None)
+            metadata["queried_identifier"] = {"value": username, "id_type": metadata["id_type"]}
+        return ToolFinding(entity_type="domain" if protocol == "dns" else "sensitive_account" if site.sensitive else "social_account",
             platform=profile.platform if profile else site.name, value=canonical,
             display_name=f"{site.name}: @{username}", confidence=0.85 if control is False else 0.65,
             evidence_urls=list(dict.fromkeys([raw_url, result.get("url_probe") or raw_url])), metadata_info=metadata)

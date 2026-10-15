@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional
 from app.tools.base import BaseTool, TargetContext, ToolCategory
 from app.tools.username_finder import UsernameFinderTool
+from app.tools.maigret_enricher import MaigretEnricherTool
 from app.tools.email_checker import EmailCheckerTool
 from app.tools.email_enumerator import EmailEnumeratorTool
 from app.tools.gravatar_deep import GravatarDeepTool
@@ -30,6 +31,7 @@ class ToolRegistry:
     def _register_default_tools(self) -> None:
         # Username & Profile Hunting (WhatsMyName / Keybase / Wikipedia)
         self.register(UsernameFinderTool())
+        self.register(MaigretEnricherTool())
         self.register(KeybaseResolverTool())
         self.register(WikipediaEditsTool())
 

@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { InvestigationData } from "@/lib/types";
 import { deleteInvestigation, getWorkspaceEventsUrl, listInvestigations } from "@/lib/api";
 import { ENGINE_META, resolveEngine } from "@/lib/engines";
+import { targetDisplayName } from "@/lib/targetLabel";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -50,7 +51,7 @@ function statusView(status: string) {
 }
 
 function targetLabel(investigation: InvestigationData): string {
-  return investigation.target?.full_name || investigation.target?.username || investigation.target?.email || "Objetivo sin identificador";
+  return targetDisplayName(investigation.target);
 }
 
 async function listAllInvestigations(): Promise<InvestigationData[]> {

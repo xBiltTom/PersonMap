@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import SecretStr
+from pydantic import SecretStr, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -98,6 +98,22 @@ class Settings(BaseSettings):
     maigret_site_names: list[str] = []
     maigret_excluded_tags: list[str] = []
     maigret_keywords: list[str] = []
+    maigret_parse: bool = True
+    maigret_retries: int = Field(default=1, ge=0, le=5)
+    maigret_max_identifiers: int = Field(default=10, ge=0, le=100)
+    maigret_max_parse_urls: int = Field(default=10, ge=0, le=100)
+    maigret_max_permutations: int = Field(default=10, ge=0, le=100)
+    maigret_cookie_file: Optional[str] = None
+    maigret_tor_proxy: Optional[SecretStr] = None
+    maigret_i2p_proxy: Optional[SecretStr] = None
+    maigret_proxy: Optional[SecretStr] = None
+    maigret_solver_url: Optional[str] = None
+    maigret_check_domains: bool = False
+    maigret_tool_timeout: float = Field(default=1800, ge=30, le=7200)
+    maigret_database_file: Optional[str] = None
+    maigret_queue_grace: float = Field(default=30, ge=0, le=120)
+    maigret_solver_timeout: float = Field(default=65, ge=5, le=120)
+    maigret_solver_concurrency: int = Field(default=4, ge=1, le=10)
     # Fracción máxima del presupuesto global que puede tomar una sola tool.
     tool_concurrency_share: float = 0.6
 

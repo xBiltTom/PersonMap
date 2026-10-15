@@ -549,6 +549,8 @@ class HybridEngine:
             f"- Nombre: {target.full_name or 'N/A'}\n"
             f"- Correo: {target.email or 'N/A'}\n"
             f"- Alias: {target.username or 'N/A'}\n"
+            f"- IDs tipados conocidos: {json.dumps(ctx.extra.get('maigret_identifiers', []), ensure_ascii=False)}\n"
+            f"- Plan Maigret: {json.dumps((target.extra_data or {}).get('maigret_plan', {}), ensure_ascii=False)}\n"
             f"- Teléfono: {target.phone or 'N/A'}\n"
             f"- Universidad: {target.university or 'N/A'}\n"
             f"- Contexto: {target.description or 'Ninguno'}\n\n"
