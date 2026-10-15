@@ -1,0 +1,23 @@
+{
+  "repository": "https://github.com/kaifcodec/user-scanner",
+  "commit": "38ce09e32375a6072d38962d1268170583ad25df",
+  "license": "MIT",
+  "integration": "Selected endpoint, request and CSRF references adapted; package not installed or executed. Strict parsers and negative controls remain in Person Map.",
+  "adapted_sources": [
+    {
+      "probe_id": "github",
+      "upstream_path": "user_scanner/email_scan/dev/github.py",
+      "sha256": "6d49a4a3c38206af0cdbd3f2e34e0d9a885108ad3dd8b26c71054fa6f90a3ae7"
+    },
+    {
+      "probe_id": "adobe",
+      "upstream_path": "user_scanner/email_scan/creator/adobe.py",
+      "sha256": "2048e04109e137f3ba6442378587db7bb0458e5e5c66815841b65617034adf66"
+    },
+    {
+      "probe_id": "atlassian",
+      "upstream_path": "user_scanner/email_scan/dev/atlassian.py",
+      "sha256": "783e281e66ab5baa035fb44aa676f8e9ced56551a06fef68c38884a1ba14c4d8"
+    }
+  ]
+}

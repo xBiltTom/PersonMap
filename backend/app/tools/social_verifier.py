@@ -24,6 +24,8 @@ from app.tools.maigret_catalog import build_profile_catalog as build_catalog
 from app.tools.public_network import UnsafePublicURL, public_address
 from app.tools.social_profiles import PROFILE_ROUTES, SocialProfile, normalize_web_url, parse_social_profile, social_host
 from app.schemas.identifiers import CASE_SENSITIVE_TYPES
+from app.tools.google_profiles import youtube_metadata
+from app.tools.dni_public import public_source_url
 
 logger = logging.getLogger(__name__)
 HEADERS = {"Accept": "text/html,application/xhtml+xml"}
@@ -191,7 +193,24 @@ class SocialVerifierTool(BaseTool):
             if any(marker in title_lower for marker in ("just a moment", "access denied", "captcha", "verify you are human", "security check")):
                 self._record(context, url, "blocked", **details)
                 return None
-            yt_identity = self._get_meta(soup, "channelId") if requested.platform == "youtube" else None
+            yt_data = youtube_metadata(soup) if requested.platform == "youtube" else None
+            yt_identity = (yt_data["externalId"] if yt_data else self._get_meta(soup, "channelId")) if requested.platform == "youtube" else None
+            yt_meta_id = self._get_meta(soup, "channelId") if requested.platform == "youtube" else None
+            if yt_data and yt_meta_id and yt_meta_id != yt_identity:
+                self._record(context, url, "not_profile", reason="conflicting_youtube_channel_ids", **details)
+                return None
+            if requested.platform == "youtube" and yt_identity and requested.resource_kind == "channel_id" and requested.username != yt_identity:
+                self._record(context, url, "not_profile", reason="youtube_channel_id_mismatch", **details)
+                return None
+            if yt_data:
+                if isinstance(yt_data.get("title"), str):
+                    title = yt_data["title"][:500]
+                if isinstance(yt_data.get("description"), str):
+                    bio = yt_data["description"][:10000]
+                avatar_data = yt_data.get("avatar")
+                avatar = avatar_data.get("thumbnails") if isinstance(avatar_data, dict) else None
+                if isinstance(avatar, list) and avatar and isinstance(avatar[-1], dict):
+                    image = public_source_url(avatar[-1].get("url", "")) or image
             yt_alias = bool(final_profile and requested.platform == final_profile.platform == "youtube"
                             and requested.resource_kind == "channel_id" and yt_identity == requested.username)
             if (not requested or not final_profile

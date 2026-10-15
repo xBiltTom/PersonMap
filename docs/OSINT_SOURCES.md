@@ -26,8 +26,9 @@ restricciones de HTTPX/Pillow. La sesión es configuración del operador; sin
 ella se conservan las búsquedas públicas complementarias. Véase
 [alcance, sesión y límites de GHunt](GHUNT.md).
 
-`email_enumerator` adapta 22 consultas/validaciones de Holehe y conserva tres
-sondas propias. Usa controles negativos, estados por servicio y cobertura
+`email_enumerator` adapta 23 consultas/validaciones de Holehe y conserva cinco
+sondas adicionales (28 en total, con Miro solo como observación de autenticación).
+Usa controles negativos, estados por servicio y cobertura
 persistente sin cambiar el entorno de GHunt o Maigret. Véase
 [procedencia, configuración y límites de correo](HOLEHE.md).
 
@@ -83,14 +84,14 @@ disponibilidad en vivo de las fuentes de la tabla siguiente.
 | **XposedOrNot** | `api.xposedornot.com/v1/check-email/{email}` | No | 🟢 | 2026-09-04 | `breach_checker` |
 | **OpenAlex** | API de autores y trabajos | No | 🟢 | 2026-09-04 | `academic_finder` |
 | **Gravatar** | Perfil por hash MD5 del correo | No | 🟢 | 2026-09-04 | `gravatar_deep` |
-| **Holehe / correo** | 25 consultas/validaciones seleccionadas; 22 adaptadas del snapshot oficial | No | 🟡 | 2026-10-14 (control aleatorio en red) | `email_enumerator`: 11 negativos explícitos, resto bloqueado/incompatible; cero hallazgos en el control. [Detalle](HOLEHE.md) |
+| **Holehe / correo** | 28 sondas; 23 adaptadas del snapshot oficial, Miro solo observación | No | 🟡 | 2026-10-14 (control y positivo conocido en red) | `email_enumerator`: Atlassian positivo y control negativo; Miro inconcluso, ORCID bloqueado. No implica operativas todas las sondas. [Detalle](HOLEHE.md) |
 | **Keybase** | API pública de resolución de identidad | No | 🟢 | 2026-09-04 | `keybase_resolver` |
 | **MediaWiki** | API de contribuciones | No | 🟢 | 2026-09-04 | `wikipedia_edits` |
 | **GitHub** | API pública sin autenticar | No | 🟢 | 2026-09-04 | `github_deep_scanner`, `email_checker` |
 | **Tavily** | `POST api.tavily.com/search` | Sí (gratuita) | 🟢 | 2026-09-04 | `search_dorker` — motor principal. 1.000 créditos/mes; 1 crédito por búsqueda `basic`, 2 por `advanced` |
 | **TinyFish Search / Fetch** | `api.search.tinyfish.ai` / `api.fetch.tinyfish.ai` | Sí (opcional) | Pendiente de prueba real | 2026-10-07 | Search: respaldo por consulta; Fetch: lectura opcional de páginas dinámicas. Integración y fallos verificados con HTTP simulado; sin key se omiten |
 | **DuckDuckGo** | Scraping HTML de resultados | No | 🟡 | 2026-09-04 | `search_dorker` — motor de respaldo automático. Responde HTTP 202, no 200 |
-| **Google (Scholar/YouTube)** | Endpoints públicos sin key | No | 🟡 | 2026-10-14 (pruebas locales) | `google_account_osint`: descubrimiento complementario; retirado el lookup de Gmail que producía falsos positivos |
+| **Google (Scholar/YouTube)** | Endpoints públicos sin key | No | 🟡 | 2026-10-15 (YouTube en red, Scholar con HTTP simulado) | `google_account_osint`: tarjetas/perfiles Scholar con métricas del autor; canales candidatos. `social_verifier` confirmó el ID de Google for Developers en red; pertenencia al objetivo aún requiere evidencia |
 | **GHunt** | Biblioteca 2.3.4: PeoplePa, GAIA, Maps, Calendar, Play Games, Drive explícito | Sesión del operador | Pendiente de sesión/prueba real | 2026-10-14 (biblioteca real, HTTP simulado) | `ghunt`, aislado de Maigret y de las dependencias del backend. [Configuración y alcance](GHUNT.md) |
 | **Gemini** | `generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent` | Sí (gratuita) | 🟢 | 2026-09-04 | Capa 2 del motor `hybrid`, agente `agentic` y narrativa. Verificado que emite `functionCall` con nuestro esquema de herramientas |
 | **Avatares directos** | `github.com/{u}.png` · `t.me/i/userpic/320/{u}.jpg` · `keybase.io/{u}/picture` · `gravatar.com/avatar/{md5}?d=404` | No | 🟢 | 2026-09-05 | `avatar_harvest` — cosecha activa. Los cuatro devuelven imagen con 200 para una cuenta que existe y 404 para una que no |
@@ -270,8 +271,8 @@ en workers aislados; las demás fuentes aportan datos o técnicas adaptados sobr
 |---|---|---|---|
 | [soxoj/maigret](https://github.com/soxoj/maigret) | MIT | 🟢 activo, ~23k ★ | Dataset de 3000+ sitios con `regexCheck`, `alexaRank`, `absenceStrs`, `protection` |
 | [WebBreacher/WhatsMyName](https://github.com/WebBreacher/WhatsMyName) | CC BY-SA 4.0 | 🟢 activo | Dataset ya integrado; conviene refrescarlo periódicamente |
-| [kaifcodec/user-scanner](https://github.com/kaifcodec/user-scanner) | MIT | 🟢 activo, 4.6k ★ | Sucesor de facto de Holehe: 175+ vectores de correo, 290+ de username |
-| [megadose/holehe](https://github.com/megadose/holehe) | GPL-3.0 | 🟡 último commit oficial: 2024-09-10 | 22 técnicas de consulta/validación adaptadas con parsers estrictos y controles. No se instala su CLI ni se asumen operativos todos sus módulos. [Detalle](HOLEHE.md) |
+| [kaifcodec/user-scanner](https://github.com/kaifcodec/user-scanner) | MIT | Snapshot `38ce09e` | Referencias seleccionadas para GitHub, Adobe y Atlassian; sin instalar ni ejecutar su paquete. [Procedencia y licencia](vendor/user-scanner/NOTICE.md) |
+| [megadose/holehe](https://github.com/megadose/holehe) | GPL-3.0 | 🟡 último commit oficial: 2024-09-10 | 23 técnicas de consulta/validación adaptadas con parsers estrictos y controles. No se instala su CLI ni se asumen operativos todos sus módulos. [Detalle](HOLEHE.md) |
 | [megadose/ignorant](https://github.com/megadose/ignorant) | GPL-3.0 | ⚪ **descartado** | Enumeración de teléfono vía flujos de reset. **No se adopta**: dispara SMS/emails reales a un tercero que no ha consentido — no es OSINT pasivo |
 | [mxrch/GHunt](https://github.com/mxrch/GHunt) | AGPL-3.0 | 🟢 activo | Biblioteca 2.3.4 integrada en runtime separado. Sesión local y consulta de perfil verificadas el 2026-10-14. Maps expone estadísticas; Calendar se limita a acceso anónimo. [Detalle](GHUNT.md) |
 | [microlinkhq/unavatar](https://github.com/microlinkhq/unavatar) | MIT | ⚪ referencia | Lista de 74+ proveedores de avatar. **Su API no se consume**: limita a 25 req/día por IP en anónimo; se implementan los patrones de URL directos |

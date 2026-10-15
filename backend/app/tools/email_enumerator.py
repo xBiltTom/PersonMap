@@ -25,7 +25,7 @@ def fill(payload, email):
     return email if payload == "{email}" else payload
 
 
-def response_status(response):
+def response_status(response, accepted=(200, 422)):
     code = response.status_code
     if code == 429:
         return "rate_limited"
@@ -40,7 +40,7 @@ def response_status(response):
     if any(marker in response.text[:200_000].lower() for marker in (
             "cf-chl-", "challenge-platform", "captcha-required", "verify you are human")):
         return "blocked"
-    if code not in {200, 422}:
+    if code not in accepted:
         return "unexpected_response"
     return None
 
@@ -77,11 +77,11 @@ class EmailEnumeratorTool(BaseTool):
     async def probe(self, client, email, spec, diagnostics):
         payload, headers = fill(spec.payload, email), {"Accept": "application/json", **spec.headers}
 
-        async def request(method, url, **kwargs):
+        async def request(method, url, *, accepted=(200,), **kwargs):
             diagnostics["requests"] += 1
             response = await client.request(method, url, **kwargs)
             diagnostics["http_status"] = response.status_code
-            status = response_status(response)
+            status = response_status(response, accepted)
             if status:
                 raise ProbeUnavailable(status)
             return response
@@ -93,8 +93,8 @@ class EmailEnumeratorTool(BaseTool):
             if spec.csrf == "github":
                 token = None
                 for check in soup.select("auto-check[src]"):
-                    if urlsplit(check.get("src", "")).path == "/signup_check/email":
-                        node = check.select_one('input[name="authenticity_token"][value]')
+                    if urlsplit(check.get("src", "")).path == urlsplit(spec.url).path:
+                        node = check.select_one('input[name="authenticity_token"][value], input[data-csrf="true"][value]')
                         token = node.get("value") if node else check.get("csrf")
                         break
                 if not token:
@@ -117,14 +117,21 @@ class EmailEnumeratorTool(BaseTool):
         if spec.key == "pinterest":
             payload["data"] = json.dumps(payload["data"])
         response = await request(spec.method, spec.url.replace("{email}", quote(email, safe="")),
-                                 headers=headers, **{spec.send: payload})
-        if response.status_code == 422 and spec.parser != "github":
-            raise ProbeUnavailable("unexpected_response")
+                                 accepted=spec.response_codes, headers=headers, **{spec.send: payload})
         if spec.parser == "steam":
             try:
                 if response.json().get("success") == 84:
                     raise ProbeUnavailable("rate_limited")
             except (ValueError, AttributeError):
+                pass
+        if spec.parser == "miro":
+            try:
+                data = response.json()
+                if isinstance(data, dict) and isinstance(data.get("recommendedAuthenticationType"), str):
+                    # The operator's known account and a random same-domain
+                    # control both return CREDENTIALS. This is not absence.
+                    return {"status": "auth_hint_only", "registered": None}
+            except ValueError:
                 pass
         registered = parse_registration(spec.parser, response)
         return {"status": "registered" if registered is True else "not_registered" if registered is False else "unexpected_response",
@@ -169,6 +176,7 @@ class EmailEnumeratorTool(BaseTool):
                                 "source_tool": self.name, "negative_control": negative_control,
                                 "probe_id": spec.key, "technique": "email_validation_query",
                                 "probe_origin": "holehe_adapted" if spec.upstream else "person_map",
+                                **({"adaptation_reference": spec.reference} if spec.reference else {}),
                                 **({"holehe_commit": HOLEHE_COMMIT, "holehe_module": spec.upstream} if spec.upstream else {})},
                             evidence_urls=[spec.url.replace("{email}", quote(email, safe=""))])
             except ProbeUnavailable as exc:

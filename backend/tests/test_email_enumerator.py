@@ -35,7 +35,10 @@ CASES = {
     "wordpress": ({"body": {"email_verified": False}}, {"body": {"error": "unknown_user"}}),
     "lastfm": ({"email": {"error_messages": ["Sorry, that email address is already registered to another account."]}}, {"email": {"valid": True}}),
     "codecademy": ({"errors": {"email": ["is already taken"]}}, None),
-    "github": ("Email is already taken", ""),
+    "github": ("Email is already taken", "Email is available"),
+    "atlassian": ({"action": "social_login", "identities": {"google": True}}, {"action": "signup"}),
+    "orcid": ({"email": {"errors": ["orcid.frontend.verify.duplicate_email"]}}, {"email": {"errors": []}}),
+    "miro": ({"recommendedAuthenticationType": "CREDENTIALS"}, {"recommendedAuthenticationType": "CREDENTIALS"}),
     "lastpass": ("no", "ok"),
     "text_exists": ("True", "False"),
     "text_available": ("false", "true"),
@@ -56,7 +59,7 @@ def response_for(spec, positive):
 
 def warmup_response():
     return httpx.Response(200, text='<meta name="csrf-token" content="synthetic-csrf-secret">'
-        '<auto-check src="/signup_check/email"><input name="authenticity_token" value="synthetic-csrf-secret"></auto-check>',
+        '<auto-check src="/email_validity_checks"><input data-csrf="true" value="synthetic-csrf-secret"></auto-check>',
         headers={"set-cookie": "csrftoken=synthetic-csrf-secret; Path=/; Secure"})
 
 
@@ -83,7 +86,7 @@ def for_spec(spec, *, any_email=False):
     return responder
 
 
-@pytest.mark.parametrize("spec", PROBES, ids=lambda spec: spec.key)
+@pytest.mark.parametrize("spec", [spec for spec in PROBES if spec.parser != "miro"], ids=lambda spec: spec.key)
 @pytest.mark.asyncio
 async def test_each_adapted_probe_preserves_registration_scope_and_provenance(monkeypatch, spec):
     bridge(monkeypatch, for_spec(spec))
@@ -107,7 +110,7 @@ async def test_each_adapted_probe_preserves_registration_scope_and_provenance(mo
     assert not EmailEnumeratorTool().can_run(context)
 
 
-@pytest.mark.parametrize("spec", PROBES, ids=lambda spec: spec.key)
+@pytest.mark.parametrize("spec", [spec for spec in PROBES if spec.parser != "miro"], ids=lambda spec: spec.key)
 @pytest.mark.asyncio
 async def test_every_probe_rejects_a_service_that_finds_every_email(monkeypatch, spec):
     bridge(monkeypatch, for_spec(spec, any_email=True))
@@ -131,6 +134,28 @@ def test_unknown_schema_never_means_registered_or_not_registered(spec, body):
 ])
 def test_observed_chess_schema_is_typed_and_conflicts_remain_unknown(payload, expected):
     assert parse_registration("available", httpx.Response(200, json=payload)) is expected
+
+
+@pytest.mark.parametrize("payload,expected", [
+    ([], False), ([{"authenticationMethods": [{"id": "password"}]}], True),
+    ([{"authenticationMethods": [{"id": "saml"}]}], True), ([{"unexpected": True}], None),
+])
+def test_current_adobe_list_schema_includes_federated_accounts(payload, expected):
+    assert parse_registration("accounts", httpx.Response(200, json=payload)) is expected
+
+
+@pytest.mark.asyncio
+async def test_miro_authentication_hint_is_not_registered_or_not_registered(monkeypatch):
+    monkeypatch.setattr(settings, "email_enum_sites", ["miro"])
+    bridge(monkeypatch, lambda request: httpx.Response(200, json={"recommendedAuthenticationType": "CREDENTIALS"}))
+    context = TargetContext(email=EMAIL)
+    assert await EmailEnumeratorTool().execute(context) == []
+    assert execution_summary(context)["counts"] == {"auth_hint_only": 1}
+
+
+@pytest.mark.parametrize("action", [None, "unknown", "", {}, ["signup"]])
+def test_atlassian_never_treats_an_unknown_action_as_registered(action):
+    assert parse_registration("atlassian", httpx.Response(200, json={"action": action})) is None
 
 
 @pytest.mark.asyncio

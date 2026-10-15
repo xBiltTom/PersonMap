@@ -5,6 +5,8 @@ RUNTIME_KEYS = (
     "email_enum_checked", "email_enum_diagnostics", "email_enum_config_id",
     "ghunt_checked", "ghunt_diagnostics", "ghunt_config_id", "ghunt_resolved_gaia",
     "google_public_checked", "google_public_youtube_queries",
+    "google_public_version", "google_public_diagnostics", "google_public_scholar_profiles",
+    "email_checker_checked", "email_checker_diagnostics", "email_checker_version",
     "username_finder_coverage", "username_finder_scanned", "username_finder_stats",
     "username_finder_catalog_id", "username_finder_outcomes",
     "username_finder_diagnostics", "username_finder_permutations",

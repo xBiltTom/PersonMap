@@ -1,0 +1,17 @@
+{
+  "audited_at": "2026-10-15T12:48:36.794704+00:00",
+  "input_kind": "public_documented_demo_channel",
+  "reference": "https://developers.google.com/youtube/v3/guides/working_with_channel_ids",
+  "expected_channel_id": "UC_x5XG1OV2P6uZZ5FSM9Ttw",
+  "target_association_tested": false,
+  "profile_observed": true,
+  "observed_channel_id": "UC_x5XG1OV2P6uZZ5FSM9Ttw",
+  "display_name": "Google for Developers",
+  "diagnostics": {
+    "https://youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw": {
+      "status": "verified",
+      "http_status": 200,
+      "final_url": "https://www.youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw"
+    }
+  }
+}

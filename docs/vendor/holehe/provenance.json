@@ -114,6 +114,11 @@
       "probe_id": "envato",
       "upstream_path": "holehe/modules/shopping/envato.py",
       "sha256": "9c4bb5c1816819fdde5606ed1016ec87bf9827ec1a2d80ffab9ae87c2eaa7e76"
+    },
+    {
+      "probe_id": "atlassian",
+      "upstream_path": "holehe/modules/cms/atlassian.py",
+      "sha256": "76045b808704cb126841c9f4bc1fe6804cdd2cfc2b4eb40539b92bc5d059d4c4"
     }
   ]
 }

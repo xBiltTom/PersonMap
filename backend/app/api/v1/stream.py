@@ -131,6 +131,9 @@ def reconstruct_trace_logs(
             email = (execution.input_summary or {}).get("email_enumerator", {})
             if execution.tool_name == "email_enumerator" and email.get("counts"):
                 message += " · Correo: " + ", ".join(f"{status}: {count}" for status, count in email["counts"].items())
+            google = (execution.input_summary or {}).get("google_public", {})
+            if execution.tool_name == "google_account_osint" and google.get("statuses"):
+                message += " · Google público: " + ", ".join(f"{status}: {count}" for status, count in google["statuses"].items())
             entries.append((_timestamp(execution.completed_at), 2, {
                 "type": "tool_error" if is_error else "tool_complete",
                 "tool": execution.tool_name,

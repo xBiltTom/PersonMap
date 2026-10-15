@@ -49,6 +49,8 @@ def run_fingerprint() -> Dict[str, Any]:
 
     return {
         "email_enumerator": email_capabilities(),
+        "email_checker_version": 2,
+        "google_public_version": 2,
         "ghunt": ghunt_capabilities(),
         "tools_registered": len(tool_registry.get_all()),
         # Composición del catálogo unificado. `maigret_commit` es lo que hace

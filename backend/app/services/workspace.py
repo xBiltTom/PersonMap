@@ -56,12 +56,13 @@ def parallel_limit():
 def merge_runtime(current, baseline, incoming, *, extent=False, counter=False):
     """Apply a task's changes to the latest context without erasing concurrent work."""
     result = deepcopy(current)
-    if incoming.get("email_enum_config_id") and incoming["email_enum_config_id"] != baseline.get("email_enum_config_id"):
-        # A catalog change or forced repeat replaces this tool's old coverage.
-        # Unioning lists would mark emails from the former catalog as checked
-        # against the new one. Other tools retain their concurrent changes.
-        result = {key: value for key, value in result.items() if not key.startswith("email_enum_")}
-        baseline = {key: value for key, value in baseline.items() if not key.startswith("email_enum_")}
+    for prefix, version in (("email_enum_", "email_enum_config_id"),
+                            ("google_public_", "google_public_version"),
+                            ("email_checker_", "email_checker_version")):
+        if incoming.get(version) and incoming[version] != baseline.get(version):
+            # Replace only the refreshed tool's coverage, keeping concurrent work.
+            result = {key: value for key, value in result.items() if not key.startswith(prefix)}
+            baseline = {key: value for key, value in baseline.items() if not key.startswith(prefix)}
     for key, value in incoming.items():
         if key in baseline and value == baseline[key]:
             continue
@@ -140,6 +141,10 @@ def call_fingerprint(tool_name: str, context: TargetContext) -> str:
     if tool_name == "email_enumerator":
         from app.tools.email_catalog import config_id
         values["email_enum_config"] = config_id()
+    if tool_name in {"google_account_osint", "email_checker"}:
+        values["engine_version"] = 2
+    if tool_name == "google_account_osint":
+        values["university"] = context.university
     return hashlib.sha256(json.dumps([tool_name, values], sort_keys=True).encode()).hexdigest()
 
 
@@ -319,6 +324,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                     "email_enumerator": {"capabilities": tool_registry.get_tool("email_enumerator").capabilities(),
                         "checked": context.extra.get("email_enum_checked", []),
                         "diagnostics": context.extra.get("email_enum_diagnostics", {})},
+                    "google_public": {"diagnostics": context.extra.get("google_public_diagnostics", []),
+                        "scholar_profiles": context.extra.get("google_public_scholar_profiles", {})},
+                    "email_checker": {"diagnostics": context.extra.get("email_checker_diagnostics", {})},
                     "maigret": {"capabilities": capabilities(),
                         "identifiers": context.extra.get("maigret_identifiers", []),
                         "identifier_sources": context.extra.get("maigret_identifier_sources", {}),
@@ -503,7 +511,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 from app.tools.ghunt_runtime import select_call_inputs
                 select_call_inputs(context, inputs)
             runnable = tool.can_run(context)
-            if not runnable and tool.name not in {"ghunt", "email_enumerator"}:
+            if not runnable and tool.name not in {"ghunt", "email_enumerator", "google_account_osint", "email_checker"}:
                 raise HTTPException(422, "Faltan entradas requeridas para la herramienta")
             if tool.name == "public_page_reader" and not payload.inputs.candidate_urls:
                 raise HTTPException(422, "Selecciona explícitamente las URLs que se leerán")
@@ -588,6 +596,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 if tool.name == "email_enumerator":
                     from app.tools.email_enumerator import execution_summary
                     execution.input_summary = {**execution.input_summary, "email_enumerator": execution_summary(context)}
+                if tool.name == "google_account_osint":
+                    from app.tools.google_account_osint import execution_summary
+                    execution.input_summary = {**execution.input_summary, "google_public": execution_summary(context)}
                 if tool.name == "search_dorker":
                     execution.input_summary = {**execution.input_summary,
                         "search_status": context.extra.get("search_last_status"),
@@ -640,6 +651,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 if tool.name == "email_enumerator":
                     from app.tools.email_enumerator import execution_summary
                     coverage_note = " Consultas de correo: " + json.dumps(execution_summary(context)["counts"], ensure_ascii=False) + "."
+                if tool.name == "google_account_osint":
+                    from app.tools.google_account_osint import execution_summary
+                    coverage_note = " Google público: " + json.dumps(execution_summary(context)["statuses"], ensure_ascii=False) + "."
                 await self._publish(inv, "tool_error" if error else "tool_complete",
                     error or (f"{tool.name}: {len(findings)} observaciones guardadas." + coverage_note),
                     tool=tool.name, tool_execution_id=str(execution.id), findings_count=len(findings))

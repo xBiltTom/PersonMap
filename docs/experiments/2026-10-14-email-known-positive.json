@@ -1,0 +1,88 @@
+{
+  "audited_at": "2026-10-15T03:10:46.307769+00:00",
+  "input_kind": "operator_supplied",
+  "capabilities": {
+    "engine_version": 2,
+    "holehe_commit": "14da70f588538936b20d238783c5e28a0772a2b3",
+    "holehe_last_commit": "2024-09-10",
+    "catalog_size": 28,
+    "selected": [
+      "adobe",
+      "amocrm",
+      "atlassian",
+      "orcid",
+      "miro"
+    ],
+    "excluded": {
+      "discord": "account_creation_endpoint",
+      "tumblr": "account_creation_endpoint",
+      "google": "handled_by_ghunt",
+      "gravatar": "handled_by_gravatar_deep",
+      "vsco": "upstream_embeds_static_bearer_token",
+      "quora": "known_non_discriminating_response"
+    },
+    "observation_only": [
+      "miro"
+    ],
+    "unknown_sites": [],
+    "max_emails": 3,
+    "concurrency": 6,
+    "request_timeout": 7.0,
+    "probe_timeout": 20.0,
+    "batch_timeout": 90.0,
+    "result_scope": "registration_signal_not_profile",
+    "live_coverage_verified": false
+  },
+  "summary": {
+    "catalog_id": "57c8092608660b18dee0c2b5667f6efee723f57db2df90206dbc41a36956ad46",
+    "holehe_commit": "14da70f588538936b20d238783c5e28a0772a2b3",
+    "emails_checked": 1,
+    "counts": {
+      "auth_hint_only": 1,
+      "blocked": 1,
+      "not_registered": 2,
+      "registered": 1
+    },
+    "requests": 6
+  },
+  "findings_count": 1,
+  "services": {
+    "adobe": {
+      "status": "not_registered",
+      "requests": 1,
+      "http_status": 200
+    },
+    "amocrm": {
+      "status": "not_registered",
+      "requests": 1,
+      "http_status": 200
+    },
+    "atlassian": {
+      "status": "registered",
+      "requests": 2,
+      "http_status": 200,
+      "control_status": "not_registered"
+    },
+    "orcid": {
+      "status": "blocked",
+      "requests": 1,
+      "http_status": 403
+    },
+    "miro": {
+      "status": "auth_hint_only",
+      "requests": 1,
+      "http_status": 200
+    }
+  },
+  "positive_validation": {
+    "ground_truth": "operator_reported_registration",
+    "detected": [
+      "atlassian"
+    ],
+    "reported_negative": [],
+    "inconclusive": {
+      "miro": "auth_hint_only",
+      "orcid": "blocked"
+    }
+  }
+}

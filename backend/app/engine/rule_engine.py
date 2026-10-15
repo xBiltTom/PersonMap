@@ -76,6 +76,10 @@ class RuleEngine:
         if tool.name == "email_enumerator":
             from app.tools.email_catalog import config_id
             parts.append("email_enum_config:" + config_id())
+        if tool.name in {"google_account_osint", "email_checker"}:
+            parts.append("engine_version:2")
+        if tool.name == "google_account_osint":
+            parts.append(f"university:{context.university or ''}")
         if tool.name in {"username_finder", "maigret_enricher"}:
             parts.append("maigret_options:" + json.dumps(context.extra.get("maigret_options", {}), sort_keys=True))
             parts.append("scan_mode:" + context.extra.get("username_scan_mode", "deep"))
@@ -224,6 +228,9 @@ class RuleEngine:
                     if runnable[index].name == "email_enumerator":
                         from app.tools.email_enumerator import execution_summary
                         execution.input_summary = {**(execution.input_summary or {}), "email_enumerator": execution_summary(context)}
+                    if runnable[index].name == "google_account_osint":
+                        from app.tools.google_account_osint import execution_summary
+                        execution.input_summary = {**(execution.input_summary or {}), "google_public": execution_summary(context)}
                     await trace_recorder.complete_tool(
                         execution,
                         findings_count=len(outcome.findings),
@@ -375,6 +382,9 @@ class RuleEngine:
             if tool.name == "email_enumerator":
                 from app.tools.email_enumerator import execution_summary
                 note = " Consultas de correo: " + json.dumps(execution_summary(context)["counts"], ensure_ascii=False) + "."
+            if tool.name == "google_account_osint":
+                from app.tools.google_account_osint import execution_summary
+                note = " Google público: " + json.dumps(execution_summary(context)["statuses"], ensure_ascii=False) + "."
             await event_bus.publish(investigation_id, {
                 "type": "tool_complete",
                 "tool": tool.name,

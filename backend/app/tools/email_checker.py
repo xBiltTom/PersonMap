@@ -1,8 +1,10 @@
 import re
-from typing import Any, Dict, List, Optional
-import httpx
+from typing import List, Optional
 from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
+from app.tools.email_enumerator import valid_email
+
+ENGINE_VERSION = 2
 
 
 class EmailCheckerTool(BaseTool):
@@ -17,6 +19,16 @@ class EmailCheckerTool(BaseTool):
     description = "Análisis de infraestructura de correo (clasificación académica/desechable, extracción de nombres y atribución Git)"
     category = ToolCategory.EMAIL
     required_inputs = ["email", "discovered_emails"]
+    cache_prefix = "email_checker_"
+
+    def pending(self, context):
+        checked = context.extra.get("email_checker_checked", []) if context.extra.get("email_checker_version") == ENGINE_VERSION else []
+        emails = [value for value in context.all_emails() if valid_email(value)]
+        admitted = list(dict.fromkeys([*checked, *emails]))[:3]
+        return [email for email in emails if email in admitted and email not in checked]
+
+    def can_run(self, context):
+        return bool(self.pending(context))
 
     ACADEMIC_PATTERNS = [
         ".edu", ".ac.", ".edu.", "uni.edu.pe", "unmsm.edu.pe", "pucp.edu.pe",
@@ -38,14 +50,18 @@ class EmailCheckerTool(BaseTool):
     }
 
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
-        emails = context.all_emails()
+        if context.extra.get("email_checker_version") != ENGINE_VERSION:
+            context.extra.update(email_checker_version=ENGINE_VERSION, email_checker_checked=[], email_checker_diagnostics={})
+        emails = self.pending(context)
         if not emails:
             return []
 
         findings: List[ToolFinding] = []
 
-        async with http_client.build_client(timeout=8.0) as client:
+        async with http_client.build_client(timeout=8.0, public_only=True, follow_redirects=False,
+                                            max_retries=0, trust_env=False) as client:
             for email in emails:
+                context.extra["email_checker_checked"].append(email)
                 clean_email = email.strip().lower()
                 if "@" not in clean_email:
                     continue
@@ -90,33 +106,48 @@ class EmailCheckerTool(BaseTool):
                     )
                 )
 
-                # 4. GitHub Email Search API Attribution (unauthenticated public query)
+                # Search is discovery only. Confirm an exact public email on
+                # each returned profile; a ranked search hit is not a commit.
+                diagnostics = context.extra["email_checker_diagnostics"].setdefault(clean_email, {"status": "pending", "requests": 0})
                 try:
-                    gh_url = f"https://api.github.com/search/users?q={clean_email}+in:email"
-                    resp = await http_client.get(client, gh_url, headers={"Accept": "application/json"})
-                    if resp is not None and resp.status_code == 200:
-                        gh_data = resp.json()
-                        if gh_data.get("total_count", 0) > 0:
-                            item = gh_data["items"][0]
-                            gh_user = item.get("login")
-                            gh_profile = item.get("html_url")
-                            findings.append(
-                                ToolFinding(
-                                    entity_type="social_account",
-                                    platform="github",
-                                    value=gh_profile or f"https://github.com/{gh_user}",
-                                    display_name=f"GitHub (Commit Email Match): @{gh_user}",
-                                    confidence=0.96,
-                                    metadata_info={
-                                        "source_tool": "email_checker",
-                                        "username": gh_user,
-                                        "matched_email": clean_email,
-                                        "usernames": [gh_user] if gh_user else [],
-                                        "avatar_url": item.get("avatar_url"),
-                                    },
-                                )
-                            )
-                except Exception:
-                    pass
-
+                    diagnostics["requests"] += 1
+                    response = await client.get("https://api.github.com/search/users",
+                        params={"q": '"' + clean_email.replace('"', '') + '" in:email', "per_page": 3},
+                        headers={"Accept": "application/vnd.github+json"})
+                    if response.status_code != 200:
+                        diagnostics["status"] = "rate_limited" if response.status_code == 429 else "blocked" if response.status_code in {401, 403} else "upstream_error"
+                        diagnostics["http_status"] = response.status_code
+                        continue
+                    data = response.json()
+                    items = data.get("items") if isinstance(data, dict) else None
+                    if not isinstance(items, list):
+                        diagnostics["status"] = "unexpected_response"
+                        continue
+                    diagnostics["status"] = "no_public_email_match"
+                    for item in items[:3]:
+                        login = item.get("login") if isinstance(item, dict) else None
+                        if not isinstance(login, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,39}", login):
+                            continue
+                        diagnostics["requests"] += 1
+                        profile = await client.get("https://api.github.com/users/" + login,
+                                                   headers={"Accept": "application/vnd.github+json"})
+                        if profile.status_code != 200:
+                            if diagnostics["status"] != "public_email_match":
+                                diagnostics["status"] = "profile_unavailable"
+                            continue
+                        account = profile.json()
+                        if (not isinstance(account, dict) or not isinstance(account.get("login"), str) or account["login"].lower() != login.lower()
+                                or not isinstance(account.get("email"), str) or account["email"].strip().lower() != clean_email):
+                            continue
+                        url = "https://github.com/" + login
+                        diagnostics["status"] = "public_email_match"
+                        findings.append(ToolFinding(entity_type="social_account", platform="github", value=url,
+                            display_name="GitHub: @" + login, confidence=0.8, evidence_urls=[str(profile.url)],
+                            metadata_info={"source_tool": self.name, "username": login, "url": url,
+                                "matched_email": clean_email, "usernames": [login], "verification_status": "verified",
+                                "ownership_status": "unverified", "technique": "github_public_profile_email",
+                                "association_evidence": "exact_public_profile_email", "avatar_url": account.get("avatar_url")}))
+                except Exception as exc:
+                    if diagnostics["status"] != "public_email_match":
+                        diagnostics.update(status="request_error", error_type=type(exc).__name__)
         return findings

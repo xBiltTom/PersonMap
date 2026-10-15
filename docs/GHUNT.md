@@ -176,6 +176,17 @@ ya no produce una cuenta activa con confianza 0,85. Scholar ahora se consulta
 una vez por nombre/universidad, sin repetir por cada correo ni atribuir la
 institución consultada como si se hubiera observado en el resultado.
 
+La siguiente revisión de `google_account_osint` permite leer perfiles Scholar
+por URL y observa nombre, afiliación, dominio verificado y métricas desde la
+tabla del autor. Los bloqueos quedan como diagnóstico; una tarjeta de búsqueda
+puede mantenerse como candidato sin inventar esos datos. Los enlaces ORCID
+observados admiten pivotes tipados. YouTube conserva canales candidatos y el
+verificador puede vincular un ID a su handle mediante metadatos estructurados.
+Verificar la existencia del perfil no confirma que pertenezca al objetivo.
+Son consultas públicas complementarias con cobertura persistente y límites
+propios; no cambian la sesión ni el entorno nativo de GHunt. Véase
+[motor de correo y Google públicos](HOLEHE.md#github-y-google-públicos).
+
 ## Verificación
 
 `backend/tests/test_ghunt.py` ejecuta la biblioteca **real instalada** en un

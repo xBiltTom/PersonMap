@@ -43,6 +43,52 @@ pytestmark = pytest.mark.db
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ["google_account_osint", "email_checker"])
+async def test_public_profile_evidence_survives_workspace_reload_and_reuses(isolated_workspace, monkeypatch, tool_name):
+    from app.tools import http_client
+    service, _ = isolated_workspace
+    scholar = "https://scholar.google.com/citations?user=AbcdEF12GhIJ"
+    calls = []
+    def respond(request):
+        calls.append(request)
+        if request.url.host == "scholar.google.com":
+            return httpx.Response(200, text='<div id="gsc_prf_in">Observed Author</div>'
+                '<table id="gsc_rsb_st"><tr><td>Citations</td><td>1234</td><td>10</td></tr></table>')
+        if request.url.path == "/search/users":
+            return httpx.Response(200, json={"items": [{"login": "observed-user"}]})
+        return httpx.Response(200, json={"login": "observed-user", "email": "audit@example.org"})
+    monkeypatch.setattr(http_client, "build_client", lambda **kwargs: httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+    async with service.session_factory() as db:
+        inv = await service.create(InvestigationCreate(target=TargetCreate(
+            identifiers=[{"value": "0000-0002-1825-0097", "id_type": "orcid"}]), execution_mode="external"), db)
+    opened = await service.open_session(inv.id, SessionCreate(client="public-profile-audit"))
+    sid = uuid.UUID(opened["id"])
+    inputs = ToolInputs(candidate_urls=[scholar]) if tool_name == "google_account_osint" else ToolInputs(email="audit@example.org")
+    payload = ToolRequest(tool_name=tool_name, inputs=inputs, rationale="Verify observed public profile")
+    started = await service.submit_tool(inv.id, sid, payload)
+    await service.tasks[uuid.UUID(started["id"])]
+    async with service.session_factory() as db:
+        execution = await db.get(ToolExecution, uuid.UUID(started["id"]))
+        assert execution.status == "completed" and execution.findings_count >= 1
+        if tool_name == "google_account_osint":
+            assert execution.input_summary["google_public"]["statuses"] == {"observed": 1}
+    service.contexts.clear()
+    context = await service.context(inv.id)
+    if tool_name == "google_account_osint":
+        assert context["google_public"]["scholar_profiles"][scholar] == "observed"
+    else:
+        assert context["email_checker"]["diagnostics"]["audit@example.org"]["status"] == "public_email_match"
+    count = len(calls)
+    reused = await service.submit_tool(inv.id, sid, payload)
+    assert reused["reused"] and reused["id"] == started["id"] and len(calls) == count
+    detail = await service.detail(inv.id)
+    profiles = [e for e in detail["entities"] if e["entity_type"] in {"academic_profile", "social_account"}]
+    assert len(profiles) == 1 and profiles[0]["metadata_info"]["ownership_status"] == "unverified"
+    if tool_name == "google_account_osint":
+        assert profiles[0]["metadata_info"]["citations"] == 1234
+
+
+@pytest.mark.asyncio
 async def test_email_enumerator_mcp_persists_partial_coverage_reuses_and_can_force(isolated_workspace, monkeypatch):
     from app.mcp import server as mcp_module
     from app.mcp.auth import MCPTokenGate
