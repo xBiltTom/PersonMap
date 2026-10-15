@@ -1,0 +1,44 @@
+{
+  "base_ref": "3f054bf",
+  "implementation_ref": "418a834",
+  "baseline_full_backend": {
+    "passed": 862,
+    "deselected": 16,
+    "seconds": 560.65
+  },
+  "frontier_full_backend": {
+    "passed": 887,
+    "deselected": 16,
+    "seconds": 606.52
+  },
+  "frontier_disabled_existing_backend": {
+    "passed": 862,
+    "deselected": 16,
+    "seconds": 576.38
+  },
+  "focused_after_final_review": {
+    "passed": 97,
+    "seconds": 15.2,
+    "command": ".venv/bin/python -m pytest tests/test_pivot_frontier.py tests/test_hybrid_engine.py tests/test_dni_lookup.py tests/test_trace.py tests/test_workspace_updates.py -q --tb=short"
+  },
+  "commands": {
+    "full": "env LITELLM_LOCAL_MODEL_COST_MAP=True .venv/bin/python -m pytest -q --tb=short",
+    "disabled": "env LITELLM_LOCAL_MODEL_COST_MAP=True PIVOT_FRONTIER_ENABLED=false .venv/bin/python -m pytest -q --tb=short --ignore=tests/test_pivot_frontier.py"
+  },
+  "openapi": "Frontier response model and pivot_mode verified against app.openapi()",
+  "new_frontier_tests": 25,
+  "corrected_regression": {
+    "test": "tests/test_dni_lookup.py::test_rules_follow_public_source_then_search_candidate_name",
+    "initial_run": "1 failed, 885 passed, 16 deselected in 625.64s",
+    "resolution": "DNI document URLs now retain their input channel and dni_lookup consumer; focused and full reruns pass"
+  },
+  "not_run": [
+    "16 tests marked network/db",
+    "TypeScript: no frontend TS/TSX files modified"
+  ],
+  "notes": [
+    "Subprocess tests ran outside the filesystem/network sandbox.",
+    "Final review input guards were covered by the focused suite rerun.",
+    "No claim of live PostgreSQL/source end-to-end validation."
+  ]
+}

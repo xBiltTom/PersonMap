@@ -1,0 +1,12 @@
+{
+  "base_fixture": "identity_ground_truth.json",
+  "target_key": "estudiante_unt",
+  "profile_case": "email_declarado",
+  "description": "Use only the fixture username as seed. A verified profile explicitly publishes the fixture email; a PDF contains an incidental teacher contact; a broad search contains an unrelated weak contact. Discovery deliberately returns weak/contextual inputs first.",
+  "weak_email": "unrelated@example.org",
+  "contextual_email": "professor@university.example",
+  "weak_source": "https://search.example/unrelated",
+  "contextual_source": "https://university.example/course.pdf",
+  "lookup_request_budget": 2,
+  "max_pivots_per_round": 2
+}

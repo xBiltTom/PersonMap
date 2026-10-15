@@ -187,4 +187,10 @@ def extract_and_apply_pivots(findings: List[ToolFinding], context: TargetContext
 
     context.extra["candidate_urls"] = candidate_urls
     context.extra["avatar_urls"] = avatar_urls
+    if settings.pivot_frontier_enabled:
+        from app.engine.pivot_frontier import PivotFrontier
+        frontier = PivotFrontier(context)
+        if not context.extra.get("pivot_frontier"):
+            frontier.seed()
+        frontier.observe(findings, context.extra.get("pivot_round", 0))
     return pivoted

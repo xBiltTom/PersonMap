@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     # gasto de tokens y la latencia, que en una sustentación en vivo importa.
     hybrid_max_refinement_turns: int = 2
 
+    # Admission budgets, separate from per-tool request/rate/concurrency limits.
+    pivot_frontier_enabled: bool = True
+    pivot_max_per_round: int = Field(default=12, ge=1, le=1000)
+    pivot_max_total: int = Field(default=128, ge=1, le=10000)
+    pivot_max_weak_per_round: int = Field(default=2, ge=0, le=1000)
+    pivot_min_priority: int = Field(default=0, ge=0, le=1000)
+    pivot_round_cost_budget: int = Field(default=100, ge=1, le=10000)
+    pivot_deep_max_rounds: int = Field(default=8, ge=4, le=100)
+    pivot_corroboration_bonus: int = Field(default=30, ge=0, le=40)
+
     # Server & Security
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000

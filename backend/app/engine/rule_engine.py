@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from typing import List, Optional, Set
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.events import event_bus
+from app.core.config import settings
+from app.engine.pivot_frontier import PivotFrontier
 from app.engine.persistence import build_relationships, persist_findings
 from app.engine.pivot_rules import extract_and_apply_pivots
 from app.engine.trace import PendingObservation, trace_recorder
@@ -143,6 +145,10 @@ class RuleEngine:
             context.extra.setdefault("maigret_options", plan.options.model_dump(exclude_none=True))
             context.extra.setdefault("username_scan_mode", plan.scan_mode)
 
+        mode = context.extra.setdefault("pivot_frontier_mode", (target.extra_data or {}).get("pivot_frontier_mode", "standard"))
+        if settings.pivot_frontier_enabled:
+            PivotFrontier(context).seed(target)
+
         all_findings: List[ToolFinding] = []
         executed_runs: Set[str] = set()
         rounds_run = 0
@@ -164,12 +170,40 @@ class RuleEngine:
                 engine_layer=trace_layer,
             )
 
-        for round_idx in range(1, self.MAX_ROUNDS + 1):
+        round_limit = settings.pivot_deep_max_rounds if settings.pivot_frontier_enabled and mode == "deep" else self.MAX_ROUNDS
+        for round_idx in range(1, round_limit + 1):
+            frontier = PivotFrontier(context) if settings.pivot_frontier_enabled else None
+            if frontier:
+                frontier.sync(round_idx - 1)
+                selected = frontier.next(round_idx, mode)
+                run_context = frontier.execution_view()
+            else:
+                run_context = context
             runnable = [
                 tool for tool in tool_registry.get_all()
-                if tool.can_run(context) and self._get_tool_run_key(tool, context) not in executed_runs
+                if tool.can_run(run_context) and self._get_tool_run_key(tool, run_context) not in executed_runs
             ]
+            if frontier:
+                frontier.duplicate_executions_avoided += sum(tool.can_run(run_context) and
+                    self._get_tool_run_key(tool, run_context) in executed_runs for tool in tool_registry.get_all())
+                frontier.save()
+                decision = {**frontier.decisions[-1], "selected_pivots": [
+                    {"id": c.id, "type": c.type, "pivot_priority": c.pivot_priority,
+                     "confidence_class": c.confidence_class, "reasons": c.reasons} for c in selected]}
+                if db:
+                    await trace_recorder.record_event(db, investigation_id=investigation_id,
+                        event_type="pivot_frontier", engine=trace_engine, engine_layer=trace_layer,
+                        round_index=round_idx, data=decision)
+                await event_bus.publish(investigation_id, {"type": "log", "phase": "pivot_frontier",
+                    "layer": trace_layer, "pivot_frontier": decision,
+                    "message": f"Frontier ronda {round_idx}: {len(selected)} pistas seleccionadas; {decision['deferred']} aplazadas.",
+                    "timestamp": time.time()})
             if not runnable:
+                if frontier and selected:
+                    # Some admitted inputs may have no runnable provider. Keep
+                    # them pending, while later rounds can admit other clues.
+                    frontier.mark_explored(run_context, [], set())
+                    continue
                 break
 
             rounds_run = round_idx
@@ -196,7 +230,7 @@ class RuleEngine:
             tasks = []
             executions = []
             for tool in runnable:
-                executed_runs.add(self._get_tool_run_key(tool, context))
+                executed_runs.add(self._get_tool_run_key(tool, run_context))
                 execution = None
                 if db:
                     execution = await trace_recorder.start_tool(
@@ -206,20 +240,25 @@ class RuleEngine:
                         engine=trace_engine,
                         engine_layer=trace_layer,
                         round_index=round_idx,
-                        context=context,
+                        context=run_context,
                     )
                     executions.append(execution)
                 tasks.append(
                     self._run_single_tool(
                         investigation_id,
                         tool,
-                        context,
+                        run_context,
                         tool_execution_id=str(execution.id) if execution else None,
                     )
                 )
 
             batch_results = await asyncio.gather(*tasks, return_exceptions=True)
             round_findings: List[ToolFinding] = []
+
+            if frontier:
+                frontier.merge_view(run_context)
+                frontier.mark_explored(run_context, runnable, {tool.name for tool, result in zip(runnable, batch_results)
+                    if isinstance(result, ToolRunOutcome) and result.error is None})
 
             for index, result in enumerate(batch_results):
                 outcome = result if isinstance(result, ToolRunOutcome) else ToolRunOutcome(error=result)
@@ -260,6 +299,7 @@ class RuleEngine:
                 "urls": len(context.extra.get("candidate_urls", [])),
                 "avatars": len(context.extra.get("avatar_urls", [])),
             }
+            context.extra["pivot_round"] = round_idx
             has_pivots = extract_and_apply_pivots(round_findings, context)
             pivot_after = {
                 "names": len(context.discovered_names),
@@ -299,7 +339,7 @@ class RuleEngine:
                     ),
                     "timestamp": time.time(),
                 })
-            elif not any(
+            elif not frontier and not any(
                 tool.can_run(context) and self._get_tool_run_key(tool, context) not in executed_runs
                 for tool in tool_registry.get_all()
             ):
@@ -380,6 +420,8 @@ class RuleEngine:
             # Tag source tool
             for f in findings:
                 f.metadata_info["source_tool"] = tool.name
+                if settings.pivot_frontier_enabled and tool_execution_id:
+                    f.metadata_info["source_tool_execution_id"] = tool_execution_id
 
             duration_seconds = round(time.perf_counter() - started_at, 3)
             note = ""
