@@ -21,6 +21,11 @@ variantes, permutaciones, gateways opcionales y los diez formatos nativos de
 informe. La prueba tradicional real se registra en
 [la validación de capacidades](experiments/2026-10-13-maigret-expanded-live.md).
 
+GHunt 2.3.4 se integra como biblioteca en un entorno independiente por sus
+restricciones de HTTPX/Pillow. La sesión es configuración del operador; sin
+ella se conservan las búsquedas públicas complementarias. Véase
+[alcance, sesión y límites de GHunt](GHUNT.md).
+
 1. Re-comprobar con `curl` cada endpoint de la tabla "Fuentes en uso".
 2. Revisar los repos de la tabla "Proyectos de referencia" por cambios de
    licencia, abandono o técnicas nuevas.
@@ -79,7 +84,8 @@ disponibilidad en vivo de las fuentes de la tabla siguiente.
 | **Tavily** | `POST api.tavily.com/search` | Sí (gratuita) | 🟢 | 2026-09-04 | `search_dorker` — motor principal. 1.000 créditos/mes; 1 crédito por búsqueda `basic`, 2 por `advanced` |
 | **TinyFish Search / Fetch** | `api.search.tinyfish.ai` / `api.fetch.tinyfish.ai` | Sí (opcional) | Pendiente de prueba real | 2026-10-07 | Search: respaldo por consulta; Fetch: lectura opcional de páginas dinámicas. Integración y fallos verificados con HTTP simulado; sin key se omiten |
 | **DuckDuckGo** | Scraping HTML de resultados | No | 🟡 | 2026-09-04 | `search_dorker` — motor de respaldo automático. Responde HTTP 202, no 200 |
-| **Google (Scholar/YouTube)** | Endpoints públicos sin key | No | 🟡 | 2026-09-03 | `google_account_osint` — el `lookup` de Gmail es históricamente inestable |
+| **Google (Scholar/YouTube)** | Endpoints públicos sin key | No | 🟡 | 2026-10-14 (pruebas locales) | `google_account_osint`: descubrimiento complementario; retirado el lookup de Gmail que producía falsos positivos |
+| **GHunt** | Biblioteca 2.3.4: PeoplePa, GAIA, Maps, Calendar, Play Games, Drive explícito | Sesión del operador | Pendiente de sesión/prueba real | 2026-10-14 (biblioteca real, HTTP simulado) | `ghunt`, aislado de Maigret y de las dependencias del backend. [Configuración y alcance](GHUNT.md) |
 | **Gemini** | `generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent` | Sí (gratuita) | 🟢 | 2026-09-04 | Capa 2 del motor `hybrid`, agente `agentic` y narrativa. Verificado que emite `functionCall` con nuestro esquema de herramientas |
 | **Avatares directos** | `github.com/{u}.png` · `t.me/i/userpic/320/{u}.jpg` · `keybase.io/{u}/picture` · `gravatar.com/avatar/{md5}?d=404` | No | 🟢 | 2026-09-05 | `avatar_harvest` — cosecha activa. Los cuatro devuelven imagen con 200 para una cuenta que existe y 404 para una que no |
 | **Avatares vía API** | `dev.to/api/users/by_username` · `mastodon.social/api/v1/accounts/lookup` | No | 🟢 | 2026-09-05 | `avatar_harvest` — dos pasos: JSON y de ahí la URL del avatar |
@@ -248,8 +254,9 @@ conforme a la restricción del proyecto.
 
 ## Proyectos de referencia
 
-Se revisan al abrir cada fase. **No se añaden como dependencia de ejecución**: se
-trae el dato o la técnica, reimplementados sobre `app/tools/http_client.py`.
+Se revisan al abrir cada fase. Maigret y GHunt se usan como bibliotecas originales
+en workers aislados; las demás fuentes aportan datos o técnicas adaptados sobre
+`app/tools/http_client.py`. Los límites y alcances están documentados por integración.
 
 | Proyecto | Licencia | Estado | Qué aporta |
 |---|---|---|---|
@@ -258,7 +265,7 @@ trae el dato o la técnica, reimplementados sobre `app/tools/http_client.py`.
 | [kaifcodec/user-scanner](https://github.com/kaifcodec/user-scanner) | MIT | 🟢 activo, 4.6k ★ | Sucesor de facto de Holehe: 175+ vectores de correo, 290+ de username |
 | [megadose/holehe](https://github.com/megadose/holehe) | GPL-3.0 | 🔴 sin mantenimiento | Técnica original de enumeración silenciosa. Módulos rotos; usar user-scanner |
 | [megadose/ignorant](https://github.com/megadose/ignorant) | GPL-3.0 | ⚪ **descartado** | Enumeración de teléfono vía flujos de reset. **No se adopta**: dispara SMS/emails reales a un tercero que no ha consentido — no es OSINT pasivo |
-| [mxrch/GHunt](https://github.com/mxrch/GHunt) | AGPL-3.0 | 🟢 activo | Metodología de OSINT de cuentas Google. Sus funciones más ricas (Maps, Calendar) exigen cookies de sesión, inviables en un backend desatendido |
+| [mxrch/GHunt](https://github.com/mxrch/GHunt) | AGPL-3.0 | 🟢 activo | Biblioteca 2.3.4 integrada en runtime separado. Autenticación/renovación nativas; sesión del operador pendiente. Maps expone estadísticas; Calendar se limita a acceso anónimo. [Detalle](GHUNT.md) |
 | [microlinkhq/unavatar](https://github.com/microlinkhq/unavatar) | MIT | ⚪ referencia | Lista de 74+ proveedores de avatar. **Su API no se consume**: limita a 25 req/día por IP en anónimo; se implementan los patrones de URL directos |
 | [moj-analytical-services/splink](https://github.com/moj-analytical-services/splink) | MIT | 🟢 activo | Fellegi-Sunter con estimación EM no supervisada de los pesos m/u |
 | [jivoi/awesome-osint](https://github.com/jivoi/awesome-osint) · [edwardtay/awesome-OSINT](https://github.com/edwardtay/awesome-OSINT) | — | 🟢 | Listas curadas para descubrir fuentes nuevas |

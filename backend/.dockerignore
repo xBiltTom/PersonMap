@@ -1,5 +1,9 @@
 # Entorno virtual y caché de compilación
 .venv/
+**/.venv/
+.ghunt/
+**/creds.m
+**/*.ghunt-pending
 __pycache__/
 *.py[cod]
 *.pyo

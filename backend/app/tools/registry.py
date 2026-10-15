@@ -6,6 +6,7 @@ from app.tools.email_checker import EmailCheckerTool
 from app.tools.email_enumerator import EmailEnumeratorTool
 from app.tools.gravatar_deep import GravatarDeepTool
 from app.tools.google_account_osint import GoogleAccountOSINTTool
+from app.tools.ghunt import GHuntTool
 from app.tools.keybase_resolver import KeybaseResolverTool
 from app.tools.social_url_extractor import SocialUrlExtractorTool
 from app.tools.wikipedia_edits import WikipediaEditsTool
@@ -40,6 +41,7 @@ class ToolRegistry:
         self.register(EmailEnumeratorTool())
         self.register(GravatarDeepTool())
         self.register(GoogleAccountOSINTTool())
+        self.register(GHuntTool())
 
         # Code & Developer Forensics
         self.register(GitHubDeepScannerTool())

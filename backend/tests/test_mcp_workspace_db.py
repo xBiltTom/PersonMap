@@ -42,6 +42,63 @@ from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 pytestmark = pytest.mark.db
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["gaia", "email"])
+async def test_ghunt_typed_mcp_input_persists_diagnostics_and_reuses_coverage(isolated_workspace, monkeypatch, tmp_path, kind):
+    import base64
+    import app.tools.ghunt as ghunt_adapter
+    import app.mcp.server as mcp_module
+    from app.mcp.auth import MCPTokenGate
+    gaia = "123456789012345678901"
+    creds = tmp_path / "creds.m"
+    creds.write_bytes(base64.b64encode(json.dumps({"android": {"master_token": "fixture-master"}}).encode()))
+    monkeypatch.setattr(settings, "ghunt_credentials_file", str(creds))
+    monkeypatch.setattr(settings, "ghunt_enabled", True)
+    calls = []
+    async def lookup(query, services):
+        calls.append(query)
+        return {"status": "observed", "requests": 2, "profile": {"gaia_id": gaia}, "services": {}}
+    monkeypatch.setattr(ghunt_adapter, "run_ghunt", lookup)
+    service, _ = isolated_workspace
+    monkeypatch.setattr(mcp_module, "workspace", service)
+    monkeypatch.setattr(mcp_module.mcp, "_session_manager", None)
+    app = MCPTokenGate(mcp_module.mcp.streamable_http_app())
+    # The test uses the same registry/ToolInputs/submit path as a real MCP call.
+    async with mcp_module.mcp.session_manager.run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8000",
+            headers={"Authorization": "Bearer integration-token", "Accept": "application/json, text/event-stream"}) as client:
+            counter = 0
+            async def call(name, arguments):
+                nonlocal counter
+                counter += 1
+                response = await client.post("/mcp", json={"jsonrpc": "2.0", "id": counter, "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments}})
+                assert response.status_code == 200, response.text
+                result = response.json()["result"]
+                assert not result.get("isError"), result
+                return result["structuredContent"]
+            inputs = {"identifiers": [{"value": gaia, "id_type": "gaia_id"}]} if kind == "gaia" else {"email": "audit@example.org"}
+            created = await call("create_investigation", {"target": inputs})
+            inv_id = uuid.UUID(created["id"])
+            session = await call("open_session", {"investigation_id": str(inv_id), "client": "ghunt-audit"})
+            arguments = {"investigation_id": str(inv_id), "session_id": session["id"],
+                "inputs": inputs, "rationale": "Inspect explicit identifier"}
+            started = await call("ghunt", arguments)
+            await service.tasks[uuid.UUID(started["id"])]
+            result = await call("get_execution", {"investigation_id": str(inv_id), "execution_id": started["id"]})
+            assert result["status"] == "completed" and result["findings_count"] == 1
+            assert result["input_summary"]["ghunt"]["statuses"] == ["observed"]
+            context = await call("get_investigation_context", {"investigation_id": str(inv_id)})
+            key = "gaia:" + gaia if kind == "gaia" else "email:audit@example.org"
+            assert context["ghunt"]["diagnostics"][key]["requests"] == 2
+            reused = await call("ghunt", arguments)
+            assert reused["reused"] and reused["id"] == started["id"]
+            assert len(calls) == 1
+            web = await service.detail(inv_id)
+            assert web["entities"][0]["metadata_info"]["gaia_id"] == gaia
+            assert web["entities"][0]["source_tool"] == "ghunt"
+
+
 @pytest_asyncio.fixture
 async def isolated_workspace(monkeypatch):
     schema = "mcp_test_" + uuid.uuid4().hex

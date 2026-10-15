@@ -15,6 +15,12 @@ from app.tools.maigret_catalog import capabilities
 router = APIRouter()
 
 
+@router.get("/ghunt/capabilities")
+def ghunt_capabilities():
+    from app.tools.ghunt_runtime import capabilities as ghunt_info
+    return ghunt_info()
+
+
 @router.get("/maigret/capabilities")
 def maigret_capabilities():
     return capabilities()

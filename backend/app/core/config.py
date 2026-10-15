@@ -114,6 +114,18 @@ class Settings(BaseSettings):
     maigret_queue_grace: float = Field(default=30, ge=0, le=120)
     maigret_solver_timeout: float = Field(default=65, ge=5, le=120)
     maigret_solver_concurrency: int = Field(default=4, ge=1, le=10)
+    # GHunt runs in a separate Python environment: its HTTPX/Pillow pins conflict
+    # with the API. No credentials are accepted through investigation inputs.
+    ghunt_enabled: bool = True
+    ghunt_python: Optional[str] = None
+    ghunt_credentials_file: Optional[str] = None
+    ghunt_services: list[str] = ["maps", "calendar", "play_games"]
+    ghunt_max_queries: int = Field(default=3, ge=0, le=20)
+    ghunt_max_drive_files: int = Field(default=3, ge=0, le=20)
+    ghunt_worker_timeout: float = Field(default=180, ge=10, le=600)
+    ghunt_request_timeout: float = Field(default=20, ge=1, le=60)
+    ghunt_max_requests: int = Field(default=80, ge=1, le=300)
+    ghunt_max_events: int = Field(default=20, ge=0, le=100)
     # Fracción máxima del presupuesto global que puede tomar una sola tool.
     tool_concurrency_share: float = 0.6
 

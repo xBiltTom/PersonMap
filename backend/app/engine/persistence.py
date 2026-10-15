@@ -205,6 +205,7 @@ async def persist_findings(
 ENUMERATION_TOOLS = {
     "username_finder",
     "maigret_enricher",
+    "ghunt",
     "email_enumerator",
     "phone_enumerator",
     # Consulta por el correo y el alias del objetivo, así que dos registros

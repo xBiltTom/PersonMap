@@ -80,10 +80,11 @@ def build_tool_schemas() -> List[Dict[str, Any]]:
             },
         })
     for schema in schemas:
-        if schema["function"]["name"] == "maigret_enricher":
+        if schema["function"]["name"] in {"maigret_enricher", "ghunt"}:
             parameters = schema["function"]["parameters"]
             parameters["required"] = []
-            parameters["anyOf"] = [{"required": [field]} for field in ("candidate_urls", "identifiers")]
+            fields = ("email", "candidate_urls", "identifiers") if schema["function"]["name"] == "ghunt" else ("candidate_urls", "identifiers")
+            parameters["anyOf"] = [{"required": [field]} for field in fields]
         if schema["function"]["name"] == "search_dorker":
             from app.schemas.workspace import SearchQuery
             parameters = schema["function"]["parameters"]
@@ -138,6 +139,7 @@ def build_call_context(
         extra["maigret_identifiers"] = identifier_values((target.extra_data or {}).get("identifiers", []))
     # A query applies to this call only; budgets and caches remain investigation-wide.
     extra.pop("search_queries", None)
+    extra.pop("ghunt_selection", None)
     extra.pop("maigret_options", None)
     extra.pop("username_scan_mode", None)
     if (target.extra_data or {}).get("maigret_plan"):
@@ -216,6 +218,9 @@ async def dispatch_tool_call(
         return []
 
     ctx = build_call_context(args, target, base_context)
+    if tool.name == "ghunt":
+        from app.tools.ghunt_runtime import select_call_inputs
+        select_call_inputs(ctx, args)
     if tool.name == "domain_finder":
         ctx.extra["personal_domain_urls"] = list(dict.fromkeys([
             *ctx.extra.get("personal_domain_urls", []),
@@ -231,6 +236,7 @@ async def dispatch_tool_call(
             # Keep per-investigation caches and budgets even when call inputs differ.
             base_context.extra.update(ctx.extra)
             base_context.extra.pop("search_queries", None)
+            base_context.extra.pop("ghunt_selection", None)
 
     for f in findings:
         f.metadata_info["source_tool"] = (

@@ -99,6 +99,7 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   document: "Documento",
   academic: "Hallazgo académico",
   academic_profile: "Perfil académico",
+  google_account: "Cuenta Google",
   search_mention: "Mención pública",
   image_match: "Artefacto visual",
   phone: "Teléfono",
@@ -176,6 +177,7 @@ function formatTool(tool: string): string {
     academic_finder: "Buscador académico",
     keybase_resolver: "Resolutor Keybase",
     google_account_osint: "OSINT de cuenta Google",
+    ghunt: "GHunt · Ecosistema Google",
     reverse_image_search: "Búsqueda visual",
     email_enumerator: "Enumerador de correo",
     external_evidence_import: "Evidencia aportada por agente",
@@ -263,6 +265,7 @@ function buildImages(metadata: Metadata): InspectorImage[] {
   add(metadata.avatar_url, "avatar", stringValue(metadata.avatar_source));
   add(metadata.profile_image, "profile");
   add(metadata.profile_image_url, "profile");
+  add(metadata.cover_url, "other", "Portada de Google");
   add(metadata.thumbnail_url, "thumbnail");
   add(metadata.og_image, "thumbnail", "OpenGraph");
   add(metadata.origin_avatar_url, "other");
@@ -289,7 +292,7 @@ export function getInspectorSearchText(node: GraphNode): string {
   const metadata = isRecord(node.data.metadata_info) ? node.data.metadata_info : {};
   const scalarKeys = [
     "username", "preferred_username", "name", "full_name", "display_name",
-    "email", "location", "university", "domain", "title", "doi", "orcid",
+    "email", "location", "university", "domain", "title", "doi", "orcid", "gaia_id", "player_id",
   ];
   const listKeys = ["emails", "extracted_emails", "usernames", "institutions"];
   const values = [node.data.label, node.data.display_name, node.data.value, node.data.platform, node.data.entity_type];
@@ -386,6 +389,20 @@ function buildObservedFields(node: GraphNode, metadata: Metadata, isRoot: boolea
   add("organization", "Organización", firstString(metadata, ["company_university", "company"]));
   add("domain", "Dominio", metadata.domain);
   add("orcid", "ORCID", metadata.orcid);
+  add("gaia_id", "GAIA ID", metadata.gaia_id);
+  add("player_id", "ID de Play Games", metadata.player_id);
+  add("profile_email", "Correo observado en el perfil", metadata.profile_email, "email");
+  add("time_zone", "Zona horaria del calendario", metadata.time_zone);
+  addList("google_services", "Servicios de Google observados", metadata.google_services);
+  if (metadata.engine === "ghunt") {
+    add("ghunt_scope", "Asociación", "Candidato; identidad del objetivo sin confirmar");
+    add("ghunt_access", "Acceso", metadata.access_context === "anonymous" ? "Fuente pública sin sesión" : "Consulta mediante sesión del operador");
+    if (isRecord(metadata.maps_statistics)) {
+      for (const [key, value] of Object.entries(metadata.maps_statistics)) {
+        add(`maps_${key}`, `Maps · ${key}`, numberValue(value));
+      }
+    }
+  }
   add("doi", "DOI", metadata.doi);
   add("title", "Título", metadata.title);
   add("og_title", "Título encontrado", metadata.og_title);
@@ -424,6 +441,15 @@ function buildDescriptions(metadata: Metadata): InspectorDescription[] {
   add("Resumen", metadata.summary);
   add("Extracto encontrado", metadata.snippet);
   add("Fragmento del documento", metadata.excerpt);
+  if (metadata.engine === "ghunt") {
+    for (const event of Array.isArray(metadata.events) ? metadata.events : []) {
+      if (isRecord(event)) add("Evento público", [stringValue(event.summary), stringValue(event.start)].filter(Boolean).join(" · "));
+    }
+    if (metadata.truncated === true) add("Cobertura del calendario", "Se alcanzó el límite de eventos; hay más resultados disponibles.");
+    const participants = (Array.isArray(metadata.participants) ? metadata.participants : []).filter(isRecord);
+    if (participants.length) add("Colaboradores del documento; sin atribución al objetivo", participants.map((person) =>
+      [stringValue(person.name), stringValue(person.email), stringValue(person.role)].filter(Boolean).join(" · ")).join("\n"));
+  }
   for (const report of externalReports(metadata)) {
     add(report.evidence_level === "page_content" ? "Extracto leído por el agente" : "Fragmento encontrado por el agente", report.excerpt);
   }

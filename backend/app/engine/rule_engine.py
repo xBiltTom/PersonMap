@@ -68,8 +68,11 @@ class RuleEngine:
                 parts.append(f"{req}:{val}")
         if tool.name == "dni_lookup":
             parts.append("public:" + ",".join(sorted(context.extra.get("dni_source_urls", []))))
-        if tool.name == "maigret_enricher":
+        if tool.name in {"maigret_enricher", "ghunt"}:
             parts.append("ids:" + json.dumps(context.extra.get("maigret_identifiers", []), sort_keys=True))
+        if tool.name == "ghunt":
+            from app.tools.ghunt_runtime import config_id
+            parts.append("ghunt_config:" + config_id())
         if tool.name in {"username_finder", "maigret_enricher"}:
             parts.append("maigret_options:" + json.dumps(context.extra.get("maigret_options", {}), sort_keys=True))
             parts.append("scan_mode:" + context.extra.get("username_scan_mode", "deep"))
@@ -212,6 +215,9 @@ class RuleEngine:
                 round_findings.extend(outcome.findings)
                 if db:
                     execution = executions[index]
+                    if runnable[index].name == "ghunt":
+                        from app.tools.ghunt_runtime import execution_summary
+                        execution.input_summary = {**(execution.input_summary or {}), "ghunt": execution_summary(context)}
                     await trace_recorder.complete_tool(
                         execution,
                         findings_count=len(outcome.findings),
@@ -356,6 +362,10 @@ class RuleEngine:
                 f.metadata_info["source_tool"] = tool.name
 
             duration_seconds = round(time.perf_counter() - started_at, 3)
+            note = ""
+            if tool.name == "ghunt":
+                from app.tools.ghunt_runtime import execution_summary
+                note = " Estado GHunt: " + ", ".join(execution_summary(context)["statuses"]) + "."
             await event_bus.publish(investigation_id, {
                 "type": "tool_complete",
                 "tool": tool.name,
@@ -365,7 +375,7 @@ class RuleEngine:
                 "search_diagnostics": context.extra.get("search_diagnostics", []) if tool.name == "search_dorker" else [],
                 "search_coverage": tool.coverage(context) if tool.name == "search_dorker" else None,
                 "duration_seconds": duration_seconds,
-                "message": f"[{tool.name}] completado: {len(findings)} hallazgos · {duration_seconds:.1f} s.",
+                "message": f"[{tool.name}] completado: {len(findings)} hallazgos · {duration_seconds:.1f} s." + note,
                 "timestamp": time.time(),
             })
             return ToolRunOutcome(findings=findings)

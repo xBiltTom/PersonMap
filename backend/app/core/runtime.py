@@ -2,6 +2,8 @@
 import json
 
 RUNTIME_KEYS = (
+    "ghunt_checked", "ghunt_diagnostics", "ghunt_config_id", "ghunt_resolved_gaia",
+    "google_public_checked", "google_public_youtube_queries",
     "username_finder_coverage", "username_finder_scanned", "username_finder_stats",
     "username_finder_catalog_id", "username_finder_outcomes",
     "username_finder_diagnostics", "username_finder_permutations",

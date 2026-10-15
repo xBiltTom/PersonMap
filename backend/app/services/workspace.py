@@ -37,6 +37,7 @@ from app.schemas.investigation import InvestigationCreate, InvestigationDetail, 
 from app.schemas.trace import ToolExecutionRead
 from app.schemas.workspace import CorrelationAssessmentCreate, NoteCreate, NoteRead, SessionCreate, SessionRead, ToolRequest
 from app.tools.base import TargetContext, ToolFinding
+from app.tools.ghunt_runtime import capabilities as ghunt_capabilities
 from app.tools.public_page_reader import PublicPageReaderTool
 from app.tools.registry import tool_registry
 from app.tools.search_dorker import name_search_variants
@@ -127,6 +128,9 @@ def call_fingerprint(tool_name: str, context: TargetContext) -> str:
         values["identifiers"] = context.extra.get("maigret_identifiers", [])
         values["maigret_options"] = context.extra.get("maigret_options", {})
         values.update({**execution_config(), **database_info(), "version": 1})
+    if tool_name == "ghunt":
+        from app.tools.ghunt_runtime import config_fingerprint, queries
+        values = {"queries": queries(context), "ghunt": config_fingerprint()}
     return hashlib.sha256(json.dumps([tool_name, values], sort_keys=True).encode()).hexdigest()
 
 
@@ -300,6 +304,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                         for entity in entities for report in (entity.metadata_info or {}).get("external_reports", [])
                         if report["evidence_level"] == "page_content" for identifier in report.get("identifiers", [])][:100],
                     "candidate_urls": context.extra.get("candidate_urls", [])[:100],
+                    "ghunt": {"capabilities": ghunt_capabilities(),
+                        "checked": context.extra.get("ghunt_checked", []),
+                        "diagnostics": context.extra.get("ghunt_diagnostics", {})},
                     "maigret": {"capabilities": capabilities(),
                         "identifiers": context.extra.get("maigret_identifiers", []),
                         "identifier_sources": context.extra.get("maigret_identifier_sources", {}),
@@ -456,8 +463,8 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
             context.extra.pop("search_force", None)
             if payload.inputs.maigret_options is not None and tool.name not in {"username_finder", "maigret_enricher"}:
                 raise HTTPException(422, "maigret_options solo está disponible en las herramientas Maigret")
-            if payload.inputs.identifiers and tool.name != "maigret_enricher":
-                raise HTTPException(422, "identifiers solo está disponible en maigret_enricher")
+            if payload.inputs.identifiers and tool.name not in {"maigret_enricher", "ghunt"}:
+                raise HTTPException(422, "identifiers solo está disponible en maigret_enricher y ghunt")
             if payload.inputs.identifiers:
                 context.extra["maigret_identifiers"] = [item.model_dump() for item in payload.inputs.identifiers]
             if tool.name == "search_dorker":
@@ -480,7 +487,11 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 if tool.name == "domain_finder":
                     context.extra["personal_domain_urls"] = payload.inputs.candidate_urls
             context.extra["investigation_id"] = str(inv.id)
-            if not tool.can_run(context):
+            if tool.name == "ghunt":
+                from app.tools.ghunt_runtime import select_call_inputs
+                select_call_inputs(context, inputs)
+            runnable = tool.can_run(context)
+            if not runnable and tool.name != "ghunt":
                 raise HTTPException(422, "Faltan entradas requeridas para la herramienta")
             if tool.name == "public_page_reader" and not payload.inputs.candidate_urls:
                 raise HTTPException(422, "Selecciona explícitamente las URLs que se leerán")
@@ -492,6 +503,8 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 ToolExecution.status.in_(["running", "completed"])).order_by(ToolExecution.started_at.desc()).limit(1))).first()
             if previous and (previous.status == "running" or not payload.force):
                 return {**ToolExecutionRead.model_validate(previous).model_dump(mode="json"), "reused": True}
+            if not runnable:
+                raise HTTPException(422, "GHunt no tiene consultas pendientes dentro del presupuesto; revisa la cobertura guardada")
             if (inv.metrics or {}).get("review_baseline") and not payload.force:
                 supplied = payload.inputs.model_dump(exclude_none=True, exclude_defaults=True)
                 supplied.pop("scan_mode", None)
@@ -557,6 +570,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 execution.status = "failed" if error else "completed"
                 execution.error_summary = error
                 execution.findings_count = len(findings)
+                if tool.name == "ghunt":
+                    from app.tools.ghunt_runtime import execution_summary
+                    execution.input_summary = {**execution.input_summary, "ghunt": execution_summary(context)}
                 if tool.name == "search_dorker":
                     execution.input_summary = {**execution.input_summary,
                         "search_status": context.extra.get("search_last_status"),
@@ -603,7 +619,8 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 while len(self.contexts) > 100:
                     self.contexts.popitem(last=False)
                 await self._publish(inv, "tool_error" if error else "tool_complete",
-                    error or f"{tool.name}: {len(findings)} observaciones guardadas.",
+                    error or (f"{tool.name}: {len(findings)} observaciones guardadas." +
+                        (" Estado GHunt: " + ", ".join(execution_summary(context)["statuses"]) + "." if tool.name == "ghunt" else "")),
                     tool=tool.name, tool_execution_id=str(execution.id), findings_count=len(findings))
         except HTTPException as exc:
             if exc.status_code != 404:

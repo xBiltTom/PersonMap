@@ -54,6 +54,11 @@ Use scan_mode="all" for the complete active catalogue and alternate recipes.
 maigret_enricher accepts typed inputs.identifiers and public candidate_urls, extracts
 linked IDs and usernames, and retains candidate provenance. Numeric IDs are not aliases.
 Inspect get_maigret_capabilities for configured gateways, identifier types and exports.
+ghunt accepts email, typed GAIA identifiers and explicit public Drive/Docs candidate_urls.
+Inspect get_ghunt_capabilities first: it needs an administrator-configured operator
+session. Missing/expired sessions, access denial and rate limits are coverage gaps,
+never account absence. Play Games search results remain candidates. Drive collaborators
+are document participants, not additional identifiers of the investigated person.
 search_dorker accepts inputs.queries: agent-written queries, each with a rationale and
 include_domains. Quote at least one literal evidence anchor and supply domains as data,
 not site: operators. Keep quotes for independent literal AND anchors; split alternatives
@@ -109,6 +114,13 @@ OSINT = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint
 mcp = FastMCP("PersonMap", instructions=INSTRUCTIONS, json_response=True, stateless_http=True,
               transport_security=TransportSecuritySettings(allowed_hosts=settings.mcp_allowed_hosts,
                                                          allowed_origins=settings.cors_origins))
+
+
+@mcp.tool(annotations=READ)
+def get_ghunt_capabilities() -> dict[str, Any]:
+    """GHunt runtime/session configuration and supported scope; never returns credentials."""
+    from app.tools.ghunt_runtime import capabilities
+    return capabilities()
 
 
 async def _call(awaitable):

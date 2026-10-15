@@ -23,6 +23,7 @@ from typing import Any, Dict
 from app.core.config import settings
 from app.tools.registry import tool_registry
 from app.tools.maigret_catalog import execution_config
+from app.tools.ghunt_runtime import capabilities as ghunt_capabilities
 
 
 def run_fingerprint() -> Dict[str, Any]:
@@ -46,6 +47,7 @@ def run_fingerprint() -> Dict[str, Any]:
             breakdown = {}
 
     return {
+        "ghunt": ghunt_capabilities(),
         "tools_registered": len(tool_registry.get_all()),
         # Composición del catálogo unificado. `maigret_commit` es lo que hace
         # reproducible una medición: "N sitios, snapshot Maigret @ <sha>".

@@ -58,3 +58,8 @@ PLAN_IMPLEMENTACION_UX_UI.md
 
 # Locally installed Tesseract language models
 .ocr-models/
+
+# Operator GHunt sessions (never commit cookies or tokens)
+.ghunt/
+creds.m
+*.ghunt-pending

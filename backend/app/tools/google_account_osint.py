@@ -2,7 +2,7 @@ import re
 import json
 from bs4 import BeautifulSoup
 from app.tools.social_profiles import parse_social_profile
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from urllib.parse import quote_plus
 
 from app.tools import http_client
@@ -10,29 +10,21 @@ from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 
 
 class GoogleAccountOSINTTool(BaseTool):
-    """
-    Passive Google ecosystem intelligence for Gmail/Google Workspace targets.
+    """Public YouTube/Scholar discovery, complementary to native GHunt.
 
-    Adapted from the GHunt methodology (github.com/mxrch/GHunt) but restricted
-    to endpoints that work WITHOUT session cookies or paid API keys.
-    GHunt's most powerful features (Maps reviews, Calendar, Play Games) require
-    a live Google session token that expires every few hours — making them
-    unsuitable for an unattended backend server.
-
-    What this module does without credentials (P0#3 from ANALISIS_OSINT_MUNDIAL.md):
-    1. Gmail existence validation — silent check via password-reset flow initial step,
-       same technique used by Holehe gmail module. No email sent, no alert to target.
-    2. YouTube channel search — public /results endpoint, no API key.
-    3. Google Scholar profile — public author search, returns citations and h-index.
+    The former account-lookup heuristic was removed: a generic login HTML
+    response must never become proof of account existence. Authentication and
+    exact Google lookups belong to the isolated GHuntTool.
     """
 
     name = "google_account_osint"
     description = (
         "Busca canales candidatos de YouTube por nombre o alias, sin API keys; "
-        "para correos Google/educativos también consulta señales de cuenta y Scholar."
+        "también busca perfiles candidatos de Scholar por nombre. GHunt realiza las consultas de cuenta."
     )
     category = ToolCategory.EMAIL
     required_inputs = ["email", "username", "full_name"]
+    cache_prefix = "google_public_"
 
     GOOGLE_DOMAINS = {"gmail.com", "googlemail.com", "google.com"}
 
@@ -50,97 +42,23 @@ class GoogleAccountOSINTTool(BaseTool):
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
         findings: List[ToolFinding] = []
         emails = context.all_emails()
-
         async with http_client.build_client(timeout=10.0) as client:
-            for email in emails:
-                if "@" not in email:
-                    continue
-                domain = email.split("@", 1)[1].lower()
-                is_google = (
-                    domain in self.GOOGLE_DOMAINS
-                    or domain.endswith(".edu")
-                    or domain.endswith(".edu.pe")
-                )
-                if not is_google:
-                    continue
-
-                # 1. Gmail existence check (silent — no email sent to target)
-                exists_f = await self._check_gmail_existence(client, email)
-                if exists_f:
-                    findings.append(exists_f)
-
-                # 3. Google Scholar profile (if name available)
-                if context.full_name:
-                    scholar_findings = await self._search_scholar(client, context)
-                    findings.extend(scholar_findings)
+            # Scholar depends on a name, not the presence or number of Gmail
+            # addresses. Preserve its independent public discovery role.
+            scholar_key = "scholar:" + (context.full_name or "") + ":" + (context.university or "")
+            checked = context.extra.setdefault("google_public_checked", [])
+            if context.full_name and scholar_key not in checked:
+                checked.append(scholar_key)
+                findings.extend(await self._search_scholar(client, context))
 
             query = context.full_name or next(iter(context.all_usernames()), "")
             if not query and emails:
                 query = emails[0].split("@", 1)[0]
-            searched = context.extra.setdefault("youtube_search_queries", [])
+            searched = context.extra.setdefault("google_public_youtube_queries", [])
             if query and query not in searched and len(searched) < 3:
                 searched.append(query)
                 findings.extend(await self._search_youtube_channel(client, query, context))
         return findings
-
-    async def _check_gmail_existence(
-        self, client: Any, email: str
-    ) -> Optional[ToolFinding]:
-        """
-        Silent Gmail account existence check via the password recovery flow.
-        Technique is identical to Holehe's gmail probe: POST to Google's account
-        lookup endpoint — it returns a distinct response for existing vs. non-existing
-        accounts without sending any email or alerting the target.
-        """
-        try:
-            resp = await http_client.post(
-                client,
-                "https://accounts.google.com/_/signin/sl/lookup",
-                data={
-                    "f.req": f'["{email}",null,true]',
-                    "flowName": "GlifWebSignIn",
-                    "flowEntry": "ServiceLogin",
-                },
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-            if resp is None:
-                return None
-
-            body = resp.text
-            account_exists = (
-                resp.status_code == 200
-                and "identifierError" not in body
-                and '"gf.aeh"' not in body
-                and len(body) > 200
-            )
-
-            if not account_exists:
-                return None
-
-            # Google sometimes returns the display name in the lookup response
-            display_name: Optional[str] = None
-            name_match = re.search(r'\["([A-Z][a-zA-Z ]{2,50})",', body)
-            if name_match:
-                display_name = name_match.group(1)
-
-            return ToolFinding(
-                entity_type="google_account",
-                platform="google",
-                value=f"https://accounts.google.com/?email={email}",
-                display_name=display_name or f"Cuenta Google activa: {email}",
-                confidence=0.85,
-                metadata_info={
-                    "email": email,
-                    "account_exists": True,
-                    "google_display_name": display_name,
-                    "name": display_name,
-                    "source_tool": "google_account_osint",
-                    "technique": "silent_existence_check",
-                },
-                evidence_urls=[],
-            )
-        except Exception:
-            return None
 
     async def _search_youtube_channel(
         self, client: Any, username_part: str, context: TargetContext
@@ -240,11 +158,11 @@ class GoogleAccountOSINTTool(BaseTool):
                     "technique": "scholar_author_search",
                     "query": query,
                     "url": full_url,
+                    "verification_status": "candidate",
+                    "ownership_status": "unverified",
                 }
                 if citations:
                     meta["citations"] = int(citations)
-                if context.university:
-                    meta["institutions"] = [context.university]
 
                 findings.append(ToolFinding(
                     entity_type="academic_profile",
