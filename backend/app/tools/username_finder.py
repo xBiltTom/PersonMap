@@ -1,8 +1,8 @@
 """Maigret-backed enumeration with complementary WhatsMyName checks.
 
-The public tool name, negative controls, coverage, budgets and evidence
-contract remain stable. The isolated worker executes upstream site recipes
-and extractors; only WMN-only platforms use the compact legacy checker.
+The isolated worker executes native Maigret recipes and extractors. The WMN
+checker preserves every curated recipe, including alternate routes, POST
+bodies, custom headers and username normalization, within the scan budget.
 """
 
 import asyncio
@@ -15,6 +15,7 @@ import string
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
+from urllib.parse import quote_plus
 
 import httpx
 from bs4 import BeautifulSoup
@@ -26,7 +27,7 @@ from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
 from app.tools.social_profiles import core_profile_candidates, parse_social_profile, social_host, TELEGRAM_HOSTS
 from app.tools.dataset_adapter import SiteCheck, catalog_stats
-from app.tools.maigret_catalog import build_scan_catalog as build_catalog, database_info, execution_config
+from app.tools.maigret_catalog import build_scan_catalog as build_catalog, database_info, execution_config, whatsmyname_info
 from app.tools.maigret_runner import run_maigret, decoded_headers
 
 HTML_ACCEPT = {
@@ -90,7 +91,7 @@ class UsernameFinderTool(BaseTool):
         el tope anterior daría cifras que no corresponden a la configuración.
         """
         limit = max(0, settings.username_scan_max_sites)
-        cache_key = (limit, tuple(settings.maigret_tags), tuple(settings.maigret_site_names),
+        cache_key = (limit, whatsmyname_info()["whatsmyname_catalog_sha256"], tuple(settings.maigret_tags), tuple(settings.maigret_site_names),
                      tuple(settings.maigret_excluded_tags), bool(settings.maigret_tor_proxy),
                      bool(settings.maigret_i2p_proxy), settings.maigret_check_domains)
         if self._catalog is None or self._catalog_limit != cache_key:
@@ -106,7 +107,7 @@ class UsernameFinderTool(BaseTool):
 
     def catalog_breakdown(self) -> Dict[str, Any]:
         """Composición del catálogo, para la interfaz y el artículo."""
-        return {**catalog_stats(self._load_sites()), "maigret_commit": None, **database_info()}
+        return {**catalog_stats(self._load_sites()), "maigret_commit": None, **database_info(), **whatsmyname_info()}
 
     async def execute(self, context: TargetContext) -> List[ToolFinding]:
         findings: List[ToolFinding] = []
@@ -137,9 +138,9 @@ class UsernameFinderTool(BaseTool):
             sites = full_catalog
         if not sites:
             return findings
-        catalogue_id = hashlib.sha256(json.dumps({**database_info(), **execution_config(),
+        catalogue_id = hashlib.sha256(json.dumps({**database_info(), **whatsmyname_info(), **execution_config(),
             "sites": [(s.name, getattr(s, "url", ""), getattr(s, "native_name", None)) for s in full_catalog],
-            "options": options, "engine_version": 4}, sort_keys=True).encode()).hexdigest()
+            "options": options, "engine_version": 5}, sort_keys=True).encode()).hexdigest()
         if context.extra.get("username_finder_catalog_id") != catalogue_id:
             for field in ("username_finder_coverage", "username_finder_scanned", "username_finder_stats",
                           "username_finder_outcomes", "username_finder_diagnostics", "username_finder_checks"):
@@ -182,7 +183,9 @@ class UsernameFinderTool(BaseTool):
         remaining = max(0, settings.username_scan_max_aliases - len(scanned))
         processed = 0
 
-        async with http_client.build_client(timeout=6.0, public_only=True) as client:
+        # Preserve explicit WMN User-Agent headers; the client still supplies a
+        # default UA for recipes that do not declare one.
+        async with http_client.build_client(timeout=6.0, public_only=True, rotate_ua=False) as client:
             for username in usernames:
                 if fast and processed >= 1:
                     break
@@ -426,6 +429,25 @@ class UsernameFinderTool(BaseTool):
             display_name=f"{site.name}: @{username}", confidence=0.85 if control is False else 0.65,
             evidence_urls=list(dict.fromkeys([raw_url, result.get("url_probe") or raw_url])), metadata_info=metadata)
 
+    async def _request_site(self, client: httpx.AsyncClient, site: SiteCheck,
+                            username: str) -> Optional[httpx.Response]:
+        """Use the same WMN recipe for the subject and its negative control."""
+        username = site.normalize_username(username)
+        headers = {**httpx.Headers(HTML_ACCEPT), **httpx.Headers(site.headers)}
+        kwargs = {"headers": headers}
+        # A recipe expecting a redirect must inspect the original response.
+        if 300 <= site.expected_code < 400:
+            kwargs["follow_redirects"] = False
+        if site.post_body is not None:
+            content_type = httpx.Headers(headers).get("content-type", "").lower()
+            if "json" in content_type:
+                encoded = json.dumps(username, ensure_ascii=False)[1:-1]
+            else:
+                encoded = quote_plus(username)
+            body = site.post_body.replace("{account}", encoded).replace("{username}", encoded)
+            return await http_client.post(client, site.build_url(username), content=body.encode("utf-8"), **kwargs)
+        return await http_client.get(client, site.build_url(username), **kwargs)
+
     async def _check_site(
         self,
         client: httpx.AsyncClient,
@@ -436,12 +458,16 @@ class UsernameFinderTool(BaseTool):
         progress_counter: Dict[str, int],
         total_sites: int,
     ) -> Optional[ToolFinding]:
+        requested_username = username
+        username = site.normalize_username(username)
+        if not username:
+            return None
         url = site.build_url(username)
         pretty_url = site.build_pretty_url(username)
 
         try:
             async with semaphore:
-                resp = await http_client.get(client, url, headers=HTML_ACCEPT)
+                resp = await self._request_site(client, site, username)
 
             progress_counter["checked"] += 1
             if (
@@ -505,6 +531,7 @@ class UsernameFinderTool(BaseTool):
                 evidence_urls=[url],
                 metadata_info={
                     "username": username,
+                    "requested_username": requested_username,
                     "verification_status": "candidate",
                     "telegram_peer_type": observe_telegram_page(BeautifulSoup(resp.text, "html.parser"), username).peer_type
                     if (parsed_profile := parse_social_profile(pretty_url)) and parsed_profile.platform == "telegram" else None,
@@ -573,11 +600,13 @@ class UsernameFinderTool(BaseTool):
             return None
         try:
             async with semaphore:
-                resp = await http_client.get(client, site.build_url(control), headers=HTML_ACCEPT)
+                resp = await self._request_site(client, site, control)
         except Exception:
             return None
         if resp is None:
             return None
+        if self._matches(site, resp, control):
+            return True
         # A blocked or unavailable control does not demonstrate absence.
         if resp.status_code in {401, 403, 429, 999} or resp.status_code >= 500:
             return None
@@ -585,8 +614,15 @@ class UsernameFinderTool(BaseTool):
         if any(marker in title for marker in ("just a moment", "verify you are human", "captcha", "access denied")):
             return None
         if social_host(site.build_url(control)) in TELEGRAM_HOSTS and resp.status_code == 200:
-            return True if self._matches(site, resp, control) else None
-        return self._matches(site, resp, control)
+            return None
+        if site.missing_code is not None:
+            # WMN supplies a missing-account signature; an unrelated HTTP
+            # error is not evidence that the invented account is absent.
+            if resp.status_code != site.missing_code:
+                return None
+            if site.absence and not any(marker in resp.text for marker in site.absence):
+                return None
+        return False
 
     def _matches(
         self,
@@ -602,6 +638,7 @@ class UsernameFinderTool(BaseTool):
         en la respuesta, que es la que atrapa las páginas de aterrizaje
         genéricas que responden 200 a cualquier cosa.
         """
+        username = site.normalize_username(username)
         body = resp.text
         host = resp.url.host
         profile = parse_social_profile(str(resp.url))
@@ -635,6 +672,11 @@ class UsernameFinderTool(BaseTool):
         if site.presence and not any(marker in body for marker in site.presence):
             return False
 
+        # API checks can put the alias in a POST body, query or subdomain.
+        # Requiring it in the response/path discards valid WMN signatures.
+        if site.presence and site.post_body is not None:
+            return True
+
         is_json = resp.headers.get("content-type", "").startswith("application/json")
         if is_json:
             # Una API no tiene por qué devolver el alias en el cuerpo.
@@ -642,7 +684,7 @@ class UsernameFinderTool(BaseTool):
 
         lowered = username.lower()
         in_body = lowered in body.lower()
-        in_final_url = lowered in resp.url.path.lower()
+        in_final_url = lowered in (resp.url.host + resp.url.path + resp.url.query.decode()).lower()
 
         if not site.presence and not site.absence:
             # Sitio sin ninguna validación de contenido: su único criterio es el

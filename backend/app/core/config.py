@@ -70,9 +70,9 @@ class Settings(BaseSettings):
     # Enumeración de alias: cuántos sitios del catálogo unificado
     # (WhatsMyName + Maigret, normalizados en memoria) se comprueban por alias.
     #
-    # El catálogo va ordenado en dos niveles —primero los 667 sitios curados de
-    # WhatsMyName, después la cola larga de Maigret—, así que recortar por aquí
-    # nunca quita cobertura de las plataformas importantes: solo acorta la cola.
+    # Primero las plataformas curadas con su motor nativo y todas las recetas
+    # de WhatsMyName (incluidos POST y variantes); después la cola de Maigret.
+    # Un tope muy bajo o el modo fast pueden recortar también WhatsMyName.
     #
     # Medido sobre `@torvalds`: 500 sitios → 89 hallazgos en 29 s;
     # 3.396 sitios → 234 hallazgos en 152 s.

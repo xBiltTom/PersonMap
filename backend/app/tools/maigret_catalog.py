@@ -36,6 +36,13 @@ def database_document():
     return json.loads(database_path().read_text(encoding="utf-8"))
 
 
+def whatsmyname_info():
+    from app.tools.dataset_adapter import WMN_FILE
+    content = WMN_FILE.read_bytes()
+    return {"whatsmyname_catalog_sha256": hashlib.sha256(content).hexdigest(),
+            "whatsmyname_recipes_available": len(load_whatsmyname())}
+
+
 def execution_config():
     """Reproducible capabilities, without exposing credentials or file paths."""
     cookie_hash = None
@@ -71,7 +78,7 @@ def capabilities():
     from collections import Counter
     from importlib.util import find_spec
     recipes = native_recipes(id_type=None, protocols=("", "tor", "i2p", "dns"))
-    return {**database_info(), **execution_config(), "username_engine_version": 4, "enricher_version": 1,
+    return {**database_info(), **whatsmyname_info(), **execution_config(), "username_engine_version": 5, "enricher_version": 1,
             "identifier_types": dict(Counter(site.id_type for site in recipes.values())),
             "protocol_recipes": dict(Counter(site.protocol or "web" for site in recipes.values())),
             "catalogue_platforms": len(build_scan_catalog()),
@@ -156,22 +163,30 @@ def build_scan_catalog(limit=None, *, apply_filters=True, include_variants=False
     for site in sorted(native.values(), key=lambda s: (s.rank, s.name.casefold())):
         by_host.setdefault(_platform_key(site.url), site)
     catalog, used = [], set()
-    # Preserve the priority of established platforms while using their complete
-    # native recipe. WMN is consulted only when there is no native counterpart.
-    for site in sorted(load_whatsmyname(), key=_sort_key):
+    # Start with the compact platform selection, preferring native extraction.
+    # The scan variant below also keeps WMN's independent detection recipes.
+    wmn = sorted(load_whatsmyname(), key=_sort_key)
+    for site in wmn:
         host = _platform_key(site.pretty_url or site.url)
         if host in used:
             continue
         twin = by_host.get(host)
         catalog.append(replace(twin, sensitive=twin.sensitive or site.sensitive) if twin else site)
         used.add(host)
+    if include_variants:
+        # Keep every curated detection recipe, including alternate account
+        # routes and API/POST probes on hosts also covered by Maigret. Host
+        # deduplication alone loses both these checks and their WMN signatures.
+        # Place them before the native long tail so the normal cap covers WMN.
+        present = {site.name for site in catalog if site.source == "whatsmyname"}
+        catalog.extend(site for site in wmn if site.name not in present)
     for site in sorted(native.values(), key=lambda s: (s.rank, s.name.casefold())):
         host = _platform_key(site.url)
         if host not in used:
             catalog.append(site)
             used.add(host)
     if include_variants:
-        used_names = {site.name for site in catalog}
+        used_names = {site.native_name for site in catalog if site.native_name}
         catalog.extend(site for site in sorted(native.values(), key=lambda s: (s.rank, s.name.casefold()))
                        if site.name not in used_names)
     if not apply_filters:

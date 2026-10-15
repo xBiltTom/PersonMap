@@ -77,10 +77,10 @@ def test_orcid_controls_have_valid_checksum():
 def test_catalogue_all_and_explicit_variant_selection(monkeypatch):
     ordinary = build_scan_catalog()
     exhaustive = build_scan_catalog(include_variants=True)
-    assert exhaustive[:len(ordinary)] == ordinary
+    assert all(site in exhaustive for site in ordinary)
     assert len(exhaustive) > len(ordinary)
     assert {site.id_type for site in build_identifier_catalog("gaia_id")} == {"gaia_id"}
-    selected = next(site for site in exhaustive[len(ordinary):] if not site.sensitive)
+    selected = next(site for site in exhaustive if site.native_name and site not in ordinary and not site.sensitive)
     monkeypatch.setattr(settings, "maigret_site_names", [selected.name])
     assert [site.name for site in build_scan_catalog()] == [selected.name]
     assert selected.name in {site.name for site in build_scan_catalog(apply_filters=False)} or selected in native_recipes().values()

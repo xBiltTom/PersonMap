@@ -14,7 +14,8 @@ De ahí que cada fase del plan empiece re-verificando esta tabla.
 
 `username_finder` utiliza ahora Maigret 0.6.6 como biblioteca completa en un
 worker aislado, con transporte y controles de precisión de Person Map.
-WhatsMyName complementa las plataformas sin receta nativa. Véase
+WhatsMyName conserva además sus propias recetas de detección, incluso cuando
+Maigret cubre el mismo dominio. Véase [alcance de WhatsMyName](WHATSMYNAME.md) e
 [integración, configuración y pruebas de Maigret](MAIGRET.md).
 La ampliación añade `maigret_enricher` para URLs e IDs, catálogo completo con
 variantes, permutaciones, gateways opcionales y los diez formatos nativos de
@@ -78,8 +79,8 @@ disponibilidad en vivo de las fuentes de la tabla siguiente.
 
 | Fuente | Endpoint / dato | Key | Estado | Última verificación | Usada por |
 |---|---|---|---|---|---|
-| **WhatsMyName** | `wmn-data.json` separado; **298** plataformas complementarias | No | 🟢 | 2026-10-12 (integración local) | `username_finder`; se consulta cuando no hay receta nativa equivalente |
-| **Maigret** | Biblioteca **0.6.6**, extra PDF y catálogo fijados por `uv.lock`; 5.461 recetas con complemento y variantes, más 25 recetas de IDs | No; gateways/solver opcionales | 🟢 | 2026-10-13 (red real y pruebas locales) | `username_finder` y `maigret_enricher`: extracción, búsqueda recursiva, controles, alcance completo e informes nativos. [Configuración y límites](MAIGRET.md) |
+| **WhatsMyName** | `wmn-data.json` separado; **705 recetas utilizables**, incluidas variantes, 23 POST y 36 con cabeceras | No | 🟢 | 2026-10-15 (catálogo y HTTP simulado) | `username_finder`; conserva sus comprobaciones junto a Maigret. [Alcance](WHATSMYNAME.md) |
+| **Maigret** | Biblioteca **0.6.6**, extra PDF y catálogo fijados por `uv.lock`; 5.868 recetas con WhatsMyName y variantes, más 25 recetas de IDs | No; gateways/solver opcionales | 🟢 | 2026-10-13 (red real); 2026-10-15 (catálogo local) | `username_finder` y `maigret_enricher`: extracción, búsqueda recursiva, controles, alcance completo e informes nativos. [Configuración y límites](MAIGRET.md) |
 | **crt.sh** | `crt.sh/?q={dominio}&output=json` | No | 🟡 **intermitente** | 2026-09-04 | `domain_finder` — Certificate Transparency. Medido el mismo día: 1 de 4 por la mañana, 6 de 6 por la tarde |
 | **XposedOrNot** | `api.xposedornot.com/v1/check-email/{email}` | No | 🟢 | 2026-09-04 | `breach_checker` |
 | **OpenAlex** | API de autores y trabajos; nombre, ORCID y DOI | Clave opcional; el acceso puede variar por endpoint | 🟢 | 2026-10-15 (DOI y ORCID públicos en red; nombres con HTTP simulado) | `academic_finder`: autoría contrastada, DOI canónico y PDFs declarados abiertos. [Alcance y límites](ACADEMICO.md) |

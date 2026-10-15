@@ -137,6 +137,13 @@ class SiteCheck:
     id_type: str = "username"
     protocol: str = ""
     probe_url: Optional[str] = None
+    headers: Dict[str, str] = field(default_factory=dict)
+    post_body: Optional[str] = None
+    strip_bad_char: str = ""
+    missing_code: Optional[int] = None
+
+    def normalize_username(self, username: str) -> str:
+        return username.translate(str.maketrans("", "", self.strip_bad_char))
 
     def accepts_username(self, username: str) -> bool:
         """
@@ -146,6 +153,9 @@ class SiteCheck:
         que solo admite identificadores numéricos nunca va a tener a "jperez", y
         preguntárselo solo puede devolver ruido.
         """
+        username = self.normalize_username(username)
+        if not username:
+            return False
         if (urlsplit(self.url).hostname or "").removeprefix("www.") in TELEGRAM_HOSTS:
             return valid_telegram_username(username)
         if not self.regex_check:
@@ -157,12 +167,12 @@ class SiteCheck:
             return True
 
     def build_url(self, username: str) -> str:
-        encoded = quote(username, safe="")
+        encoded = quote(self.normalize_username(username), safe="")
         return self.url.replace("{username}", encoded).replace("{account}", encoded)
 
     def build_pretty_url(self, username: str) -> str:
         template = self.pretty_url or self.url
-        encoded = quote(username, safe="")
+        encoded = quote(self.normalize_username(username), safe="")
         return template.replace("{username}", encoded).replace("{account}", encoded)
 
 
@@ -238,6 +248,10 @@ def load_whatsmyname() -> List[SiteCheck]:
                 category=raw.get("cat"),
                 source="whatsmyname",
                 sensitive=raw.get("cat") in SENSITIVE_CATEGORIES,
+                headers=dict(raw.get("headers", {})),
+                post_body=raw.get("post_body"),
+                strip_bad_char=raw.get("strip_bad_char", ""),
+                missing_code=raw.get("m_code"),
             )
         )
     return sites

@@ -9,7 +9,7 @@ el transporte, los presupuestos y las evidencias a su orquestador.
 
 | Función de Maigret | Adaptación |
 |---|---|
-| Usernames | `username_finder`; WhatsMyName aporta solo cobertura complementaria |
+| Usernames | `username_finder`; conserva también las recetas propias de [WhatsMyName](WHATSMYNAME.md) |
 | Catálogo completo | `scan_mode=all` o `USERNAME_SCAN_MAX_SITES=0`, incluidas variantes |
 | IDs y búsqueda recursiva | `maigret_enricher`, con tipo, origen, controles y presupuesto |
 | Extracción desde URLs | Extractores y mutaciones originales mediante el puente HTTP |
@@ -33,8 +33,10 @@ probar una conexión real a esos servicios.
 
 La base incluida tiene 5.897 entradas. La selección pública deduplicada reúne
 **5.401 plataformas**: 5.103 recetas Maigret y 298 complementarias. El modo
-completo agrega 60 variantes: **5.461 recetas**, sin gateways ni DNS activados.
-El límite de 500 conserva 291 nativas y 209 complementarias. Hay **25 recetas
+completo conserva además todas las comprobaciones de WhatsMyName y las variantes
+nativas: **5.868 recetas**, sin gateways ni DNS activados. Con límite de 3.400
+se incluyen **705 de WhatsMyName y 2.695 de Maigret**. Fast sigue siendo un
+prefijo reducido. Hay **25 recetas
 para once tipos adicionales**: `orcid`, `steam_id`, `gaia_id`, `vk_id`, `qq_id`,
 `bilibili_id`, `yandex_public_id`, `yelp_userid`, `ok_id`, `wikimapia_uid` y
 `uidme_uguid`. También hay cuatro recetas Tor, una I2P y siete DNS.
