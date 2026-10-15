@@ -117,6 +117,13 @@ mcp = FastMCP("PersonMap", instructions=INSTRUCTIONS, json_response=True, statel
 
 
 @mcp.tool(annotations=READ)
+def get_email_enumerator_capabilities() -> dict[str, Any]:
+    """Reviewed email query catalog, Holehe provenance and execution budgets."""
+    from app.tools.email_catalog import capabilities
+    return capabilities()
+
+
+@mcp.tool(annotations=READ)
 def get_ghunt_capabilities() -> dict[str, Any]:
     """GHunt runtime/session configuration and supported scope; never returns credentials."""
     from app.tools.ghunt_runtime import capabilities

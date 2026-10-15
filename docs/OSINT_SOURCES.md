@@ -5,8 +5,8 @@ escribir cualquier módulo nuevo se busca si el dato o la técnica ya existen en
 proyecto con licencia compatible, y aquí se deja constancia de qué se adoptó, de
 dónde, bajo qué licencia y cuándo se comprobó por última vez que sigue vivo.
 
-El ecosistema OSINT se degrada rápido: Holehe, durante años la referencia en
-enumeración de correos, lleva sin mantenimiento y con módulos rotos. **Un
+El ecosistema OSINT se degrada rápido: la rama oficial de Holehe no tiene
+commits posteriores al 2024-09-10 y algunos módulos requieren adaptación. **Un
 endpoint que hoy responde puede estar muerto el mes que viene sin previo aviso.**
 De ahí que cada fase del plan empiece re-verificando esta tabla.
 
@@ -25,6 +25,11 @@ GHunt 2.3.4 se integra como biblioteca en un entorno independiente por sus
 restricciones de HTTPX/Pillow. La sesión es configuración del operador; sin
 ella se conservan las búsquedas públicas complementarias. Véase
 [alcance, sesión y límites de GHunt](GHUNT.md).
+
+`email_enumerator` adapta 22 consultas/validaciones de Holehe y conserva tres
+sondas propias. Usa controles negativos, estados por servicio y cobertura
+persistente sin cambiar el entorno de GHunt o Maigret. Véase
+[procedencia, configuración y límites de correo](HOLEHE.md).
 
 1. Re-comprobar con `curl` cada endpoint de la tabla "Fuentes en uso".
 2. Revisar los repos de la tabla "Proyectos de referencia" por cambios de
@@ -77,7 +82,8 @@ disponibilidad en vivo de las fuentes de la tabla siguiente.
 | **crt.sh** | `crt.sh/?q={dominio}&output=json` | No | 🟡 **intermitente** | 2026-09-04 | `domain_finder` — Certificate Transparency. Medido el mismo día: 1 de 4 por la mañana, 6 de 6 por la tarde |
 | **XposedOrNot** | `api.xposedornot.com/v1/check-email/{email}` | No | 🟢 | 2026-09-04 | `breach_checker` |
 | **OpenAlex** | API de autores y trabajos | No | 🟢 | 2026-09-04 | `academic_finder` |
-| **Gravatar** | Perfil por hash MD5 del correo | No | 🟢 | 2026-09-04 | `gravatar_deep`, `email_enumerator` |
+| **Gravatar** | Perfil por hash MD5 del correo | No | 🟢 | 2026-09-04 | `gravatar_deep` |
+| **Holehe / correo** | 25 consultas/validaciones seleccionadas; 22 adaptadas del snapshot oficial | No | 🟡 | 2026-10-14 (control aleatorio en red) | `email_enumerator`: 11 negativos explícitos, resto bloqueado/incompatible; cero hallazgos en el control. [Detalle](HOLEHE.md) |
 | **Keybase** | API pública de resolución de identidad | No | 🟢 | 2026-09-04 | `keybase_resolver` |
 | **MediaWiki** | API de contribuciones | No | 🟢 | 2026-09-04 | `wikipedia_edits` |
 | **GitHub** | API pública sin autenticar | No | 🟢 | 2026-09-04 | `github_deep_scanner`, `email_checker` |
@@ -177,9 +183,11 @@ cualquiera de los dos datasets**.
 **El ecosistema de enumeración por correo se ha cerrado.** Sondeados en vivo
 Instagram, Imgur, Archive.org, Zoho, Mercado Libre, Xbox y Bitmoji: ninguno
 sirve (429 inmediato, 403, o no distinguen entre un correo real y uno
-sintético). Es coherente con que Holehe lleve años roto. De las 20 sondas que el
-proyecto ya tenía, **7 apuntaban a endpoints muertos y 1 producía un falso
-positivo garantizado**; ver el historial de revisiones.
+sintético). Es una observación histórica sobre esos endpoints, no una prueba
+de que todo Holehe esté roto. De las 20 sondas que el proyecto tenía entonces,
+**7 apuntaban a endpoints muertos y 1 producía un falso positivo garantizado**.
+La revisión de 2026-10-14 amplía a 25 consultas seleccionadas y registra cada
+fallo explícitamente; el catálogo implementado no equivale a cobertura viva.
 
 **Los avatares por defecto son idénticos entre personas distintas.** Es el
 riesgo que define la Fase 5, y está medido: la silueta genérica de Gravatar
@@ -263,9 +271,9 @@ en workers aislados; las demás fuentes aportan datos o técnicas adaptados sobr
 | [soxoj/maigret](https://github.com/soxoj/maigret) | MIT | 🟢 activo, ~23k ★ | Dataset de 3000+ sitios con `regexCheck`, `alexaRank`, `absenceStrs`, `protection` |
 | [WebBreacher/WhatsMyName](https://github.com/WebBreacher/WhatsMyName) | CC BY-SA 4.0 | 🟢 activo | Dataset ya integrado; conviene refrescarlo periódicamente |
 | [kaifcodec/user-scanner](https://github.com/kaifcodec/user-scanner) | MIT | 🟢 activo, 4.6k ★ | Sucesor de facto de Holehe: 175+ vectores de correo, 290+ de username |
-| [megadose/holehe](https://github.com/megadose/holehe) | GPL-3.0 | 🔴 sin mantenimiento | Técnica original de enumeración silenciosa. Módulos rotos; usar user-scanner |
+| [megadose/holehe](https://github.com/megadose/holehe) | GPL-3.0 | 🟡 último commit oficial: 2024-09-10 | 22 técnicas de consulta/validación adaptadas con parsers estrictos y controles. No se instala su CLI ni se asumen operativos todos sus módulos. [Detalle](HOLEHE.md) |
 | [megadose/ignorant](https://github.com/megadose/ignorant) | GPL-3.0 | ⚪ **descartado** | Enumeración de teléfono vía flujos de reset. **No se adopta**: dispara SMS/emails reales a un tercero que no ha consentido — no es OSINT pasivo |
-| [mxrch/GHunt](https://github.com/mxrch/GHunt) | AGPL-3.0 | 🟢 activo | Biblioteca 2.3.4 integrada en runtime separado. Autenticación/renovación nativas; sesión del operador pendiente. Maps expone estadísticas; Calendar se limita a acceso anónimo. [Detalle](GHUNT.md) |
+| [mxrch/GHunt](https://github.com/mxrch/GHunt) | AGPL-3.0 | 🟢 activo | Biblioteca 2.3.4 integrada en runtime separado. Sesión local y consulta de perfil verificadas el 2026-10-14. Maps expone estadísticas; Calendar se limita a acceso anónimo. [Detalle](GHUNT.md) |
 | [microlinkhq/unavatar](https://github.com/microlinkhq/unavatar) | MIT | ⚪ referencia | Lista de 74+ proveedores de avatar. **Su API no se consume**: limita a 25 req/día por IP en anónimo; se implementan los patrones de URL directos |
 | [moj-analytical-services/splink](https://github.com/moj-analytical-services/splink) | MIT | 🟢 activo | Fellegi-Sunter con estimación EM no supervisada de los pesos m/u |
 | [jivoi/awesome-osint](https://github.com/jivoi/awesome-osint) · [edwardtay/awesome-OSINT](https://github.com/edwardtay/awesome-OSINT) | — | 🟢 | Listas curadas para descubrir fuentes nuevas |

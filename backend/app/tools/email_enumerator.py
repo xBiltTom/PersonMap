@@ -1,271 +1,231 @@
+"""Bounded email registration checks with reviewed Holehe query techniques."""
 import asyncio
-import hashlib
+from collections import Counter
+import json
+import re
 import secrets
-import string
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from urllib.parse import quote, urlsplit
+
+from bs4 import BeautifulSoup
 import httpx
+
+from app.core.config import settings
 from app.tools import http_client
 from app.tools.base import BaseTool, TargetContext, ToolCategory, ToolFinding
+from app.tools.email_catalog import HOLEHE_COMMIT, capabilities, config_id, parse_registration, selected_probes
+
+
+def valid_email(value):
+    return isinstance(value, str) and len(value) <= 254 and bool(re.fullmatch(r"[^\s@/?#\\]+@[^\s@/?#\\]+\.[^\s@/?#\\]+", value))
+
+
+def fill(payload, email):
+    if isinstance(payload, dict):
+        return {key: fill(value, email) for key, value in payload.items()}
+    return email if payload == "{email}" else payload
+
+
+def response_status(response):
+    code = response.status_code
+    if code == 429:
+        return "rate_limited"
+    if code in {401, 403}:
+        return "blocked"
+    if code in {404, 410}:
+        return "unavailable"
+    if code >= 500:
+        return "upstream_error"
+    if 300 <= code < 400:
+        return "redirected"
+    if any(marker in response.text[:200_000].lower() for marker in (
+            "cf-chl-", "challenge-platform", "captcha-required", "verify you are human")):
+        return "blocked"
+    if code not in {200, 422}:
+        return "unexpected_response"
+    return None
 
 
 class EmailEnumeratorTool(BaseTool):
-    """
-    Passive Email Enumeration Tool inspired by Holehe.
-    Checks whether an email address is registered across 20+ major web platforms
-    without sending any verification emails or alerting the target.
-    """
-
     name = "email_enumerator"
     description = (
-        "Chequeo pasivo de registro de correo en plataformas masivas mediante sus "
-        "endpoints de validación de alta (Spotify, Discord, GitHub, Duolingo, Steam...)"
+        "Busca señales de registro por correo con comprobaciones de consulta/validación "
+        "adaptadas de Holehe. Distingue registro, sin registro, bloqueos y errores; "
+        "no identifica automáticamente el perfil. Google se consulta con GHunt."
     )
     category = ToolCategory.EMAIL
     required_inputs = ["email"]
-
-    # Sondas que no se limitan a preguntar si el correo está libre: envían un
-    # alta completa. Con un correo inventado podrían crear una cuenta de verdad
-    # en un servicio ajeno, así que a estas no se les pasa el control negativo.
-    SUBMITS_A_SIGNUP = {"_check_discord", "_check_strava", "_check_tumblr"}
-
-    async def execute(self, context: TargetContext) -> List[ToolFinding]:
-        findings: List[ToolFinding] = []
-        emails = context.all_emails()
-        if not emails:
-            return findings
-
-        async with http_client.build_client(timeout=7.0) as client:
-            for email in emails:
-                clean_email = email.strip().lower()
-                if not clean_email or "@" not in clean_email:
-                    continue
-
-                checks = [
-                    self._check_spotify,
-                    self._check_discord,
-                    self._check_twitter,
-                    self._check_github,
-                    self._check_duolingo,
-                    self._check_firefox,
-                    self._check_chess,
-                    self._check_lastpass,
-                    self._check_adobe,
-                    self._check_steam,
-                    self._check_strava,
-                    self._check_tumblr,
-                ]
-
-                results = await asyncio.gather(
-                    *(check(client, clean_email) for check in checks),
-                    return_exceptions=True,
-                )
-
-                for check, res in zip(checks, results):
-                    if not (isinstance(res, dict) and res.get("registered")):
-                        continue
-                    if getattr(check, "__name__", "") in self.SUBMITS_A_SIGNUP:
-                        control = "untested"
-                    else:
-                        result = await self._accepts_invented_email(client, check, clean_email)
-                        if result is True:
-                            continue
-                        control = "passed" if result is False else "untested"
-
-                    platform = res["platform"]
-                    profile_url = res.get("url", f"https://{platform.lower().replace(' ', '')}.com")
-                    findings.append(
-                        ToolFinding(
-                            entity_type="email_registration",
-                            platform=platform,
-                            value=f"{platform} ({clean_email})",
-                            display_name=f"{platform}: Señal de registro por correo",
-                            confidence=0.65 if control == "passed" else 0.5,
-                            metadata_info={
-                                "email": clean_email,
-                                "platform": platform,
-                                "registered": True,
-                                "category": res.get("category", "services"),
-                                "service_url": profile_url,
-                                "verification_status": "registration_signal",
-                                "profile_status": "unresolved",
-                                "source_tool": "email_enumerator",
-                                "negative_control": control,
-                            },
-                        )
-                    )
-
-        return findings
+    cache_prefix = "email_enum_"
 
     @staticmethod
-    def _invented_email(email: str) -> str:
-        """Correo del mismo dominio que nadie ha registrado."""
-        domain = email.rsplit("@", 1)[1]
-        alphabet = string.ascii_lowercase + string.digits
-        return f"pm{''.join(secrets.choice(alphabet) for _ in range(16))}@{domain}"
+    def capabilities():
+        return capabilities()
 
-    async def _accepts_invented_email(
-        self,
-        client: httpx.AsyncClient,
-        check: Callable[[httpx.AsyncClient, str], Awaitable[Optional[Dict[str, Any]]]],
-        email: str,
-    ) -> Optional[bool]:
-        """
-        Control negativo: ¿la plataforma también da por registrado un correo inventado?
+    def pending(self, context):
+        checked = context.extra.get("email_enum_checked", []) if context.extra.get("email_enum_config_id") == config_id() else []
+        emails = [email for email in context.all_emails() if valid_email(email)]
+        admitted = list(dict.fromkeys([*checked, *emails]))[:settings.email_enum_max_emails]
+        return [email for email in emails if email in admitted and email not in checked] if selected_probes() else []
 
-        Una respuesta positiva solo es una señal de registro, no identifica un perfil.
-        Un fallo del control se conserva como desconocido. Un correo de prueba sintético
-        (`test_student_osint@gmail.com`) llegó a salir registrado en Quora; un
-        endpoint que responde "registrado" a cualquier correo lo hace también con
-        uno inventado, y así se descubre.
-        """
-        try:
-            res = await check(client, self._invented_email(email))
-        except Exception:
+    def can_run(self, context):
+        return bool(self.pending(context))
+
+    @staticmethod
+    def _invented_email(email):
+        """Random control in the same domain; absence must still be observed."""
+        return "pm" + secrets.token_hex(12) + "@" + email.rsplit("@", 1)[1]
+
+    async def probe(self, client, email, spec, diagnostics):
+        payload, headers = fill(spec.payload, email), {"Accept": "application/json", **spec.headers}
+
+        async def request(method, url, **kwargs):
+            diagnostics["requests"] += 1
+            response = await client.request(method, url, **kwargs)
+            diagnostics["http_status"] = response.status_code
+            status = response_status(response)
+            if status:
+                raise ProbeUnavailable(status)
+            return response
+
+        if spec.warmup:
+            warmup = await request("GET", spec.warmup)
+            soup = BeautifulSoup(warmup.text, "html.parser")
+            headers["Referer"] = spec.warmup
+            if spec.csrf == "github":
+                token = None
+                for check in soup.select("auto-check[src]"):
+                    if urlsplit(check.get("src", "")).path == "/signup_check/email":
+                        node = check.select_one('input[name="authenticity_token"][value]')
+                        token = node.get("value") if node else check.get("csrf")
+                        break
+                if not token:
+                    raise ProbeUnavailable("csrf_unavailable")
+                payload["authenticity_token"] = token
+            elif spec.csrf == "meta":
+                token = soup.select_one('meta[name="csrf-token"][content]')
+                if not token or not token.get("content"):
+                    raise ProbeUnavailable("csrf_unavailable")
+                headers["X-CSRF-Token"] = token["content"]
+                headers["X-Requested-With"] = "XMLHttpRequest"
+            else:
+                token = warmup.cookies.get("csrftoken")
+                if not token:
+                    raise ProbeUnavailable("csrf_unavailable")
+                if spec.csrf == "lastfm":
+                    payload["csrfmiddlewaretoken"] = token
+                else:
+                    headers["X-CSRFToken"] = token
+        if spec.key == "pinterest":
+            payload["data"] = json.dumps(payload["data"])
+        response = await request(spec.method, spec.url.replace("{email}", quote(email, safe="")),
+                                 headers=headers, **{spec.send: payload})
+        if response.status_code == 422 and spec.parser != "github":
+            raise ProbeUnavailable("unexpected_response")
+        if spec.parser == "steam":
+            try:
+                if response.json().get("success") == 84:
+                    raise ProbeUnavailable("rate_limited")
+            except (ValueError, AttributeError):
+                pass
+        registered = parse_registration(spec.parser, response)
+        return {"status": "registered" if registered is True else "not_registered" if registered is False else "unexpected_response",
+                "registered": registered}
+
+    async def _run_probe(self, email, spec, gate, diagnostics):
+        diagnostics.update(status="pending", requests=0)
+        async with gate:
+            try:
+                async with asyncio.timeout(settings.email_enum_probe_timeout):
+                    # A CSRF warmup and its validation share a private cookie jar.
+                    async with http_client.build_client(timeout=settings.email_enum_request_timeout,
+                            follow_redirects=False, max_retries=0, rotate_ua=False,
+                            public_only=True, trust_env=False) as client:
+                        result = await self.probe(client, email, spec, diagnostics)
+                        diagnostics["status"] = result["status"]
+                        if result.get("registered") is not True:
+                            return None
+                        control_diagnostics = {"requests": 0}
+                        try:
+                            control = await self.probe(client, self._invented_email(email), spec, control_diagnostics)
+                            control_status = control["status"]
+                        except ProbeUnavailable as exc:
+                            control_status = exc.status
+                        except (httpx.TimeoutException, TimeoutError):
+                            control_status = "timeout"
+                        except Exception:
+                            control_status = "transport_error"
+                        finally:
+                            diagnostics["requests"] += control_diagnostics["requests"]
+                        diagnostics["control_status"] = control_status
+                        if control_status == "registered":
+                            diagnostics["status"] = "non_discriminating"
+                            return None
+                        negative_control = "passed" if control_status == "not_registered" else "untested"
+                        return ToolFinding(entity_type="email_registration", platform=spec.platform,
+                            value=f"{spec.platform} ({email})", display_name=f"{spec.platform}: Señal de registro por correo",
+                            confidence=0.65 if negative_control == "passed" else 0.4,
+                            metadata_info={"email": email, "platform": spec.platform, "registered": True,
+                                "category": spec.category, "service_url": spec.home,
+                                "verification_status": "registration_signal", "profile_status": "unresolved",
+                                "source_tool": self.name, "negative_control": negative_control,
+                                "probe_id": spec.key, "technique": "email_validation_query",
+                                "probe_origin": "holehe_adapted" if spec.upstream else "person_map",
+                                **({"holehe_commit": HOLEHE_COMMIT, "holehe_module": spec.upstream} if spec.upstream else {})},
+                            evidence_urls=[spec.url.replace("{email}", quote(email, safe=""))])
+            except ProbeUnavailable as exc:
+                diagnostics["status"] = exc.status
+            except (TimeoutError, httpx.TimeoutException):
+                diagnostics["status"] = "timeout"
+            except httpx.HTTPError:
+                diagnostics["status"] = "transport_error"
+            except asyncio.CancelledError:
+                diagnostics["status"] = "interrupted"
+                raise
+            except Exception:
+                diagnostics["status"] = "unexpected_response"
             return None
-        return res["registered"] if isinstance(res, dict) and isinstance(res.get("registered"), bool) else None
 
-    # --- INDIVIDUAL PASSIVE PROBES ---
-
-    async def _check_spotify(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
+    async def execute(self, context: TargetContext):
+        signature = config_id()
+        if context.extra.get("email_enum_config_id") != signature:
+            context.extra.update(email_enum_config_id=signature, email_enum_checked=[], email_enum_diagnostics={})
+        emails = self.pending(context)
+        if not emails:
+            return []
+        diagnostics = context.extra["email_enum_diagnostics"]
+        gate = asyncio.Semaphore(settings.tool_concurrency_budget(settings.email_enum_concurrency))
+        tasks = []
+        for email in emails:
+            context.extra["email_enum_checked"].append(email)
+            per_email = diagnostics.setdefault(email, {})
+            for spec in selected_probes():
+                state = per_email.setdefault(spec.key, {"status": "pending", "requests": 0})
+                tasks.append(asyncio.create_task(self._run_probe(email, spec, gate, state)))
         try:
-            url = "https://spclient.wg.spotify.com/signup/public/v2/account/create"
-            resp = await client.post(url, data={"validate": "1", "email": email})
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("status") == 20:  # Email exists
-                    return {"platform": "Spotify", "registered": True, "category": "music", "url": "https://open.spotify.com"}
-        except Exception:
-            pass
-        return None
+            done, pending = await asyncio.wait(tasks, timeout=settings.email_enum_batch_timeout)
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            for per_email in diagnostics.values():
+                for state in per_email.values():
+                    if state["status"] in {"pending", "interrupted"}:
+                        state["status"] = "budget_exhausted"
+            return [task.result() for task in tasks if task in done and not task.cancelled() and task.result() is not None]
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def _check_discord(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = "https://discord.com/api/v9/auth/register"
-            resp = await client.post(
-                url,
-                json={"email": email, "username": "validatinguser", "password": "DummyPassword123!", "consent": True},
-            )
-            data = resp.json()
-            # 20001 = EMAIL_ALREADY_REGISTERED
-            if resp.status_code in [400, 200] and ("EMAIL_ALREADY_REGISTERED" in resp.text or data.get("code") == 20001):
-                return {"platform": "Discord", "registered": True, "category": "social", "url": "https://discord.com"}
-        except Exception:
-            pass
-        return None
 
-    async def _check_twitter(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = f"https://api.twitter.com/i/users/email_available.json?email={email}"
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("taken") is True:
-                    return {"platform": "Twitter/X", "registered": True, "category": "social", "url": "https://x.com"}
-        except Exception:
-            pass
-        return None
+class ProbeUnavailable(Exception):
+    def __init__(self, status):
+        self.status = status
 
-    async def _check_github(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = "https://github.com/signup_check/email"
-            resp = await client.post(url, data={"value": email})
-            if resp.status_code == 422 and "already" in resp.text.lower():
-                return {"platform": "GitHub", "registered": True, "category": "coding", "url": "https://github.com"}
-        except Exception:
-            pass
-        return None
 
-    async def _check_duolingo(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = f"https://www.duolingo.com/2017-06-30/users?email={email}"
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                data = resp.json()
-                users = data.get("users", [])
-                if len(users) > 0:
-                    username = users[0].get("username")
-                    profile_url = f"https://www.duolingo.com/profile/{username}" if username else "https://www.duolingo.com"
-                    return {"platform": "Duolingo", "registered": True, "category": "education", "url": profile_url}
-        except Exception:
-            pass
-        return None
-
-    async def _check_firefox(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = "https://api.accounts.firefox.com/v1/account/status"
-            resp = await client.post(url, json={"email": email})
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("exists") is True:
-                    return {"platform": "Firefox Accounts", "registered": True, "category": "tech", "url": "https://firefox.com"}
-        except Exception:
-            pass
-        return None
-
-    async def _check_chess(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = f"https://www.chess.com/callback/email/available?email={email}"
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                data = resp.json()
-                # If available is False, the email is already in use
-                if data.get("available") is False:
-                    return {"platform": "Chess.com", "registered": True, "category": "gaming", "url": "https://chess.com"}
-        except Exception:
-            pass
-        return None
-
-    async def _check_lastpass(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = f"https://lastpass.com/create_account.php?check=all&email={email}"
-            resp = await client.get(url)
-            if resp.status_code == 200 and "EMAIL_ALREADY_TAKEN" in resp.text:
-                return {"platform": "LastPass", "registered": True, "category": "security", "url": "https://lastpass.com"}
-        except Exception:
-            pass
-        return None
-
-    async def _check_adobe(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = "https://auth.services.adobe.com/signin/v2/users/accounts"
-            resp = await client.post(url, json={"username": email})
-            if resp.status_code == 200:
-                data = resp.json()
-                if len(data.get("accounts", [])) > 0:
-                    return {"platform": "Adobe", "registered": True, "category": "tech", "url": "https://adobe.com"}
-        except Exception:
-            pass
-        return None
-
-    async def _check_steam(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = "https://store.steampowered.com/join/ajaxcheckemailverified"
-            resp = await client.post(url, data={"email": email})
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("bEmailAlreadyTaken") is True or data.get("success") == 84:
-                    return {"platform": "Steam", "registered": True, "category": "gaming", "url": "https://store.steampowered.com"}
-        except Exception:
-            pass
-        return None
-
-    async def _check_strava(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = "https://www.strava.com/athletes"
-            resp = await client.post(url, data={"athlete[email]": email})
-            if resp.status_code in [422, 200] and "has already been taken" in resp.text:
-                return {"platform": "Strava", "registered": True, "category": "hobby", "url": "https://strava.com"}
-        except Exception:
-            pass
-        return None
-
-    async def _check_tumblr(self, client: httpx.AsyncClient, email: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = "https://www.tumblr.com/svc/account/register"
-            resp = await client.post(url, json={"email": email, "password": "DummyPassword123!"})
-            if resp.status_code in [400, 200] and "already has an account" in resp.text:
-                return {"platform": "Tumblr", "registered": True, "category": "blog", "url": "https://tumblr.com"}
-        except Exception:
-            pass
-        return None
-
+def execution_summary(context):
+    diagnostics = context.extra.get("email_enum_diagnostics", {})
+    counts = Counter(state.get("status", "unknown") for sites in diagnostics.values() for state in sites.values())
+    return {"catalog_id": context.extra.get("email_enum_config_id"),
+            "holehe_commit": HOLEHE_COMMIT, "emails_checked": len(context.extra.get("email_enum_checked", [])),
+            "counts": dict(sorted(counts.items())),
+            "requests": sum(state.get("requests", 0) for sites in diagnostics.values() for state in sites.values())}

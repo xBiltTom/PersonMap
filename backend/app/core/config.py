@@ -126,6 +126,13 @@ class Settings(BaseSettings):
     ghunt_request_timeout: float = Field(default=20, ge=1, le=60)
     ghunt_max_requests: int = Field(default=80, ge=1, le=300)
     ghunt_max_events: int = Field(default=20, ge=0, le=100)
+    # Reviewed Holehe techniques share HTTP limits; no CLI dependency changes.
+    email_enum_sites: list[str] = []
+    email_enum_max_emails: int = Field(default=3, ge=0, le=20)
+    email_enum_concurrency: int = Field(default=6, ge=1, le=30)
+    email_enum_request_timeout: float = Field(default=7, ge=1, le=30)
+    email_enum_probe_timeout: float = Field(default=20, ge=1, le=90)
+    email_enum_batch_timeout: float = Field(default=90, ge=1, le=300)
     # Fracción máxima del presupuesto global que puede tomar una sola tool.
     tool_concurrency_share: float = 0.6
 

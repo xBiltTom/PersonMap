@@ -24,6 +24,7 @@ from app.core.config import settings
 from app.tools.registry import tool_registry
 from app.tools.maigret_catalog import execution_config
 from app.tools.ghunt_runtime import capabilities as ghunt_capabilities
+from app.tools.email_catalog import capabilities as email_capabilities
 
 
 def run_fingerprint() -> Dict[str, Any]:
@@ -47,6 +48,7 @@ def run_fingerprint() -> Dict[str, Any]:
             breakdown = {}
 
     return {
+        "email_enumerator": email_capabilities(),
         "ghunt": ghunt_capabilities(),
         "tools_registered": len(tool_registry.get_all()),
         # Composición del catálogo unificado. `maigret_commit` es lo que hace

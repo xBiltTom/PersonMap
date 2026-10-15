@@ -804,9 +804,16 @@ Devuelve datos cualitativamente distintos y muy potentes para la concientizació
 
 ### 4.3 Ampliar `email_enumerator`
 
-De los ~20 probes actuales hacia los vectores de `kaifcodec/user-scanner` (MIT, 4.6k estrellas, activo, 175+ vectores de email) — el sucesor de facto de Holehe. Portar por lotes, priorizando plataformas relevantes para estudiantes LatAm.
+**Actualización 2026-10-14:** de las 12 sondas anteriores a un catálogo de 25
+consultas/validaciones (22 adaptadas de Holehe y tres propias), con parsers
+estrictos, controles negativos, diagnósticos por servicio y cobertura
+persistente en reglas/MCP. Se retiraron altas completas y no se duplican
+Google/Gravatar. [Procedencia, auditoría y límites](HOLEHE.md).
+Las alternativas como `kaifcodec/user-scanner` siguen siendo candidatas para
+ampliaciones futuras; el número anunciado de vectores no demuestra su vigencia.
 
-**Frontend emparejado:** con muchos más resultados, `FindingsTable` necesita **paginación o virtualización**; hoy renderiza todas las filas de golpe.
+**Frontend:** los estados aparecen en la consola y las ejecuciones existentes.
+Evaluar paginación/virtualización si el volumen real de hallazgos lo requiere.
 
 ### 4.4 Dominio personal (crt.sh)
 

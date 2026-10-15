@@ -46,14 +46,13 @@ async def test_derived_urls_and_stable_ids_are_not_alias_evidence():
 async def test_email_registration_with_unknown_control_never_becomes_profile(monkeypatch):
     tool = EmailEnumeratorTool()
 
-    async def probe(client, email):
-        return {'registered': True, 'platform': 'Twitter/X', 'url': 'https://x.com'} if email == 'audit@example.com' else None
-
-    async def nothing(*args):
-        return None
-    for name in dir(tool):
-        if name.startswith('_check_'):
-            monkeypatch.setattr(tool, name, probe if name == '_check_twitter' else nothing)
+    from app.core.config import settings
+    monkeypatch.setattr(settings, 'email_enum_sites', ['twitter'])
+    async def probe(client, email, spec, diagnostics):
+        diagnostics['requests'] += 1
+        return ({'registered': True, 'status': 'registered'} if email == 'audit@example.com'
+                else {'registered': None, 'status': 'unexpected_response'})
+    monkeypatch.setattr(tool, 'probe', probe)
     findings = await tool.execute(TargetContext(email='audit@example.com'))
     assert findings[0].entity_type == 'email_registration'
     assert findings[0].metadata_info['negative_control'] == 'untested'

@@ -2,6 +2,7 @@
 import json
 
 RUNTIME_KEYS = (
+    "email_enum_checked", "email_enum_diagnostics", "email_enum_config_id",
     "ghunt_checked", "ghunt_diagnostics", "ghunt_config_id", "ghunt_resolved_gaia",
     "google_public_checked", "google_public_youtube_queries",
     "username_finder_coverage", "username_finder_scanned", "username_finder_stats",

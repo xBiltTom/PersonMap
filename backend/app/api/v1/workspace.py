@@ -15,6 +15,12 @@ from app.tools.maigret_catalog import capabilities
 router = APIRouter()
 
 
+@router.get("/email-enumerator/capabilities")
+def email_enumerator_capabilities():
+    from app.tools.email_catalog import capabilities as email_info
+    return email_info()
+
+
 @router.get("/ghunt/capabilities")
 def ghunt_capabilities():
     from app.tools.ghunt_runtime import capabilities as ghunt_info

@@ -1,154 +1,257 @@
-"""
-Tests de la enumeración pasiva de correo.
+"""Email query contracts: explicit schemas, bounded coverage and no side effects."""
+import asyncio
+import json
+from urllib.parse import parse_qs
 
-Existen por una razón concreta: la sonda de Quora marcaba **todos** los correos
-como registrados. Su endpoint dejó de ser una API y pasó a devolver la portada
-HTML de 81 KB, y la comprobación era `"false" in resp.text.lower()` — una
-palabra que aparece en cualquier JavaScript. El resultado llegó a un expediente
-real: "Quora: Cuenta Activa" con un 90 % de confianza, sobre un correo que nunca
-tuvo cuenta allí.
-
-Nada lo detectaba porque nada lo comprobaba. De ahí estos dos niveles:
-
-- Rápido y sin red: que ninguna sonda vuelva a apoyarse en un marcador genérico,
-  y que no se intente iniciar sesión en la cuenta de nadie.
-- Marcado como `network`: cada sonda contra un correo de control que no puede
-  estar registrado en ningún sitio. Cualquier "registrado" ahí es un falso
-  positivo garantizado.
-"""
-
-import inspect
-import re
-from pathlib import Path
-
+import httpx
 import pytest
 
+from app.core.config import settings
+from app.core.runtime import durable_runtime
+from app.engine.pivot_rules import extract_and_apply_pivots
+from app.engine.rule_engine import RuleEngine
+from app.models.target import Target
+from app.services.workspace import call_fingerprint, merge_runtime
 from app.tools import http_client
 from app.tools.base import TargetContext
-from app.tools.email_enumerator import EmailEnumeratorTool
+from app.tools.email_catalog import PROBES, capabilities, config_id, parse_registration
+from app.tools.email_enumerator import EmailEnumeratorTool, execution_summary
 
-FUENTE = Path(__file__).parent.parent / "app" / "tools" / "email_enumerator.py"
-
-# Un correo con esta pinta no está registrado en ningún servicio del mundo.
-CONTROL = "no_existe_jamas_9f3a2b7c1d@gmail.com"
-
-# Marcadores demasiado genéricos para distinguir nada dentro de una página HTML.
-# "false" es el que produjo el falso positivo de Quora.
-MARCADORES_PROHIBIDOS = {"false", "true", "error", "email", "taken", "ok", "user"}
-
-
-def _probe_names(tool: EmailEnumeratorTool):
-    return [
-        name
-        for name, _ in inspect.getmembers(tool, predicate=inspect.ismethod)
-        if name.startswith("_check_")
-    ]
-
-
-# --- Estructura: que la clase de fallo no vuelva ---------------------------
-
-
-def test_no_probe_matches_on_a_generic_marker():
-    """
-    El fallo de Quora en una línea: buscar `"false"` en el cuerpo de la
-    respuesta. Un marcador de una palabra común encuentra cualquier cosa dentro
-    de 81 KB de HTML.
-    """
-    fuente = FUENTE.read_text(encoding="utf-8")
-    comparaciones = re.findall(r'"([^"]{1,12})" in resp\.text(?:\.lower\(\))?', fuente)
-
-    genericos = [c for c in comparaciones if c.strip().lower() in MARCADORES_PROHIBIDOS]
-
-    assert not genericos, f"marcadores demasiado genéricos: {genericos}"
+EMAIL = "audit+tag@example.org"
+CASES = {
+    "spotify": ({"status": 20}, {"status": 1}),
+    "taken": ({"taken": True}, {"taken": False}),
+    "exists": ({"exists": True}, {"exists": False}),
+    "available": ({"available": False}, {"available": True}),
+    "registered": ({"registered": True}, {"registered": False}),
+    "user_exists": ({"user_exists": True}, {"user_exists": False}),
+    "duolingo": ({"users": [{"username": "observed"}]}, {"users": []}),
+    "accounts": ({"accounts": [{"id": "observed"}]}, {"accounts": []}),
+    "steam": ({"bEmailAlreadyTaken": True}, {"bEmailAlreadyTaken": False}),
+    "pinterest": ({"resource_response": {"data": True}}, {"resource_response": {"data": False}}),
+    "patreon": ({"data": {"is_available": False}}, {"data": {"is_available": True}}),
+    "issuu": ({"status": "unavailable"}, {"status": "available"}),
+    "amocrm": ({"status": "used"}, {"status": "free"}),
+    "wordpress": ({"body": {"email_verified": False}}, {"body": {"error": "unknown_user"}}),
+    "lastfm": ({"email": {"error_messages": ["Sorry, that email address is already registered to another account."]}}, {"email": {"valid": True}}),
+    "codecademy": ({"errors": {"email": ["is already taken"]}}, None),
+    "github": ("Email is already taken", ""),
+    "lastpass": ("no", "ok"),
+    "text_exists": ("True", "False"),
+    "text_available": ("false", "true"),
+    "diigo": ("0", "1"),
+    "codepen": ("That Email is already taken.", None),
+    "envato": ("Email is already in use", None),
+}
 
 
-def test_no_probe_attempts_a_login():
-    """
-    Enviar una contraseña a un endpoint de sesión es un intento de acceso real
-    contra la cuenta de una persona: dispara alertas de seguridad y puede
-    bloquearla. Es el mismo motivo por el que el plan descarta `ignorant` para
-    teléfonos: deja de ser OSINT pasivo. La sonda de Vimeo hacía exactamente eso
-    contra `vimeo.com/log_in`.
-
-    Lo que sí es aceptable, y por eso el test mira las dos cosas juntas:
-
-    - **Validar un alta** con una contraseña inventada: no toca ninguna cuenta
-      existente, solo pregunta si el correo está libre.
-    - **Consultar si una cuenta existe** sin contraseña (Adobe, Microsoft): es
-      el primer paso del formulario de acceso, no una autenticación fallida.
-    """
-    fuente = FUENTE.read_text(encoding="utf-8")
-    bloques = re.split(r"    async def (_check_\w+)", fuente)[1:]
-
-    culpables = []
-    for nombre, cuerpo in zip(bloques[0::2], bloques[1::2]):
-        envia_password = re.search(r'"password"\s*:', cuerpo)
-        endpoint_sesion = re.search(r"log_in|/login|/signin|sessions/new", cuerpo)
-        if envia_password and endpoint_sesion:
-            culpables.append(nombre)
-
-    assert not culpables, f"sondas que intentan iniciar sesión: {culpables}"
+def response_for(spec, positive):
+    payload = CASES[spec.parser][0 if positive else 1]
+    if payload is None:
+        return httpx.Response(200, json={"unrecognized": True})
+    if isinstance(payload, str):
+        return httpx.Response(422 if spec.parser == "github" and positive else 200, text=payload)
+    return httpx.Response(200, json=payload)
 
 
-def test_the_probe_list_matches_the_implemented_probes():
-    """
-    Al retirar una sonda es fácil quitar el método y dejar la llamada, o al
-    revés. Lo primero rompe la herramienta; lo segundo deja código muerto que
-    aparenta cobertura que no existe.
-    """
-    tool = EmailEnumeratorTool()
-    fuente = FUENTE.read_text(encoding="utf-8")
-
-    # La lista de sondas se pasa como referencias (`self._check_x,`) para poder
-    # repetir cada una con el correo inventado del control negativo.
-    llamadas = set(re.findall(r"self\.(_check_\w+),", fuente))
-
-    assert llamadas == set(_probe_names(tool))
+def warmup_response():
+    return httpx.Response(200, text='<meta name="csrf-token" content="synthetic-csrf-secret">'
+        '<auto-check src="/signup_check/email"><input name="authenticity_token" value="synthetic-csrf-secret"></auto-check>',
+        headers={"set-cookie": "csrftoken=synthetic-csrf-secret; Path=/; Secure"})
 
 
-def test_the_description_does_not_overstate_the_coverage():
-    """
-    La descripción decía "20+ plataformas" cuando siete de los endpoints
-    respondían 404 y no podían dar señal nunca. Es la cifra que el LLM lee para
-    decidir si vale la pena llamar a la herramienta.
-    """
-    tool = EmailEnumeratorTool()
+@pytest.fixture(autouse=True)
+def default_config(monkeypatch):
+    monkeypatch.setattr(settings, "email_enum_sites", [])
+    monkeypatch.setattr(settings, "email_enum_max_emails", 3)
 
-    assert "20+" not in tool.description
-    assert len(_probe_names(tool)) >= 8
+
+def bridge(monkeypatch, responder):
+    monkeypatch.setattr(http_client, "build_client", lambda **kwargs: httpx.AsyncClient(
+        transport=httpx.MockTransport(responder), follow_redirects=False))
+
+
+def for_spec(spec, *, any_email=False):
+    def responder(request):
+        if spec.warmup and str(request.url) == spec.warmup:
+            return warmup_response()
+        serialized = str(request.url) + request.content.decode()
+        # Decode transport encoding, including + tags, before identifying input.
+        from urllib.parse import unquote_plus
+        positive = any_email or EMAIL in unquote_plus(serialized.replace("+", "%2B"))
+        return response_for(spec, positive)
+    return responder
+
+
+@pytest.mark.parametrize("spec", PROBES, ids=lambda spec: spec.key)
+@pytest.mark.asyncio
+async def test_each_adapted_probe_preserves_registration_scope_and_provenance(monkeypatch, spec):
+    bridge(monkeypatch, for_spec(spec))
+    monkeypatch.setattr(settings, "email_enum_sites", [spec.key])
+    context = TargetContext(email=EMAIL)
+    findings = await EmailEnumeratorTool().execute(context)
+    assert len(findings) == 1, context.extra
+    finding = findings[0]
+    assert finding.entity_type == "email_registration"
+    assert finding.metadata_info["service_url"] == spec.home
+    assert "url" not in finding.metadata_info
+    expected_control = "passed" if CASES[spec.parser][1] is not None else "untested"
+    assert finding.metadata_info["negative_control"] == expected_control
+    assert bool(finding.metadata_info.get("holehe_commit")) == bool(spec.upstream)
+    pivots = TargetContext()
+    extract_and_apply_pivots(findings, pivots)
+    assert pivots.extra.get("candidate_urls", []) == []
+    assert pivots.all_usernames() == []
+    exported = json.dumps(durable_runtime(context.extra))
+    assert "synthetic-csrf-secret" not in exported
+    assert not EmailEnumeratorTool().can_run(context)
+
+
+@pytest.mark.parametrize("spec", PROBES, ids=lambda spec: spec.key)
+@pytest.mark.asyncio
+async def test_every_probe_rejects_a_service_that_finds_every_email(monkeypatch, spec):
+    bridge(monkeypatch, for_spec(spec, any_email=True))
+    monkeypatch.setattr(settings, "email_enum_sites", [spec.key])
+    context = TargetContext(email=EMAIL)
+    assert await EmailEnumeratorTool().execute(context) == []
+    assert context.extra["email_enum_diagnostics"][EMAIL][spec.key]["status"] == "non_discriminating"
+
+
+@pytest.mark.parametrize("spec", PROBES, ids=lambda spec: spec.key)
+@pytest.mark.parametrize("body", ["<html>false true error email taken</html>", '{"exists":"false"}', '{}'])
+def test_unknown_schema_never_means_registered_or_not_registered(spec, body):
+    assert parse_registration(spec.parser, httpx.Response(200, text=body)) is None
+
+
+@pytest.mark.parametrize("payload,expected", [
+    ({"isEmailAvailable": False}, True),
+    ({"isEmailAvailable": True}, False),
+    ({"isEmailAvailable": "false"}, None),
+    ({"isEmailAvailable": True, "available": False}, None),
+])
+def test_observed_chess_schema_is_typed_and_conflicts_remain_unknown(payload, expected):
+    assert parse_registration("available", httpx.Response(200, json=payload)) is expected
 
 
 @pytest.mark.asyncio
-async def test_no_emails_means_no_requests():
-    findings = await EmailEnumeratorTool().execute(TargetContext())
+@pytest.mark.parametrize("code,status", [(403, "blocked"), (429, "rate_limited"), (404, "unavailable"), (503, "upstream_error"), (302, "redirected"), (422, "unexpected_response")])
+async def test_http_failures_are_visible_and_are_not_account_absence(monkeypatch, code, status):
+    bridge(monkeypatch, lambda request: httpx.Response(code, headers={"location": "https://other.example/"}, json={"exists": False}))
+    monkeypatch.setattr(settings, "email_enum_sites", ["firefox"])
+    context = TargetContext(email=EMAIL)
+    assert await EmailEnumeratorTool().execute(context) == []
+    assert context.extra["email_enum_diagnostics"][EMAIL]["firefox"]["status"] == status
+    assert execution_summary(context)["counts"] == {status: 1}
 
-    assert findings == []
 
-
-# --- En vivo: el control que faltaba --------------------------------------
-
-
-@pytest.mark.network
 @pytest.mark.asyncio
-async def test_no_probe_reports_a_control_address_as_registered():
-    """
-    La red de seguridad. Un correo sintético no puede estar registrado en
-    ningún sitio, así que cualquier sonda que diga "registrado" aquí está
-    inventando un hallazgo que acabará en el expediente de una persona.
+async def test_steam_code_84_is_a_rate_limit_not_an_account(monkeypatch):
+    bridge(monkeypatch, lambda request: httpx.Response(200, json={"success": 84}))
+    monkeypatch.setattr(settings, "email_enum_sites", ["steam"])
+    context = TargetContext(email=EMAIL)
+    assert await EmailEnumeratorTool().execute(context) == []
+    assert execution_summary(context)["counts"] == {"rate_limited": 1}
 
-    Marcado `network` porque consulta los servicios reales: es justo lo que los
-    mocks no pueden comprobar, y por lo que el fallo de Quora sobrevivió.
-    """
-    tool = EmailEnumeratorTool()
-    culpables = []
 
-    async with http_client.build_client(timeout=10.0) as client:
-        for name in _probe_names(tool):
+@pytest.mark.asyncio
+async def test_same_domain_control_and_encoded_email_cannot_inject_another_parameter(monkeypatch):
+    seen = []
+    def responder(request):
+        seen.append(dict(request.url.params))
+        return httpx.Response(200, json={"taken": request.url.params["email"] == EMAIL})
+    bridge(monkeypatch, responder)
+    monkeypatch.setattr(settings, "email_enum_sites", ["twitter"])
+    assert len(await EmailEnumeratorTool().execute(TargetContext(email=EMAIL))) == 1
+    assert seen[0] == {"email": EMAIL}
+    assert seen[1]["email"].endswith("@example.org")
+    assert seen[1]["email"] != EMAIL
+
+
+@pytest.mark.asyncio
+async def test_email_budget_and_coverage_survive_pivots_and_configuration_changes(monkeypatch):
+    monkeypatch.setattr(settings, "email_enum_sites", ["firefox"])
+    monkeypatch.setattr(settings, "email_enum_max_emails", 2)
+    bridge(monkeypatch, lambda request: httpx.Response(200, json={"exists": False}))
+    context = TargetContext(email=EMAIL)
+    await EmailEnumeratorTool().execute(context)
+    context.discovered_emails.extend(["second@example.org", "third@example.org"])
+    await EmailEnumeratorTool().execute(context)
+    assert context.extra["email_enum_checked"] == [EMAIL, "second@example.org"]
+    assert not EmailEnumeratorTool().can_run(context)
+    assert len(durable_runtime(context.extra)["email_enum_diagnostics"]) == 2
+    previous = call_fingerprint("email_enumerator", context)
+    monkeypatch.setattr(settings, "email_enum_sites", ["twitter"])
+    assert call_fingerprint("email_enumerator", context) != previous
+    assert EmailEnumeratorTool().can_run(context)
+
+
+@pytest.mark.asyncio
+async def test_batch_timeout_keeps_completed_findings_and_reaps_pending_requests(monkeypatch):
+    monkeypatch.setattr(settings, "email_enum_sites", ["firefox", "twitter"])
+    monkeypatch.setattr(settings, "email_enum_batch_timeout", 0.1)
+    hanging, cancelled = asyncio.Event(), asyncio.Event()
+    async def responder(request):
+        if "twitter" in request.url.host:
+            hanging.set()
             try:
-                resultado = await getattr(tool, name)(client, CONTROL)
-            except Exception:
-                continue
-            if isinstance(resultado, dict) and resultado.get("registered"):
-                culpables.append(name)
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+        return httpx.Response(200, json={"exists": json.loads(request.content)["email"] == EMAIL})
+    bridge(monkeypatch, responder)
+    context = TargetContext(email=EMAIL)
+    findings = await EmailEnumeratorTool().execute(context)
+    assert len(findings) == 1
+    assert hanging.is_set() and cancelled.is_set()
+    assert execution_summary(context)["counts"] == {"budget_exhausted": 1, "registered": 1}
 
-    assert not culpables, f"falsos positivos garantizados: {culpables}"
+
+@pytest.mark.asyncio
+async def test_invalid_inputs_and_disabled_catalog_make_no_requests(monkeypatch):
+    def forbidden(request):
+        raise AssertionError("No requests expected")
+    bridge(monkeypatch, forbidden)
+    tool = EmailEnumeratorTool()
+    for context in [TargetContext(), TargetContext(email="bad"), TargetContext(email="bad@example.org/?x=1")]:
+        assert not tool.can_run(context)
+        assert await tool.execute(context) == []
+    monkeypatch.setattr(settings, "email_enum_sites", ["unknown_module"])
+    assert not tool.can_run(TargetContext(email=EMAIL))
+    assert capabilities()["unknown_sites"] == ["unknown_module"]
+
+
+@pytest.mark.asyncio
+async def test_traditional_engine_preserves_diagnostics_and_does_not_repeat_email_on_alias_pivot(monkeypatch):
+    from app.tools.registry import tool_registry
+    tool = EmailEnumeratorTool()
+    monkeypatch.setattr(tool_registry, "get_all", lambda: [tool])
+    monkeypatch.setattr(settings, "email_enum_sites", ["firefox"])
+    bridge(monkeypatch, lambda request: httpx.Response(403))
+    result = await RuleEngine().collect_findings("email-integration", Target(email=EMAIL))
+    assert result.findings == []
+    assert execution_summary(result.context)["counts"] == {"blocked": 1}
+    assert len(result.executed_runs) == 1
+
+
+def test_catalog_excludes_signup_recovery_and_google_duplicates():
+    assert {p.key for p in PROBES}.isdisjoint({"discord", "tumblr", "google", "gravatar"})
+    assert len({p.key for p in PROBES}) == len(PROBES)
+    for spec in PROBES:
+        serialized = json.dumps(spec.payload).lower()
+        assert 'password' not in serialized and 'consent' not in serialized
+        assert not any(value in spec.url for value in ("/auth/register", "/svc/account/register", "password/reset", "forgot_password"))
+
+
+@pytest.mark.parametrize("forced", [False, True])
+def test_catalog_refresh_replaces_old_email_coverage_without_erasing_other_tools(forced):
+    current = {"email_enum_config_id": "old", "email_enum_checked": [EMAIL, "previous@example.org"],
+               "email_enum_diagnostics": {"previous@example.org": {"twitter": {"status": "blocked"}}},
+               "ghunt_checked": ["email:" + EMAIL], "maigret_identifiers": [{"value": "observed", "id_type": "username"}]}
+    baseline = {} if forced else dict(current)
+    incoming = {"email_enum_config_id": "old" if forced else "new", "email_enum_checked": [EMAIL],
+                "email_enum_diagnostics": {EMAIL: {"spotify": {"status": "not_registered"}}}}
+    merged = merge_runtime(current, baseline, incoming)
+    assert merged["email_enum_checked"] == [EMAIL]
+    assert list(merged["email_enum_diagnostics"]) == [EMAIL]
+    assert merged["ghunt_checked"] == current["ghunt_checked"]
+    assert merged["maigret_identifiers"] == current["maigret_identifiers"]

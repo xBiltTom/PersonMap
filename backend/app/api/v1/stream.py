@@ -128,6 +128,9 @@ def reconstruct_trace_logs(
             ghunt = (execution.input_summary or {}).get("ghunt", {})
             if execution.tool_name == "ghunt" and ghunt.get("statuses"):
                 message += " · GHunt: " + ", ".join(ghunt["statuses"])
+            email = (execution.input_summary or {}).get("email_enumerator", {})
+            if execution.tool_name == "email_enumerator" and email.get("counts"):
+                message += " · Correo: " + ", ".join(f"{status}: {count}" for status, count in email["counts"].items())
             entries.append((_timestamp(execution.completed_at), 2, {
                 "type": "tool_error" if is_error else "tool_complete",
                 "tool": execution.tool_name,

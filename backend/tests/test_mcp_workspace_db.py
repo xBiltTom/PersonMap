@@ -43,6 +43,59 @@ pytestmark = pytest.mark.db
 
 
 @pytest.mark.asyncio
+async def test_email_enumerator_mcp_persists_partial_coverage_reuses_and_can_force(isolated_workspace, monkeypatch):
+    from app.mcp import server as mcp_module
+    from app.mcp.auth import MCPTokenGate
+    from app.tools import http_client
+    service, _ = isolated_workspace
+    monkeypatch.setattr(settings, "email_enum_sites", ["firefox", "twitter"])
+    calls = []
+    def respond(request):
+        calls.append(request)
+        if "twitter" in request.url.host:
+            return httpx.Response(429)
+        return httpx.Response(200, json={"exists": json.loads(request.content)["email"] == "audit@example.org"})
+    monkeypatch.setattr(http_client, "build_client", lambda **kwargs: httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+    monkeypatch.setattr(mcp_module, "workspace", service)
+    monkeypatch.setattr(mcp_module.mcp, "_session_manager", None)
+    app = MCPTokenGate(mcp_module.mcp.streamable_http_app())
+    async with mcp_module.mcp.session_manager.run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8000",
+            headers={"Authorization": "Bearer integration-token", "Accept": "application/json, text/event-stream"}) as client:
+            counter = 0
+            async def call(name, arguments):
+                nonlocal counter
+                counter += 1
+                response = await client.post("/mcp", json={"jsonrpc": "2.0", "id": counter, "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments}})
+                assert response.status_code == 200, response.text
+                result = response.json()["result"]
+                assert not result.get("isError"), result
+                return result["structuredContent"]
+            created = await call("create_investigation", {"target": {"email": "audit@example.org"}})
+            inv_id = uuid.UUID(created["id"])
+            session = await call("open_session", {"investigation_id": str(inv_id), "client": "email-audit"})
+            args = {"investigation_id": str(inv_id), "session_id": session["id"], "rationale": "Check selected email services"}
+            started = await call("email_enumerator", args)
+            await service.tasks[uuid.UUID(started["id"])]
+            execution = await call("get_execution", {"investigation_id": str(inv_id), "execution_id": started["id"]})
+            assert execution["status"] == "completed" and execution["findings_count"] == 1
+            assert execution["input_summary"]["email_enumerator"]["counts"] == {"rate_limited": 1, "registered": 1}
+            service.contexts.clear()  # The next read reconstructs coverage from PostgreSQL.
+            context = await call("get_investigation_context", {"investigation_id": str(inv_id)})
+            assert context["email_enumerator"]["diagnostics"]["audit@example.org"]["twitter"]["status"] == "rate_limited"
+            reused = await call("email_enumerator", args)
+            assert reused["reused"] and reused["id"] == started["id"]
+            assert len(calls) == 3
+            repeated = await call("email_enumerator", {**args, "force": True})
+            await service.tasks[uuid.UUID(repeated["id"])]
+            assert len(calls) == 6
+            web = await service.detail(inv_id)
+            assert len(web["entities"]) == 1
+            assert web["entities"][0]["entity_type"] == "email_registration"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["gaia", "email"])
 async def test_ghunt_typed_mcp_input_persists_diagnostics_and_reuses_coverage(isolated_workspace, monkeypatch, tmp_path, kind):
     import base64

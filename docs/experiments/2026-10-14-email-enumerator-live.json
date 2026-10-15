@@ -1,0 +1,196 @@
+{
+  "audited_at": "2026-10-15T02:55:11.924656+00:00",
+  "input_kind": "random_control",
+  "capabilities": {
+    "engine_version": 1,
+    "holehe_commit": "14da70f588538936b20d238783c5e28a0772a2b3",
+    "holehe_last_commit": "2024-09-10",
+    "catalog_size": 25,
+    "selected": [
+      "spotify",
+      "twitter",
+      "github",
+      "duolingo",
+      "firefox",
+      "chess",
+      "lastpass",
+      "adobe",
+      "steam",
+      "strava",
+      "wordpress",
+      "replit",
+      "anydo",
+      "pinterest",
+      "patreon",
+      "plurk",
+      "deliveroo",
+      "issuu",
+      "amocrm",
+      "diigo",
+      "lastfm",
+      "eventbrite",
+      "codepen",
+      "codecademy",
+      "envato"
+    ],
+    "excluded": {
+      "discord": "account_creation_endpoint",
+      "tumblr": "account_creation_endpoint",
+      "google": "handled_by_ghunt",
+      "gravatar": "handled_by_gravatar_deep",
+      "vsco": "upstream_embeds_static_bearer_token",
+      "quora": "known_non_discriminating_response"
+    },
+    "unknown_sites": [],
+    "max_emails": 3,
+    "concurrency": 6,
+    "request_timeout": 7.0,
+    "probe_timeout": 20.0,
+    "batch_timeout": 90.0,
+    "result_scope": "registration_signal_not_profile",
+    "live_coverage_verified": false
+  },
+  "summary": {
+    "catalog_id": "544672f01e181acd5366ede838e3fc64ccc362eb10f98880de6bf1e71f470806",
+    "holehe_commit": "14da70f588538936b20d238783c5e28a0772a2b3",
+    "emails_checked": 1,
+    "counts": {
+      "blocked": 6,
+      "csrf_unavailable": 1,
+      "not_registered": 11,
+      "redirected": 1,
+      "transport_error": 1,
+      "unavailable": 1,
+      "unexpected_response": 3,
+      "upstream_error": 1
+    },
+    "requests": 27
+  },
+  "findings_count": 0,
+  "services": {
+    "spotify": {
+      "status": "not_registered",
+      "requests": 1,
+      "http_status": 200
+    },
+    "twitter": {
+      "status": "not_registered",
+      "requests": 1,
+      "http_status": 200
+    },
+    "github": {
+      "status": "blocked",
+      "requests": 1,
+      "http_status": 403
+    },
+    "duolingo": {
+      "status": "not_registered",
+      "requests": 1,
+      "http_status": 200
+    },
+    "firefox": {
+      "status": "unexpected_response",
+      "requests": 1,
+      "http_status": 406
+    },
+    "chess": {
+      "status": "not_registered",
+      "requests": 1,
+      "http_status": 200
+    },
+    "lastpass": {
+      "status": "not_registered",
+      "requests": 1,
+      "http_status": 200
+    },
+    "adobe": {
+      "status": "unexpected_response",
+      "requests": 1,
+      "http_status": 400
+    },
+    "steam": {
+      "status": "unexpected_response",
+      "requests": 1,
+      "http_status": 200
+    },
+    "strava": {
+      "status": "csrf_unavailable",
+      "requests": 1,
+      "http_status": 200
+    },
+    "wordpress": {
+      "status": "not_registered",
+      "requests": 1,
+      "http_status": 200
+    },
+    "replit": {
+      "status": "blocked",
+      "requests": 1,
+      "http_status": 403
+    },
+    "anydo": {
+      "status": "not_registered",
+      "requests": 1,
+      "http_status": 200
+    },
+    "pinterest": {
+      "status": "blocked",
+      "requests": 1,
+      "http_status": 403
+    },
+    "patreon": {
+      "status": "unavailable",
+      "requests": 1,
+      "http_status": 404
+    },
+    "plurk": {
+      "status": "not_registered",
+      "requests": 1,
+      "http_status": 200
+    },
+    "deliveroo": {
+      "status": "transport_error",
+      "requests": 1
+    },
+    "issuu": {
+      "status": "upstream_error",
+      "requests": 1,
+      "http_status": 503
+    },
+    "amocrm": {
+      "status": "redirected",
+      "requests": 1,
+      "http_status": 301
+    },
+    "diigo": {
+      "status": "not_registered",
+      "requests": 1,
+      "http_status": 200
+    },
+    "lastfm": {
+      "status": "not_registered",
+      "requests": 2,
+      "http_status": 200
+    },
+    "eventbrite": {
+      "status": "not_registered",
+      "requests": 2,
+      "http_status": 200
+    },
+    "codepen": {
+      "status": "blocked",
+      "requests": 1,
+      "http_status": 403
+    },
+    "codecademy": {
+      "status": "blocked",
+      "requests": 1,
+      "http_status": 200
+    },
+    "envato": {
+      "status": "blocked",
+      "requests": 1,
+      "http_status": 403
+    }
+  }
+}

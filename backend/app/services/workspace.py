@@ -56,6 +56,12 @@ def parallel_limit():
 def merge_runtime(current, baseline, incoming, *, extent=False, counter=False):
     """Apply a task's changes to the latest context without erasing concurrent work."""
     result = deepcopy(current)
+    if incoming.get("email_enum_config_id") and incoming["email_enum_config_id"] != baseline.get("email_enum_config_id"):
+        # A catalog change or forced repeat replaces this tool's old coverage.
+        # Unioning lists would mark emails from the former catalog as checked
+        # against the new one. Other tools retain their concurrent changes.
+        result = {key: value for key, value in result.items() if not key.startswith("email_enum_")}
+        baseline = {key: value for key, value in baseline.items() if not key.startswith("email_enum_")}
     for key, value in incoming.items():
         if key in baseline and value == baseline[key]:
             continue
@@ -131,6 +137,9 @@ def call_fingerprint(tool_name: str, context: TargetContext) -> str:
     if tool_name == "ghunt":
         from app.tools.ghunt_runtime import config_fingerprint, queries
         values = {"queries": queries(context), "ghunt": config_fingerprint()}
+    if tool_name == "email_enumerator":
+        from app.tools.email_catalog import config_id
+        values["email_enum_config"] = config_id()
     return hashlib.sha256(json.dumps([tool_name, values], sort_keys=True).encode()).hexdigest()
 
 
@@ -307,6 +316,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                     "ghunt": {"capabilities": ghunt_capabilities(),
                         "checked": context.extra.get("ghunt_checked", []),
                         "diagnostics": context.extra.get("ghunt_diagnostics", {})},
+                    "email_enumerator": {"capabilities": tool_registry.get_tool("email_enumerator").capabilities(),
+                        "checked": context.extra.get("email_enum_checked", []),
+                        "diagnostics": context.extra.get("email_enum_diagnostics", {})},
                     "maigret": {"capabilities": capabilities(),
                         "identifiers": context.extra.get("maigret_identifiers", []),
                         "identifier_sources": context.extra.get("maigret_identifier_sources", {}),
@@ -491,7 +503,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 from app.tools.ghunt_runtime import select_call_inputs
                 select_call_inputs(context, inputs)
             runnable = tool.can_run(context)
-            if not runnable and tool.name != "ghunt":
+            if not runnable and tool.name not in {"ghunt", "email_enumerator"}:
                 raise HTTPException(422, "Faltan entradas requeridas para la herramienta")
             if tool.name == "public_page_reader" and not payload.inputs.candidate_urls:
                 raise HTTPException(422, "Selecciona explícitamente las URLs que se leerán")
@@ -504,7 +516,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
             if previous and (previous.status == "running" or not payload.force):
                 return {**ToolExecutionRead.model_validate(previous).model_dump(mode="json"), "reused": True}
             if not runnable:
-                raise HTTPException(422, "GHunt no tiene consultas pendientes dentro del presupuesto; revisa la cobertura guardada")
+                raise HTTPException(422, f"{tool.name} no tiene consultas pendientes dentro del presupuesto; revisa la cobertura guardada")
             if (inv.metrics or {}).get("review_baseline") and not payload.force:
                 supplied = payload.inputs.model_dump(exclude_none=True, exclude_defaults=True)
                 supplied.pop("scan_mode", None)
@@ -573,6 +585,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 if tool.name == "ghunt":
                     from app.tools.ghunt_runtime import execution_summary
                     execution.input_summary = {**execution.input_summary, "ghunt": execution_summary(context)}
+                if tool.name == "email_enumerator":
+                    from app.tools.email_enumerator import execution_summary
+                    execution.input_summary = {**execution.input_summary, "email_enumerator": execution_summary(context)}
                 if tool.name == "search_dorker":
                     execution.input_summary = {**execution.input_summary,
                         "search_status": context.extra.get("search_last_status"),
@@ -618,9 +633,15 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 self.contexts.move_to_end(inv.id)
                 while len(self.contexts) > 100:
                     self.contexts.popitem(last=False)
+                coverage_note = ""
+                if tool.name == "ghunt":
+                    from app.tools.ghunt_runtime import execution_summary
+                    coverage_note = " Estado GHunt: " + ", ".join(execution_summary(context)["statuses"]) + "."
+                if tool.name == "email_enumerator":
+                    from app.tools.email_enumerator import execution_summary
+                    coverage_note = " Consultas de correo: " + json.dumps(execution_summary(context)["counts"], ensure_ascii=False) + "."
                 await self._publish(inv, "tool_error" if error else "tool_complete",
-                    error or (f"{tool.name}: {len(findings)} observaciones guardadas." +
-                        (" Estado GHunt: " + ", ".join(execution_summary(context)["statuses"]) + "." if tool.name == "ghunt" else "")),
+                    error or (f"{tool.name}: {len(findings)} observaciones guardadas." + coverage_note),
                     tool=tool.name, tool_execution_id=str(execution.id), findings_count=len(findings))
         except HTTPException as exc:
             if exc.status_code != 404:

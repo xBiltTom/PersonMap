@@ -1,0 +1,119 @@
+{
+  "repository": "https://github.com/megadose/holehe",
+  "commit": "14da70f588538936b20d238783c5e28a0772a2b3",
+  "committed_at": "2024-09-10T22:24:32+02:00",
+  "license": "GPL-3.0",
+  "integration": "Selected query/validation techniques ported to Person Map; original CLI not installed",
+  "adapted_sources": [
+    {
+      "probe_id": "spotify",
+      "upstream_path": "holehe/modules/music/spotify.py",
+      "sha256": "29ae14995a30713ccdf1d0ec40aca913cb2ce8ad11e2e7ffba9f3cd9ca0338ee"
+    },
+    {
+      "probe_id": "twitter",
+      "upstream_path": "holehe/modules/social_media/twitter.py",
+      "sha256": "484142a4d477ae39a1598419d7ce4f15fc19886a03bf3920be79c5c5b7c1a5a2"
+    },
+    {
+      "probe_id": "github",
+      "upstream_path": "holehe/modules/programing/github.py",
+      "sha256": "45878c4b1aa0869b4e670d058705007e5fa5dfb8a4ecb9056fb6b11177b2c95a"
+    },
+    {
+      "probe_id": "duolingo",
+      "upstream_path": "holehe/modules/learning/duolingo.py",
+      "sha256": "739517a970a9442f17d81217adf3c4b8bb9e6f3c5cd265e9ebe415c10f931789"
+    },
+    {
+      "probe_id": "firefox",
+      "upstream_path": "holehe/modules/software/firefox.py",
+      "sha256": "b1da248a48b976069ae53ae4925f7694311e6f5ba038235ccba7a4713160e1b7"
+    },
+    {
+      "probe_id": "lastpass",
+      "upstream_path": "holehe/modules/software/lastpass.py",
+      "sha256": "1f314d18a51b6beab1d432158ec7ecdccb2c12c5a9d676fe6d44a46f464eed8b"
+    },
+    {
+      "probe_id": "strava",
+      "upstream_path": "holehe/modules/social_media/strava.py",
+      "sha256": "5a1daaccc9560fd06338e7302dc4f37f8cd7eece0c3af0dfba9c14a33d55c1ab"
+    },
+    {
+      "probe_id": "wordpress",
+      "upstream_path": "holehe/modules/cms/wordpress.py",
+      "sha256": "60c2379f9408401d8f4e8f4c0342cde6ebe8ba6f3c18996ab624a15d926a997a"
+    },
+    {
+      "probe_id": "replit",
+      "upstream_path": "holehe/modules/programing/replit.py",
+      "sha256": "853a95a15269969d121e84b9384199a7337b193c96a09b2dbb2d7776965d1a9f"
+    },
+    {
+      "probe_id": "anydo",
+      "upstream_path": "holehe/modules/productivity/anydo.py",
+      "sha256": "2581823764195991ea852833b2aeceae8532250a92cf726e456981560dbcfc1d"
+    },
+    {
+      "probe_id": "pinterest",
+      "upstream_path": "holehe/modules/social_media/pinterest.py",
+      "sha256": "bc870972f1793ab9d831a723ac2e2ce69a075a47e1c495031e9eb93531887db5"
+    },
+    {
+      "probe_id": "patreon",
+      "upstream_path": "holehe/modules/social_media/patreon.py",
+      "sha256": "1a88d378c06f496f008dc7dd8902b72ed6231e8e5bce5dae8ce441879b7a38a7"
+    },
+    {
+      "probe_id": "plurk",
+      "upstream_path": "holehe/modules/social_media/plurk.py",
+      "sha256": "aadd24372c690b92cd7388bad7030ae3611e479c88725167e63751a2c8d9c32e"
+    },
+    {
+      "probe_id": "deliveroo",
+      "upstream_path": "holehe/modules/shopping/deliveroo.py",
+      "sha256": "5921ff8e0115afa2408ee18a4cf25130df1911efc148589f108db133c3b23b98"
+    },
+    {
+      "probe_id": "issuu",
+      "upstream_path": "holehe/modules/software/issuu.py",
+      "sha256": "0008f201e10f35372fa705d18a0a8321cfd96470210a2c643a24fdabcf479bee"
+    },
+    {
+      "probe_id": "amocrm",
+      "upstream_path": "holehe/modules/crm/amocrm.py",
+      "sha256": "2d1b1272a20c79cfdd670ebf0d85ab21500aa1e7cc1cb943f70a1aed94dac498"
+    },
+    {
+      "probe_id": "diigo",
+      "upstream_path": "holehe/modules/learning/diigo.py",
+      "sha256": "369cbe838f7d0cbceeebb1b70ca2b9232bf0134f419064d33ee3e7117d62a6db"
+    },
+    {
+      "probe_id": "lastfm",
+      "upstream_path": "holehe/modules/music/lastfm.py",
+      "sha256": "00044591955a6b49bae21d8c4773d016105b0b7088ccdac2ebcdb4d0a0fb89ea"
+    },
+    {
+      "probe_id": "eventbrite",
+      "upstream_path": "holehe/modules/products/eventbrite.py",
+      "sha256": "ab86fc9b1b44aab35d02147b307877eaad53711a230c63ff7ab805592a85b645"
+    },
+    {
+      "probe_id": "codepen",
+      "upstream_path": "holehe/modules/programing/codepen.py",
+      "sha256": "ed85aa38a4b1622e64028d3e4495d18b1782ec332d55953098c61c8359909887"
+    },
+    {
+      "probe_id": "codecademy",
+      "upstream_path": "holehe/modules/programing/codecademy.py",
+      "sha256": "f7368c818d241e11555d9eec15606eaa1967ccfd7f38f33f3dbbf4532005d3da"
+    },
+    {
+      "probe_id": "envato",
+      "upstream_path": "holehe/modules/shopping/envato.py",
+      "sha256": "9c4bb5c1816819fdde5606ed1016ec87bf9827ec1a2d80ffab9ae87c2eaa7e76"
+    }
+  ]
+}

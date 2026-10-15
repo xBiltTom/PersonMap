@@ -73,6 +73,9 @@ class RuleEngine:
         if tool.name == "ghunt":
             from app.tools.ghunt_runtime import config_id
             parts.append("ghunt_config:" + config_id())
+        if tool.name == "email_enumerator":
+            from app.tools.email_catalog import config_id
+            parts.append("email_enum_config:" + config_id())
         if tool.name in {"username_finder", "maigret_enricher"}:
             parts.append("maigret_options:" + json.dumps(context.extra.get("maigret_options", {}), sort_keys=True))
             parts.append("scan_mode:" + context.extra.get("username_scan_mode", "deep"))
@@ -218,6 +221,9 @@ class RuleEngine:
                     if runnable[index].name == "ghunt":
                         from app.tools.ghunt_runtime import execution_summary
                         execution.input_summary = {**(execution.input_summary or {}), "ghunt": execution_summary(context)}
+                    if runnable[index].name == "email_enumerator":
+                        from app.tools.email_enumerator import execution_summary
+                        execution.input_summary = {**(execution.input_summary or {}), "email_enumerator": execution_summary(context)}
                     await trace_recorder.complete_tool(
                         execution,
                         findings_count=len(outcome.findings),
@@ -366,6 +372,9 @@ class RuleEngine:
             if tool.name == "ghunt":
                 from app.tools.ghunt_runtime import execution_summary
                 note = " Estado GHunt: " + ", ".join(execution_summary(context)["statuses"]) + "."
+            if tool.name == "email_enumerator":
+                from app.tools.email_enumerator import execution_summary
+                note = " Consultas de correo: " + json.dumps(execution_summary(context)["counts"], ensure_ascii=False) + "."
             await event_bus.publish(investigation_id, {
                 "type": "tool_complete",
                 "tool": tool.name,

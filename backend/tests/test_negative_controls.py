@@ -80,11 +80,14 @@ def test_invented_alias_keeps_a_shape_the_site_accepts():
 
 
 def _only_these_probes(monkeypatch, tool: EmailEnumeratorTool, **probes):
-    async def nothing(client, email):
-        return None
-
-    for name in [n for n in dir(tool) if n.startswith("_check_")]:
-        monkeypatch.setattr(tool, name, probes.get(name, nothing))
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "email_enum_sites", [name.removeprefix("_check_") for name in probes])
+    async def probe(client, email, spec, diagnostics):
+        diagnostics["requests"] += 1
+        value = await probes["_check_" + spec.key](client, email)
+        registered = value.get("registered") if isinstance(value, dict) else None
+        return {"registered": registered, "status": "registered" if registered is True else "not_registered" if registered is False else "unexpected_response"}
+    monkeypatch.setattr(tool, "probe", probe)
 
 
 @pytest.mark.asyncio
@@ -112,11 +115,7 @@ async def test_platform_that_registers_any_email_is_discarded(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_signup_probes_never_receive_an_invented_email(monkeypatch):
-    """
-    Las sondas que envían un alta completa podrían crear una cuenta real con el
-    correo inventado. No se les pasa el control: el hallazgo queda "sin probar".
-    """
+async def test_signup_probes_are_not_executed_for_real_or_invented_emails(monkeypatch):
     tool = EmailEnumeratorTool()
     seen = []
 
@@ -129,5 +128,5 @@ async def test_signup_probes_never_receive_an_invented_email(monkeypatch):
 
     findings = await tool.execute(TargetContext(email="jorgewueder@outlook.es"))
 
-    assert seen == ["jorgewueder@outlook.es"]
-    assert findings[0].metadata_info["negative_control"] == "untested"
+    assert seen == []
+    assert findings == []
