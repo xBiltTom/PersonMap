@@ -58,7 +58,8 @@ def merge_runtime(current, baseline, incoming, *, extent=False, counter=False):
     result = deepcopy(current)
     for prefix, version in (("email_enum_", "email_enum_config_id"),
                             ("google_public_", "google_public_version"),
-                            ("email_checker_", "email_checker_version")):
+                            ("email_checker_", "email_checker_version"),
+                            ("academic_", "academic_config_id")):
         if incoming.get(version) and incoming[version] != baseline.get(version):
             # Replace only the refreshed tool's coverage, keeping concurrent work.
             result = {key: value for key, value in result.items() if not key.startswith(prefix)}
@@ -145,6 +146,9 @@ def call_fingerprint(tool_name: str, context: TargetContext) -> str:
         values["engine_version"] = 2
     if tool_name == "google_account_osint":
         values["university"] = context.university
+    if tool_name == "academic_finder":
+        from app.tools.academic_finder import config_id
+        values = {"academic_config": config_id(), "queries": tool._inputs(context), "university": context.university}
     return hashlib.sha256(json.dumps([tool_name, values], sort_keys=True).encode()).hexdigest()
 
 
@@ -327,6 +331,10 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                     "google_public": {"diagnostics": context.extra.get("google_public_diagnostics", []),
                         "scholar_profiles": context.extra.get("google_public_scholar_profiles", {})},
                     "email_checker": {"diagnostics": context.extra.get("email_checker_diagnostics", {})},
+                    "academic": {"capabilities": tool_registry.get_tool("academic_finder").capabilities(),
+                        "diagnostics": context.extra.get("academic_diagnostics", []),
+                        "queries": context.extra.get("academic_queries", {}),
+                        "requests": context.extra.get("academic_requests", 0)},
                     "maigret": {"capabilities": capabilities(),
                         "identifiers": context.extra.get("maigret_identifiers", []),
                         "identifier_sources": context.extra.get("maigret_identifier_sources", {}),
@@ -483,8 +491,10 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
             context.extra.pop("search_force", None)
             if payload.inputs.maigret_options is not None and tool.name not in {"username_finder", "maigret_enricher"}:
                 raise HTTPException(422, "maigret_options solo está disponible en las herramientas Maigret")
-            if payload.inputs.identifiers and tool.name not in {"maigret_enricher", "ghunt"}:
-                raise HTTPException(422, "identifiers solo está disponible en maigret_enricher y ghunt")
+            if payload.inputs.identifiers and tool.name not in {"maigret_enricher", "ghunt", "academic_finder"}:
+                raise HTTPException(422, "identifiers solo está disponible en maigret_enricher, ghunt y academic_finder")
+            if tool.name == "academic_finder" and any(item.id_type != "orcid" for item in payload.inputs.identifiers):
+                raise HTTPException(422, "academic_finder admite identificadores ORCID y URLs DOI explícitas")
             if payload.inputs.identifiers:
                 context.extra["maigret_identifiers"] = [item.model_dump() for item in payload.inputs.identifiers]
             if tool.name == "search_dorker":
@@ -510,8 +520,11 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
             if tool.name == "ghunt":
                 from app.tools.ghunt_runtime import select_call_inputs
                 select_call_inputs(context, inputs)
+            if tool.name == "academic_finder":
+                from app.tools.academic_finder import select_call_inputs
+                select_call_inputs(context, inputs)
             runnable = tool.can_run(context)
-            if not runnable and tool.name not in {"ghunt", "email_enumerator", "google_account_osint", "email_checker"}:
+            if not runnable and tool.name not in {"ghunt", "email_enumerator", "google_account_osint", "email_checker", "academic_finder"}:
                 raise HTTPException(422, "Faltan entradas requeridas para la herramienta")
             if tool.name == "public_page_reader" and not payload.inputs.candidate_urls:
                 raise HTTPException(422, "Selecciona explícitamente las URLs que se leerán")
@@ -599,6 +612,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 if tool.name == "google_account_osint":
                     from app.tools.google_account_osint import execution_summary
                     execution.input_summary = {**execution.input_summary, "google_public": execution_summary(context)}
+                if tool.name == "academic_finder":
+                    from app.tools.academic_finder import execution_summary
+                    execution.input_summary = {**execution.input_summary, "academic": execution_summary(context)}
                 if tool.name == "search_dorker":
                     execution.input_summary = {**execution.input_summary,
                         "search_status": context.extra.get("search_last_status"),
@@ -623,6 +639,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                     latest.extra.pop("username_scan_mode", None)
                     latest.extra.pop("search_force", None)
                     latest.extra.pop("maigret_options", None)
+                    latest.extra.pop("academic_selection", None)
                     before = len(latest.extra.get("candidate_urls", []))
                     extract_and_apply_pivots(findings, latest)
                     await trace_recorder.record_event(db, investigation_id=str(inv.id), event_type="pivot", engine="external",
@@ -635,6 +652,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                     latest.extra.pop("username_scan_mode", None)
                     latest.extra.pop("search_force", None)
                     latest.extra.pop("maigret_options", None)
+                    latest.extra.pop("academic_selection", None)
                 inv.metrics = {**(inv.metrics or {}), "external_runtime": durable_runtime(latest.extra)}
                 inv.revision += 1
                 await self._record_change(db, inv, executions=[execution.id],
@@ -654,6 +672,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 if tool.name == "google_account_osint":
                     from app.tools.google_account_osint import execution_summary
                     coverage_note = " Google público: " + json.dumps(execution_summary(context)["statuses"], ensure_ascii=False) + "."
+                if tool.name == "academic_finder":
+                    from app.tools.academic_finder import execution_summary
+                    coverage_note = " Consultas académicas: " + json.dumps(execution_summary(context)["counts"], ensure_ascii=False) + "."
                 await self._publish(inv, "tool_error" if error else "tool_complete",
                     error or (f"{tool.name}: {len(findings)} observaciones guardadas." + coverage_note),
                     tool=tool.name, tool_execution_id=str(execution.id), findings_count=len(findings))

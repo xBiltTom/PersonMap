@@ -199,6 +199,16 @@ class Settings(BaseSettings):
     brave_country: str = "PE"
     brave_search_language: str = "es"
     openalex_api_key: Optional[SecretStr] = None
+    crossref_enabled: bool = True
+    # Operator contact only, never populated from an investigated address.
+    crossref_mailto: Optional[str] = None
+    academic_max_names: int = 3
+    academic_max_orcids: int = 3
+    academic_max_dois: int = 3
+    academic_max_requests: int = 24
+    academic_results_per_query: int = 10
+    academic_request_timeout: float = 8
+    academic_batch_timeout: float = 60
     github_api_token: Optional[SecretStr] = None
 
     @property

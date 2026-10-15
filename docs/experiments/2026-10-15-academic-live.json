@@ -1,0 +1,66 @@
+{
+  "audited_at": "2026-10-15T13:08:38.405851+00:00",
+  "input_kind": "explicit_public_doi",
+  "requested_dois": [
+    "https://doi.org/10.7717/peerj.4375"
+  ],
+  "target_association_tested": false,
+  "capabilities": {
+    "engine_version": 3,
+    "providers": [
+      "openalex",
+      "crossref"
+    ],
+    "max_names": 3,
+    "max_orcids": 3,
+    "max_dois": 3,
+    "max_requests": 24,
+    "results_per_query": 10,
+    "request_timeout": 8.0,
+    "batch_timeout": 60.0,
+    "openalex_key_configured": false,
+    "crossref_contact_configured": false,
+    "identity_policy": "candidate_authorship_not_target_ownership"
+  },
+  "summary": {
+    "engine_version": 3,
+    "config_id": "a5cc4d53d8d504c6479e3ec2a996d0d0d5a82dfceaf7b53053c2edd164beaa0e",
+    "requests": 2,
+    "counts": {
+      "ok": 2
+    },
+    "queries": 1,
+    "disabled_providers": []
+  },
+  "diagnostics": [
+    {
+      "provider": "crossref",
+      "endpoint": "works",
+      "status": "ok",
+      "received": 1,
+      "http_status": 200
+    },
+    {
+      "provider": "openalex",
+      "endpoint": "works",
+      "status": "ok",
+      "received": 1,
+      "http_status": 200
+    }
+  ],
+  "publications": [
+    {
+      "doi": "https://doi.org/10.7717/peerj.4375",
+      "title": "The state of OA: a large-scale analysis of the prevalence and impact of Open Access articles",
+      "sources": [
+        "crossref",
+        "openalex"
+      ],
+      "citation_counts": {
+        "crossref": 863,
+        "openalex": 1210
+      },
+      "target_association_status": "not_asserted"
+    }
+  ]
+}

@@ -43,6 +43,71 @@ pytestmark = pytest.mark.db
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["doi", "orcid"])
+async def test_academic_mcp_typed_search_dedupes_persists_and_can_refresh(isolated_workspace, monkeypatch, kind):
+    import app.mcp.server as mcp_module
+    from app.mcp.auth import MCPTokenGate
+    from app.tools import http_client
+    service, _ = isolated_workspace
+    doi = "https://doi.org/10.5555/test.123"
+    orcid = "https://orcid.org/0000-0002-1825-0097"
+    monkeypatch.setattr(settings, "crossref_enabled", True)
+    calls = []
+    def respond(request):
+        calls.append(request)
+        if request.url.host == "api.crossref.org":
+            work = {"DOI": "10.5555/TEST.123", "title": ["Observed paper"],
+                "author": [{"given": "Ana", "family": "Perez", "ORCID": orcid}]}
+            return httpx.Response(200, json={"status": "ok", "message": work if kind == "doi" else {"items": [work]}})
+        if request.url.path == "/authors":
+            return httpx.Response(200, json={"results": [{"id": "https://openalex.org/A1", "display_name": "Ana Perez", "orcid": orcid}]})
+        return httpx.Response(200, json={"results": [{"id": "https://openalex.org/W1", "doi": doi,
+            "title": "Observed paper", "authorships": [{"author": {"id": "https://openalex.org/A1", "display_name": "Ana Perez", "orcid": orcid}}]}]})
+    monkeypatch.setattr(http_client, "build_client", lambda **kwargs: httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+    monkeypatch.setattr(mcp_module, "workspace", service)
+    monkeypatch.setattr(mcp_module.mcp, "_session_manager", None)
+    app = MCPTokenGate(mcp_module.mcp.streamable_http_app())
+    async with mcp_module.mcp.session_manager.run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8000",
+            headers={"Authorization": "Bearer integration-token", "Accept": "application/json, text/event-stream"}) as client:
+            counter = 0
+            async def call(name, arguments):
+                nonlocal counter
+                counter += 1
+                response = await client.post("/mcp", json={"jsonrpc": "2.0", "id": counter, "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments}})
+                assert response.status_code == 200
+                result = response.json()["result"]
+                assert not result.get("isError"), result
+                return result["structuredContent"]
+            created = await call("create_investigation", {"target": {"username": "seed"}})
+            inv_id = uuid.UUID(created["id"])
+            opened = await call("open_session", {"investigation_id": str(inv_id), "client": "academic-audit"})
+            inputs = {"candidate_urls": [doi]} if kind == "doi" else {"identifiers": [{"id_type": "orcid", "value": orcid.rsplit("/", 1)[-1]}]}
+            args = {"investigation_id": str(inv_id), "session_id": opened["id"], "inputs": inputs, "rationale": "Inspect explicit scholarly identifier"}
+            started = await call("academic_finder", args)
+            await service.tasks[uuid.UUID(started["id"])]
+            execution = await call("get_execution", {"investigation_id": str(inv_id), "execution_id": started["id"]})
+            assert execution["status"] == "completed"
+            assert execution["input_summary"]["academic"]["requests"] == (2 if kind == "doi" else 3)
+            service.contexts.clear()
+            context = await call("get_investigation_context", {"investigation_id": str(inv_id)})
+            assert len(context["academic"]["queries"]) == 1
+            assert all(item["status"] == "ok" for item in context["academic"]["diagnostics"])
+            before = len(calls)
+            reused = await call("academic_finder", args)
+            assert reused["reused"] and reused["id"] == started["id"] and len(calls) == before
+            repeated = await call("academic_finder", {**args, "force": True})
+            await service.tasks[uuid.UUID(repeated["id"])]
+            assert len(calls) == before * 2
+            detail = await service.detail(inv_id)
+            papers = [entity for entity in detail["entities"] if entity["platform"] == "research_paper"]
+            assert len(papers) == 1 and papers[0]["value"] == doi
+            assert set(papers[0]["metadata_info"]["academic_sources"]) == {"crossref", "openalex"}
+            assert papers[0]["metadata_info"]["ownership_status"] == "unverified"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("tool_name", ["google_account_osint", "email_checker"])
 async def test_public_profile_evidence_survives_workspace_reload_and_reuses(isolated_workspace, monkeypatch, tool_name):
     from app.tools import http_client

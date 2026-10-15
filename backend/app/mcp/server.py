@@ -65,6 +65,11 @@ not site: operators. Keep quotes for independent literal AND anchors; split alte
 into separate queries. Respect search_queries_remaining; don't use force to sidestep
 budgets or treat provider failures as proof of absence. Queries consume existing credits.
 Search covers profiles and documentary mentions: inspect name_search_variants in context.
+academic_finder accepts full_name/university, typed ORCID identifiers or explicit DOI
+candidate_urls. It checks Crossref/OpenAlex author evidence and merges the same DOI.
+Inspect academic diagnostics/queries for provider failures and remaining coverage.
+Name matches are candidates. Coauthors are not extra identities of the target, and
+Crossref/OpenAlex can share upstream metadata: agreement is not independent identity proof.
 Review search_coverage.scopes and next_queries for forum/comment, publication, academic
 and open PDF gaps. Coverage means planned/attempted queries, never exhaustive platform coverage.
 public_page_reader supports public HTML, text and native-text PDFs; image-only PDFs
@@ -225,6 +230,7 @@ def _register_osint_tool(tool):
         (". inputs.queries admite hasta cinco consultas propias con query, rationale e include_domains" if tool.name == "search_dorker" else "") +
         (". inputs.scan_mode: fast (prefijo), deep (límite configurado) o all (catálogo completo, incluidas variantes); amplía sin repetir cobertura. inputs.maigret_options permite filtros, extracción y permutaciones" if tool.name == "username_finder" else "") +
         (". inputs.identifiers: lista de {value, id_type}; inputs.candidate_urls: páginas a extraer; inputs.maigret_options: filtros y extracción" if tool.name == "maigret_enricher" else "") +
+        (". inputs.identifiers admite ORCID; inputs.candidate_urls admite DOI; inputs.university contextualiza afiliaciones. Consulta academic en el contexto para cobertura y fallos" if tool.name == "academic_finder" else "") +
         ". force permite repetir una consulta ya completada."), annotations=OSINT)
 
 

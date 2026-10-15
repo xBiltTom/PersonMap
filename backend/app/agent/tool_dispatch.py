@@ -80,11 +80,15 @@ def build_tool_schemas() -> List[Dict[str, Any]]:
             },
         })
     for schema in schemas:
-        if schema["function"]["name"] in {"maigret_enricher", "ghunt"}:
+        if schema["function"]["name"] in {"maigret_enricher", "ghunt", "academic_finder"}:
             parameters = schema["function"]["parameters"]
             parameters["required"] = []
-            fields = ("email", "candidate_urls", "identifiers") if schema["function"]["name"] == "ghunt" else ("candidate_urls", "identifiers")
+            fields = (("email", "candidate_urls", "identifiers") if schema["function"]["name"] == "ghunt"
+                else ("full_name", "candidate_urls", "identifiers") if schema["function"]["name"] == "academic_finder"
+                else ("candidate_urls", "identifiers"))
             parameters["anyOf"] = [{"required": [field]} for field in fields]
+            if schema["function"]["name"] == "academic_finder":
+                parameters["properties"]["university"] = {"type": "string", "description": "Afiliación para contrastar en el autor correspondiente; no confirma identidad"}
         if schema["function"]["name"] == "search_dorker":
             from app.schemas.workspace import SearchQuery
             parameters = schema["function"]["parameters"]
@@ -140,6 +144,7 @@ def build_call_context(
     # A query applies to this call only; budgets and caches remain investigation-wide.
     extra.pop("search_queries", None)
     extra.pop("ghunt_selection", None)
+    extra.pop("academic_selection", None)
     extra.pop("maigret_options", None)
     extra.pop("username_scan_mode", None)
     if (target.extra_data or {}).get("maigret_plan"):
@@ -221,6 +226,9 @@ async def dispatch_tool_call(
     if tool.name == "ghunt":
         from app.tools.ghunt_runtime import select_call_inputs
         select_call_inputs(ctx, args)
+    if tool.name == "academic_finder":
+        from app.tools.academic_finder import select_call_inputs
+        select_call_inputs(ctx, args)
     if tool.name == "domain_finder":
         ctx.extra["personal_domain_urls"] = list(dict.fromkeys([
             *ctx.extra.get("personal_domain_urls", []),
@@ -237,6 +245,7 @@ async def dispatch_tool_call(
             base_context.extra.update(ctx.extra)
             base_context.extra.pop("search_queries", None)
             base_context.extra.pop("ghunt_selection", None)
+            base_context.extra.pop("academic_selection", None)
 
     for f in findings:
         f.metadata_info["source_tool"] = (

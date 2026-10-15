@@ -68,7 +68,7 @@ class RuleEngine:
                 parts.append(f"{req}:{val}")
         if tool.name == "dni_lookup":
             parts.append("public:" + ",".join(sorted(context.extra.get("dni_source_urls", []))))
-        if tool.name in {"maigret_enricher", "ghunt"}:
+        if tool.name in {"maigret_enricher", "ghunt", "academic_finder"}:
             parts.append("ids:" + json.dumps(context.extra.get("maigret_identifiers", []), sort_keys=True))
         if tool.name == "ghunt":
             from app.tools.ghunt_runtime import config_id
@@ -79,6 +79,10 @@ class RuleEngine:
         if tool.name in {"google_account_osint", "email_checker"}:
             parts.append("engine_version:2")
         if tool.name == "google_account_osint":
+            parts.append(f"university:{context.university or ''}")
+        if tool.name == "academic_finder":
+            from app.tools.academic_finder import config_id
+            parts.append("academic_config:" + config_id())
             parts.append(f"university:{context.university or ''}")
         if tool.name in {"username_finder", "maigret_enricher"}:
             parts.append("maigret_options:" + json.dumps(context.extra.get("maigret_options", {}), sort_keys=True))
@@ -231,6 +235,9 @@ class RuleEngine:
                     if runnable[index].name == "google_account_osint":
                         from app.tools.google_account_osint import execution_summary
                         execution.input_summary = {**(execution.input_summary or {}), "google_public": execution_summary(context)}
+                    if runnable[index].name == "academic_finder":
+                        from app.tools.academic_finder import execution_summary
+                        execution.input_summary = {**(execution.input_summary or {}), "academic": execution_summary(context)}
                     await trace_recorder.complete_tool(
                         execution,
                         findings_count=len(outcome.findings),
@@ -385,6 +392,9 @@ class RuleEngine:
             if tool.name == "google_account_osint":
                 from app.tools.google_account_osint import execution_summary
                 note = " Google público: " + json.dumps(execution_summary(context)["statuses"], ensure_ascii=False) + "."
+            if tool.name == "academic_finder":
+                from app.tools.academic_finder import execution_summary
+                note = " Consultas académicas: " + json.dumps(execution_summary(context)["counts"], ensure_ascii=False) + "."
             await event_bus.publish(investigation_id, {
                 "type": "tool_complete",
                 "tool": tool.name,

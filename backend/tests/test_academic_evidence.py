@@ -14,6 +14,7 @@ from app.tools.base import TargetContext
 @pytest.mark.asyncio
 @respx.mock
 async def test_works_use_candidate_ids_and_verify_returned_authorships(monkeypatch):
+    respx.get("https://api.crossref.org/works").respond(200, json={"status": "ok", "message": {"items": []}})
     monkeypatch.setattr(settings, "openalex_api_key", SecretStr("fixture-key"))
     authors = respx.get("https://api.openalex.org/authors").respond(200, json={"results": [
         {"id": "https://openalex.org/A1", "display_name": "Ana Perez", "orcid": "https://orcid.org/0000-0001-0002-0003"},
@@ -43,11 +44,14 @@ async def test_works_use_candidate_ids_and_verify_returned_authorships(monkeypat
 @pytest.mark.asyncio
 @respx.mock
 async def test_blocked_author_source_never_looks_like_empty_success(monkeypatch):
+    respx.get("https://api.crossref.org/works").respond(200, json={"status": "ok", "message": {"items": []}})
     monkeypatch.setattr(settings, "openalex_api_key", None)
     respx.get("https://api.openalex.org/authors").respond(429)
     works = respx.get("https://api.openalex.org/works").respond(200, json={"results": []})
     context = TargetContext(discovered_names=["Ana Perez"])
     assert await AcademicFinderTool().execute(context) == []
-    assert context.extra["academic_diagnostics"] == [{"endpoint": "authors", "status": "http_429"}]
+    assert context.extra["academic_diagnostics"] == [
+        {"provider": "crossref", "endpoint": "works", "status": "no_results", "received": 0, "http_status": 200},
+        {"provider": "openalex", "endpoint": "authors", "status": "rate_limited", "http_status": 429}]
     assert not works.called
     assert not AcademicFinderTool().can_run(TargetContext(email="seed@example.test"))

@@ -1,0 +1,49 @@
+{
+  "audited_at": "2026-10-15T13:15:34.670739+00:00",
+  "input_kind": "orcid_observed_in_publication_metadata",
+  "reference_doi": "https://doi.org/10.7717/peerj.4375",
+  "public_orcid": "https://orcid.org/0000-0003-1613-5981",
+  "target_association_tested": false,
+  "summary": {
+    "engine_version": 3,
+    "config_id": "a5cc4d53d8d504c6479e3ec2a996d0d0d5a82dfceaf7b53053c2edd164beaa0e",
+    "requests": 3,
+    "counts": {
+      "ok": 3
+    },
+    "queries": 1,
+    "disabled_providers": []
+  },
+  "diagnostics": [
+    {
+      "provider": "crossref",
+      "endpoint": "works",
+      "status": "ok",
+      "received": 1,
+      "http_status": 200
+    },
+    {
+      "provider": "openalex",
+      "endpoint": "authors",
+      "status": "ok",
+      "received": 1,
+      "http_status": 200
+    },
+    {
+      "provider": "openalex",
+      "endpoint": "works",
+      "status": "ok",
+      "received": 10,
+      "http_status": 200
+    }
+  ],
+  "author_profiles": 1,
+  "publications": 11,
+  "publication_sources": [
+    "crossref",
+    "openalex"
+  ],
+  "ownership_statuses": [
+    "unverified"
+  ]
+}

@@ -37,6 +37,11 @@ MAX_EDGES_PER_ENTITY = 6
 
 
 def _dedupe_value(entity_type, value, metadata):
+    if entity_type == "academic":
+        from app.tools.academic_metadata import doi_url
+        doi = doi_url(value)
+        if doi:
+            return doi
     profile = parse_social_profile(value) if entity_type in {"social_account", "sensitive_account"} else None
     value = (profile.url if profile else value).strip().rstrip("/")
     query = metadata.get("queried_identifier")
@@ -125,12 +130,18 @@ def dedupe_findings(findings: List[ToolFinding]) -> List[ToolFinding]:
                     continue
                 if isinstance(value, list) and isinstance(merged.get(field), list):
                     merged[field] = merged[field] + [item for item in value if item not in merged[field]]
+                elif field == "citation_counts" and isinstance(value, dict) and isinstance(merged.get(field), dict):
+                    # Provider counts describe different indexes; never add them.
+                    merged[field] = {**merged[field], **value}
                 else:
                     merged[field] = value
         if any(item.metadata_info.get("verification_status") == "verified" for item in observations[key]):
             merged["verification_status"] = "verified"
         merged["source_tool"] = winner.metadata_info.get("source_tool")
         merged["source_tools"] = provenance[key]
+        if winner.entity_type == "academic" and merged.get("academic_records"):
+            from app.tools.academic_metadata import preserve_author_association
+            preserve_author_association(merged)
         winner.evidence_urls = list(dict.fromkeys(url for item in observations[key] for url in item.evidence_urls))
         if layers[key]:
             merged["engine_layers"] = layers[key]

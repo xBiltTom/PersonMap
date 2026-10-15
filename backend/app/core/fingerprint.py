@@ -25,6 +25,7 @@ from app.tools.registry import tool_registry
 from app.tools.maigret_catalog import execution_config
 from app.tools.ghunt_runtime import capabilities as ghunt_capabilities
 from app.tools.email_catalog import capabilities as email_capabilities
+from app.tools.academic_finder import capabilities as academic_capabilities
 
 
 def run_fingerprint() -> Dict[str, Any]:
@@ -49,6 +50,7 @@ def run_fingerprint() -> Dict[str, Any]:
 
     return {
         "email_enumerator": email_capabilities(),
+        "academic": academic_capabilities(),
         "email_checker_version": 2,
         "google_public_version": 2,
         "ghunt": ghunt_capabilities(),
@@ -86,7 +88,7 @@ def run_fingerprint() -> Dict[str, Any]:
         "social_engine_version": 4,
         "dni_engine_version": 4,
         "domain_engine_version": 2,
-        "academic_engine_version": 2,
+        "academic_engine_version": 3,
         "github_engine_version": 2,
         "github_token_configured": bool(settings.github_api_token),
         "openalex_key_configured": bool(settings.openalex_api_key),

@@ -134,6 +134,9 @@ def reconstruct_trace_logs(
             google = (execution.input_summary or {}).get("google_public", {})
             if execution.tool_name == "google_account_osint" and google.get("statuses"):
                 message += " · Google público: " + ", ".join(f"{status}: {count}" for status, count in google["statuses"].items())
+            academic = (execution.input_summary or {}).get("academic", {})
+            if execution.tool_name == "academic_finder" and academic.get("counts"):
+                message += " · Académico: " + ", ".join(f"{status}: {count}" for status, count in academic["counts"].items())
             entries.append((_timestamp(execution.completed_at), 2, {
                 "type": "tool_error" if is_error else "tool_complete",
                 "tool": execution.tool_name,
