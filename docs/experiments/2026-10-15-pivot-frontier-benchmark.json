@@ -1,0 +1,80 @@
+{
+  "baseline_ref": "3f054bf",
+  "baseline_rule_engine_sha256": "28c8bdfef5bc9cf208d0ec91c81a641f8ed7f19293f66b21af6c5c6dee6d01d8",
+  "after_ref": "418a834c071e9ed84777db55e966b19349c25561",
+  "frontier_implementation_sha256": "cdd1806d4a80731729147c8b11e70ffeced288760a078302f1e997b61c54ff04",
+  "fixture": "tests/fixtures/pivot_frontier_scenario.json",
+  "network": "httpx.MockTransport only",
+  "semantics": "ordering under identical two-request lookup budgets; fixture labels are evidence roles, not ownership",
+  "notes": [
+    "Median of three warm alternating runs; local fixture timings are not production latency.",
+    "strong/weak/contextual findings count follow-up lookup results, excluding discovery observations shared by both conditions.",
+    "pivots_deferred counts retained unqueried inputs, including URL pivots without a fixture consumer.",
+    "The baseline did not instrument duplicate-execution avoidance; null means not measured."
+  ],
+  "before": {
+    "tool_executions": 2,
+    "requests": 2,
+    "runtime_seconds": 0.003245,
+    "unique_pivots_discovered": 5,
+    "total_pivots_including_seed": 6,
+    "pivots_explored": 3,
+    "pivots_deferred": 3,
+    "strong_findings": 0,
+    "weak_findings": 1,
+    "contextual_findings": 1,
+    "duplicate_executions_avoided": null,
+    "lookup_order": [
+      "unrelated@example.org",
+      "professor@university.example"
+    ],
+    "frontier_summary": null,
+    "retained_emails": [
+      "unrelated@example.org",
+      "professor@university.example",
+      "cmendoza@untumbes.edu.pe"
+    ],
+    "runtime_trials_seconds": [
+      0.004752,
+      0.003245,
+      0.002321
+    ]
+  },
+  "after": {
+    "tool_executions": 2,
+    "requests": 2,
+    "runtime_seconds": 0.008646,
+    "unique_pivots_discovered": 5,
+    "total_pivots_including_seed": 6,
+    "pivots_explored": 3,
+    "pivots_deferred": 3,
+    "strong_findings": 1,
+    "weak_findings": 0,
+    "contextual_findings": 1,
+    "duplicate_executions_avoided": 2,
+    "lookup_order": [
+      "cmendoza@untumbes.edu.pe",
+      "professor@university.example"
+    ],
+    "frontier_summary": {
+      "total": 6,
+      "pending": 0,
+      "active": 0,
+      "explored": 3,
+      "deferred": 3,
+      "high": 3,
+      "medium": 1,
+      "low": 2
+    },
+    "retained_emails": [
+      "unrelated@example.org",
+      "professor@university.example",
+      "cmendoza@untumbes.edu.pe"
+    ],
+    "runtime_trials_seconds": [
+      0.012692,
+      0.008646,
+      0.007541
+    ]
+  }
+}
