@@ -321,6 +321,13 @@ function buildObservedFields(node: GraphNode, metadata: Metadata, isRoot: boolea
   };
 
   if (isRoot) add("full_name", "Nombre", metadata.full_name);
+  const correlation = node.data.correlation;
+  if (!isRoot && correlation) {
+    add("correlation_scope", "Correlación", "Candidato; pertenencia sin confirmar");
+    add("correlation_reasons", "Señales respecto al objetivo", correlation.reasons.length ? correlation.reasons.join(" · ") : "Sin evidencia directa suficiente; el alias solo no acerca al objetivo");
+    if (correlation.placement_parent_id) add("correlation_neighbor", "Ubicación", "Agrupado junto a otro hallazgo por evidencia entre vecinos; no hereda su asociación con el objetivo");
+    add("correlation_semantics", "Cercanía en el mapa", "Prioridad visual de las evidencias; no es un porcentaje de identidad");
+  }
   const reports = externalReports(metadata);
   if (reports.length) add("external_origin", "Procedencia", "Evidencia declarada por agente; fuente sin comprobar por el servidor");
   if (Array.isArray(metadata.external_reports) && metadata.external_reports.length > 5) {
@@ -566,5 +573,18 @@ export function buildRelationshipEvidenceFields(evidence: unknown): InspectorFie
   add("linked_profile", "Perfil enlazado", evidence.linked_profile, "url");
   add("method", "Método", evidence.method);
   add("source_tool", "Herramienta", evidence.source_tool);
+  add("source_url", "Fuente", evidence.source_url, "url");
+  const labels: Record<string, string> = {
+    emails: "Correos observados", phones: "Teléfonos observados", usernames: "Alias observados",
+    names: "Nombres observados", affiliations: "Afiliaciones observadas", orcid: "ORCID", gaia_id: "GAIA",
+  };
+  for (const [key, label] of Object.entries(labels)) {
+    const values = stringList(evidence[key]);
+    if (values.length) add(key, label, values.join(" · "));
+  }
+  for (const [index, signal] of (Array.isArray(evidence.signals) ? evidence.signals : []).entries()) {
+    if (isRecord(signal)) add(`signal_${index}`, "Dato coincidente", signal.value);
+  }
+  if (evidence.semantics) add("correlation_scope", "Alcance", "Evidencia para explorar candidatos; no confirma pertenencia ni representa un porcentaje de identidad");
   return fields;
 }

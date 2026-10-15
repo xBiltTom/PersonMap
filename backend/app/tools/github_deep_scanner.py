@@ -140,6 +140,7 @@ class GitHubDeepScannerTool(BaseTool):
                 "public_repos": public_repos,
                 "avatar_url": avatar_url,
                 "emails": emails_list,
+                "profile_email": user_data.get("email"),
                 "extracted_emails": emails_list,
                 # Un commit concreto por correo: es la prueba que se puede abrir
                 # delante de la persona si dice "esa cuenta no es mía".

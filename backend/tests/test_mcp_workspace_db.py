@@ -43,6 +43,45 @@ pytestmark = pytest.mark.db
 
 
 @pytest.mark.asyncio
+async def test_current_correlation_projects_existing_dossier_in_graph_and_mcp_without_attribution(isolated_workspace):
+    from app.api.v1.graph import get_investigation_graph
+    from app.api.v1.identity import get_investigation_correlation_groups
+    service, _ = isolated_workspace
+    async with service.session_factory() as db:
+        inv = await service.create(InvestigationCreate(target=TargetCreate(email="audit@example.org", username="audit"), execution_mode="external"), db)
+        a = Entity(investigation_id=inv.id, entity_type="social_account", platform="github", value="https://github.com/audit",
+            display_name="Observed Person", source_tool="email_checker", metadata_info={"verification_status":"verified",
+                "matched_email":"audit@example.org", "association_evidence":"exact_public_profile_email", "name":"Observed Person"})
+        b = Entity(investigation_id=inv.id, entity_type="social_account", platform="example", value="https://example.org/person",
+            display_name="Observed Person", source_tool="social_verifier", metadata_info={"verification_status":"verified", "name":"Observed Person"})
+        c = Entity(investigation_id=inv.id, entity_type="social_account", value="https://example.org/audit@example.org-extra",
+            display_name="Other", source_tool="username_finder", metadata_info={"avatar_url":"https://example.org/photo.png"})
+        db.add_all([a,b,c])
+        await db.flush()
+        legacy = Relationship(investigation_id=inv.id, source_entity_id=a.id, target_entity_id=c.id,
+            relation_type="explicit_profile_link", supports_group=True, evidence={})
+        db.add(legacy)
+        await db.commit()
+        graph = await get_investigation_graph(inv.id, db)
+        by_id = {node.id:node.data for node in graph.nodes}
+        assert by_id["ent-"+str(a.id)].correlation["level"] == "strong"
+        assert by_id["ent-"+str(b.id)].correlation["weight"] == 0
+        assert by_id["ent-"+str(b.id)].correlation["placement_parent_id"] == str(a.id)
+        assert by_id["ent-"+str(c.id)].correlation["weight"] == 0
+        assert not any(edge.relation_type == "explicit_profile_link" for edge in graph.edges)
+        groups = await get_investigation_correlation_groups(inv.id, db)
+        assert len(groups) == 3 and all(group.evidence["semantics"] == "shared_observations_not_same_person" for group in groups)
+        # Read-time projection preserves the original measured dossier.
+        assert (await db.get(Relationship, legacy.id)).relation_type == "explicit_profile_link"
+    context = await service.context(inv.id)
+    candidates = {item["entity_id"]:item for item in context["correlation"]["candidates"]}
+    assert context["correlation"]["ownership_asserted"] is False
+    assert candidates[str(a.id)]["level"] == "strong" and candidates[str(b.id)]["weight"] == 0
+    finding = (await service.findings(inv.id, entity_id=b.id))["findings"][0]
+    assert finding["correlation"]["ownership_status"] == "unverified"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["doi", "orcid"])
 async def test_academic_mcp_typed_search_dedupes_persists_and_can_refresh(isolated_workspace, monkeypatch, kind):
     import app.mcp.server as mcp_module

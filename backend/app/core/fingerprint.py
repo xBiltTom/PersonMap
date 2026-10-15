@@ -51,6 +51,7 @@ def run_fingerprint() -> Dict[str, Any]:
     return {
         "email_enumerator": email_capabilities(),
         "academic": academic_capabilities(),
+        "correlation_policy_version": 2,
         "email_checker_version": 2,
         "google_public_version": 2,
         "ghunt": ghunt_capabilities(),

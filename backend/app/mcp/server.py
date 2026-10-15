@@ -70,6 +70,11 @@ candidate_urls. It checks Crossref/OpenAlex author evidence and merges the same 
 Inspect academic diagnostics/queries for provider failures and remaining coverage.
 Name matches are candidates. Coauthors are not extra identities of the target, and
 Crossref/OpenAlex can share upstream metadata: agreement is not independent identity proof.
+The correlation projection in context/findings ranks visual evidence, never ownership
+probabilities. Public shared email/phone and explicit identifiers outweigh usernames.
+Username alone does not attract a candidate to the target. Neighbor relationships
+do not transfer target evidence; same-name neighborhoods are contextual. Inspect
+signal roles: profile declarations, provider lookups, commits and search mentions differ.
 Review search_coverage.scopes and next_queries for forum/comment, publication, academic
 and open PDF gaps. Coverage means planned/attempted queries, never exhaustive platform coverage.
 public_page_reader supports public HTML, text and native-text PDFs; image-only PDFs

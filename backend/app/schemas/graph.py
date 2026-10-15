@@ -20,6 +20,7 @@ class GraphNodeData(BaseModel):
     discovered_at: Optional[str] = None
     is_root: bool = False
     group_id: Optional[str] = None
+    correlation: Dict[str, Any] = {}
 
 
 class GraphNode(BaseModel):

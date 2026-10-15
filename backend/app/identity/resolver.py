@@ -1,6 +1,7 @@
 """Proyección de observaciones en grupos conectados por evidencia explícita."""
 
 from typing import Any, Dict, Iterable, List
+from uuid import uuid5, NAMESPACE_URL
 
 from app.models.correlation_group import CorrelationGroup
 from app.models.entity import Entity
@@ -8,7 +9,7 @@ from app.models.relationship import Relationship
 
 # Brechas e infostealers son registros ligados al identificador consultado. No
 # representan cuentas ni se mezclan con los grupos de observaciones.
-IDENTIFIER_BOUND_TYPES = {"breach", "infostealer"}
+IDENTIFIER_BOUND_TYPES = {"breach", "infostealer", "email_registration"}
 
 
 class UnionFind:
@@ -87,11 +88,12 @@ class CorrelationResolver:
             )
             materialized.append(
                 CorrelationGroup(
+                    id=uuid5(NAMESPACE_URL, str(investigation_id) + ':group:' + ','.join(sorted(member_ids))),
                     investigation_id=investigation_id,
                     label=f"Grupo {number:02d}",
                     entity_ids=sorted(member_ids),
                     summary=summary,
-                    evidence={"edges": group_edges},
+                    evidence={"edges": group_edges, "semantics": "shared_observations_not_same_person", "policy_version": 2},
                 )
             )
 
@@ -106,6 +108,7 @@ class CorrelationResolver:
             return []
         return [
             CorrelationGroup(
+                id=uuid5(NAMESPACE_URL, str(investigation_id) + ':identifier_records'),
                 investigation_id=investigation_id,
                 label="Registros del identificador consultado",
                 entity_ids=[str(entity.id) for entity in bound],

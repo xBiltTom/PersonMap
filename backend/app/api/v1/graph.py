@@ -1,4 +1,5 @@
 from typing import Dict
+import json
 from uuid import UUID
 from xml.sax.saxutils import escape
 
@@ -9,12 +10,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.identity.evidence import STRONG_EMAIL_ROLES, STRONG_PHONE_ROLES
 from app.models.investigation import Investigation
 from app.schemas.graph import GraphEdge, GraphNode, GraphNodeData, GraphNodePosition, GraphResponse
 
 router = APIRouter()
 
 EDGE_STYLES = {
+    "target_email_match": {"stroke": "#38bdf8", "strokeWidth": 2},
+    "target_phone_match": {"stroke": "#f59e0b", "strokeWidth": 2},
+    "target_identifier_match": {"stroke": "#a855f7", "strokeWidth": 2},
+    "target_context_match": {"stroke": "#64748b", "strokeDasharray": "3,5", "strokeWidth": 1},
+    "registration_query": {"stroke": "#64748b", "strokeDasharray": "3,5", "strokeWidth": 1},
+    "shares_email_and_username": {"stroke": "#38bdf8", "strokeWidth": 2.5},
+    "email_lookup_association": {"stroke": "#38bdf8", "strokeDasharray": "3,5", "strokeWidth": 2},
+    "shares_declared_phone": {"stroke": "#f59e0b", "strokeWidth": 2},
+    "shared_orcid": {"stroke": "#a855f7", "strokeWidth": 2},
+    "shared_gaia_id": {"stroke": "#a855f7", "strokeWidth": 2},
+    "authored_work": {"stroke": "#a855f7", "strokeWidth": 1.5},
+    "name_and_affiliation": {"stroke": "#64748b", "strokeDasharray": "3,5", "strokeWidth": 1},
     "discovered_from": {"stroke": "#38bdf8", "strokeDasharray": "2,7", "strokeWidth": 1},
     "publishes_phone": {"stroke": "#f59e0b", "strokeWidth": 2},
     "mentions_phone": {"stroke": "#f59e0b", "strokeDasharray": "3,5", "strokeWidth": 1.5},
@@ -56,10 +70,17 @@ async def get_investigation_graph(id: UUID, db: AsyncSession = Depends(get_db)):
     if not investigation:
         raise HTTPException(status_code=404, detail="Investigación no encontrada")
 
+    return await build_evidence_graph(investigation)
+
+
+async def build_evidence_graph(investigation):
+    from app.identity.projection import project_evidence
+    relations, groups, affinities = await project_evidence(investigation.id, investigation.entities,
+        investigation.target, investigation.relationships)
     target = investigation.target
     root_id = f"target-{target.id}"
     root_label = target.full_name or target.username or target.email or target.phone or target.dni or "Identidad Objetivo"
-    membership = _group_membership(investigation)
+    membership = {str(entity_id): str(group.id) for group in groups for entity_id in group.entity_ids}
     nodes = [
         GraphNode(
             id=root_id,
@@ -79,6 +100,7 @@ async def get_investigation_graph(id: UUID, db: AsyncSession = Depends(get_db)):
                     "university": target.university,
                     "dni": target.dni,
                     "description": target.description,
+                    "correlation_policy_version": 2,
                 },
             ),
         )
@@ -101,33 +123,27 @@ async def get_investigation_graph(id: UUID, db: AsyncSession = Depends(get_db)):
                     source_tool=entity.source_tool,
                     discovered_at=entity.discovered_at.isoformat() if entity.discovered_at else None,
                     group_id=membership.get(str(entity.id)),
+                    correlation=affinities[str(entity.id)],
                 ),
             )
         )
-        rel_type = "discovered_from"
-        rel_label = None
-        p_lower = (entity.platform or "").lower()
-        v_lower = (entity.value or "").lower()
-        t_lower = (entity.entity_type or "").lower()
-
-        if t_lower == "email" or (target.email and target.email.lower() in v_lower):
-            rel_type = "observed_email"
-            rel_label = "correo observado"
-        elif "gravatar" in p_lower or "avatar" in t_lower or (entity.metadata_info and entity.metadata_info.get("avatar_url")):
-            rel_type = "similar_avatar"
-            rel_label = "avatar relacionado"
-        elif target.full_name and (target.full_name.lower() in (entity.display_name or "").lower()):
-            rel_type = "same_name"
-            rel_label = "mismo nombre"
-        elif t_lower in ("document", "academic") or "pdf" in v_lower:
-            rel_type = "mentions"
-            rel_label = "menciona"
-        elif t_lower == "domain" or "http" in v_lower:
-            rel_type = "mentions"
-            rel_label = "menciona"
-        elif target.username and (target.username.lower() in v_lower or (entity.metadata_info and target.username.lower() in str(entity.metadata_info.get("username", "")).lower())):
-            rel_type = "explicit_profile_link"
-            rel_label = "enlaza a"
+        affinity = affinities[str(entity.id)]
+        strong_email = any(signal['kind'] == 'email' and signal['role'] in STRONG_EMAIL_ROLES
+            for signal in affinity['signals'])
+        strong_phone = any(signal['kind'] == 'phone' and signal['role'] in STRONG_PHONE_ROLES
+            for signal in affinity['signals'])
+        rel_type, rel_label = 'discovered_from', 'hallazgo derivado'
+        if affinity['level'] == 'strong':
+            if strong_email:
+                rel_type, rel_label = 'target_email_match', 'correo coincidente observado'
+            elif strong_phone:
+                rel_type, rel_label = 'target_phone_match', 'teléfono coincidente observado'
+            else:
+                rel_type, rel_label = 'target_identifier_match', 'identificador coincidente observado'
+        elif affinity['level'] == 'registration':
+            rel_type, rel_label = 'registration_query', 'señal de registro del correo'
+        elif affinity['weight'] > 0:
+            rel_type, rel_label = 'target_context_match', 'coincidencia contextual'
 
         edges.append(
             GraphEdge(
@@ -137,11 +153,13 @@ async def get_investigation_graph(id: UUID, db: AsyncSession = Depends(get_db)):
                 relation_type=rel_type,
                 label=rel_label,
                 style=EDGE_STYLES.get(rel_type, EDGE_STYLES["discovered_from"]),
-                evidence={"source_tool": entity.source_tool},
+                evidence={"source_tool": entity.source_tool, "signals": affinity['signals'],
+                    "visual_weight": affinity['weight'], "semantics": affinity['semantics'],
+                    "ownership_status": "unverified"},
             )
         )
 
-    for relationship in investigation.relationships:
+    for relationship in relations:
         relation_type = relationship.relation_type
         edges.append(
             GraphEdge(
@@ -156,7 +174,7 @@ async def get_investigation_graph(id: UUID, db: AsyncSession = Depends(get_db)):
             )
         )
 
-    return GraphResponse(investigation_id=str(id), nodes=nodes, edges=edges)
+    return GraphResponse(investigation_id=str(investigation.id), nodes=nodes, edges=edges)
 
 
 @router.get("/investigations/{id}/graphml")
@@ -169,6 +187,8 @@ async def export_graphml(id: UUID, db: AsyncSession = Depends(get_db)):
         '  <key id="label" for="node" attr.name="label" attr.type="string"/>',
         '  <key id="type" for="node" attr.name="type" attr.type="string"/>',
         '  <key id="relation" for="edge" attr.name="relation" attr.type="string"/>',
+        '  <key id="correlation" for="node" attr.name="correlation" attr.type="string"/>',
+        '  <key id="evidence" for="edge" attr.name="evidence" attr.type="string"/>',
         '  <graph id="G" edgedefault="undirected">',
     ]
     for node in graph.nodes:
@@ -177,6 +197,7 @@ async def export_graphml(id: UUID, db: AsyncSession = Depends(get_db)):
                 f'    <node id="{escape(node.id)}">',
                 f'      <data key="label">{escape(node.data.label)}</data>',
                 f'      <data key="type">{escape(node.data.entity_type)}</data>',
+                f'      <data key="correlation">{escape(json.dumps(node.data.correlation, ensure_ascii=False))}</data>',
                 "    </node>",
             ]
         )
@@ -185,6 +206,7 @@ async def export_graphml(id: UUID, db: AsyncSession = Depends(get_db)):
             [
                 f'    <edge source="{escape(edge.source)}" target="{escape(edge.target)}">',
                 f'      <data key="relation">{escape(edge.relation_type)}</data>',
+                f'      <data key="evidence">{escape(json.dumps(edge.evidence, ensure_ascii=False))}</data>',
                 "    </edge>",
             ]
         )

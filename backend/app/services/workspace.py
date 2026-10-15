@@ -305,6 +305,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
             inv = await self._investigation(db, investigation_id)
             entities = list((await db.scalars(select(Entity).where(Entity.investigation_id == investigation_id))).all())
             context = self._context(inv, entities)
+            from app.identity.projection import project_evidence, compact_projection
+            persisted = list((await db.scalars(select(Relationship).where(Relationship.investigation_id == investigation_id))).all())
+            correlation_edges, _, affinities = await project_evidence(inv.id, entities, inv.target, persisted)
             executions = list((await db.scalars(select(ToolExecution).where(ToolExecution.investigation_id == investigation_id)
                                                .order_by(ToolExecution.started_at.desc()).limit(50))).all())
             active_tools = list((await db.scalars(select(ToolExecution.tool_name).where(
@@ -314,6 +317,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
             sessions = list((await db.scalars(select(InvestigationSession).where(InvestigationSession.investigation_id == investigation_id)
                                              .order_by(InvestigationSession.started_at.desc()).limit(20))).all())
             return {"investigation": InvestigationRead.model_validate(inv).model_dump(mode="json"),
+                    "correlation": compact_projection(affinities, correlation_edges),
                     "review_baseline": (inv.metrics or {}).get("review_baseline"),
                     "known_identifiers": context.model_dump(exclude={"extra"}),
                     "name_search_variants": name_search_variants(context.full_name or ""),
@@ -728,7 +732,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
 
     async def findings(self, investigation_id: UUID, limit=20, offset=0, entity_id: UUID | None = None, *, include_content=False):
         async with self.session_factory() as db:
-            await self._investigation(db, investigation_id)
+            inv = await self._investigation(db, investigation_id)
             stmt = select(Entity).where(Entity.investigation_id == investigation_id)
             if entity_id:
                 stmt = stmt.where(Entity.id == entity_id)
@@ -737,6 +741,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 raise HTTPException(404, "Hallazgo no encontrado")
             findings = [(EntityRead.model_validate(e).model_dump(mode="json") if include_content else compact_finding(e))
                         for e in rows[:limit]]
+            from app.identity.evidence import target_affinity
+            for finding, entity in zip(findings, rows[:limit]):
+                finding['correlation'] = target_affinity(entity, inv.target)
             return {"findings": findings,
                     "next_offset": offset + limit if len(rows) > limit else None}
 

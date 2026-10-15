@@ -137,12 +137,12 @@ async def test_phone_search_rejects_mismatch_even_when_literal_filter_disabled(m
         assert await SearchDorkerTool()._search_tavily(client, dork, set()) == []
 
 
-def test_phone_relationship_does_not_group_identities():
+def test_phone_relationship_groups_observations_without_asserting_ownership():
     from app.models.entity import Entity
     from app.engine.persistence import detect_relationships
     phone = Entity(entity_type='phone', value='+51987654321', metadata_info={})
     profile = Entity(entity_type='social_account', value='https://example.com/profile', metadata_info={'phones': ['987 654 321']})
-    assert detect_relationships(phone, profile) == [('publishes_phone', False, {'phone': '+51987654321', 'source_url': profile.value})]
+    assert detect_relationships(phone, profile) == [('publishes_phone', True, {'phones': ['+51987654321'], 'visual_weight': 0.78, 'semantics': 'observed_relation_not_ownership', 'policy_version': 2})]
     profile.entity_type = 'search_mention'
     assert detect_relationships(profile, phone)[0][0:2] == ('mentions_phone', False)
 

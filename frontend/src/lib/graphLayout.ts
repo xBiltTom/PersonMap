@@ -12,12 +12,15 @@ export interface LayoutItem {
   platform?: string | null;
   label?: string | null;
   value?: string | null;
+  proximity?: number;
+  parentId?: string;
 }
 
 export interface LayoutLink {
   source: string;
   target: string;
   relationType?: string;
+  weight?: number;
 }
 
 export interface MapLayout {
@@ -31,6 +34,8 @@ interface Particle {
   y: number;
   vx: number;
   vy: number;
+  radius: number;
+  parentId?: string;
 }
 
 const ROOT_SIZE = 140;
@@ -83,22 +88,36 @@ export function layoutDigitalMap(
   }
 
   const ordered = [...items].sort(
-    (a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || a.id.localeCompare(b.id)
+    (a, b) => (b.proximity ?? 0) - (a.proximity ?? 0)
+      || (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || a.id.localeCompare(b.id)
   );
   const particles = new Map<string, Particle>();
   const radialStep = items.length > 80 ? 58 : items.length > 40 ? 66 : 74;
 
   ordered.forEach((item, index) => {
     const angle = index * GOLDEN_ANGLE + hashUnit(item.id) * 0.55;
-    const radius = 205 + Math.sqrt(index) * radialStep;
+    const weight = Math.max(0, Math.min(0.94, item.proximity ?? 0));
+    const radius = 220 + (1 - weight) * 380 + Math.sqrt(index) * radialStep * 0.45;
     particles.set(item.id, {
       id: item.id,
       x: Math.cos(angle) * radius,
       y: Math.sin(angle) * radius * 0.72,
       vx: 0,
       vy: 0,
+      radius,
+      parentId: item.parentId && itemIds.has(item.parentId) ? item.parentId : undefined,
     });
   });
+
+  // Start satellites on the outer side of their evidence anchor. This keeps
+  // neighborhood attraction from dragging them through the central seed.
+  for (const particle of particles.values()) {
+    const parent = particle.parentId ? particles.get(particle.parentId) : undefined;
+    if (!parent) continue;
+    const angle = Math.atan2(parent.y, parent.x) + (hashUnit(particle.id) - 0.5) * 1.8;
+    particle.x = parent.x + Math.cos(angle) * 155;
+    particle.y = parent.y + Math.sin(angle) * 155;
+  }
 
   const groups = new Map<string, Particle[]>();
   for (const item of items) {
@@ -148,7 +167,9 @@ export function layoutDigitalMap(
       const normalization = Math.sqrt(
         Math.max(1, degree.get(link.source) ?? 1) * Math.max(1, degree.get(link.target) ?? 1)
       );
-      const force = ((distance - 180) * 0.018) / normalization;
+      const weight = Math.max(0.03, Math.min(0.94, link.weight ?? 0.12));
+      const desired = 125 + (1 - weight) * 190;
+      const force = ((distance - desired) * 0.018 * Math.max(0.2, weight)) / normalization;
       const fx = (dx / distance) * force;
       const fy = (dy / distance) * force;
       source.vx += fx;
@@ -174,9 +195,19 @@ export function layoutDigitalMap(
         particle.vx += (particle.x / rootDistance) * force;
         particle.vy += (particle.y / rootDistance) * force;
       }
-
-      particle.vx -= particle.x * 0.00055;
-      particle.vy -= particle.y * 0.00055;
+      const parent = particle.parentId ? particles.get(particle.parentId) : undefined;
+      if (parent) {
+        const dx = particle.x - parent.x;
+        const dy = particle.y - parent.y;
+        const distance = Math.max(1, Math.hypot(dx, dy));
+        const force = (distance - 155) * 0.045;
+        particle.vx -= (dx / distance) * force;
+        particle.vy -= (dy / distance) * force;
+      } else {
+        const force = (rootDistance - particle.radius) * 0.045;
+        particle.vx -= (particle.x / rootDistance) * force;
+        particle.vy -= (particle.y / rootDistance) * force;
+      }
       particle.vx *= 0.7;
       particle.vy *= 0.7;
       particle.x += particle.vx * cooling;
@@ -203,6 +234,17 @@ export function layoutDigitalMap(
           a.y -= shift;
           b.y += shift;
         }
+      }
+    }
+    // Satellite attraction must never place a candidate on top of the seed.
+    for (const particle of particleList) {
+      const distance = Math.hypot(particle.x, particle.y);
+      const parent = particle.parentId ? particles.get(particle.parentId) : undefined;
+      const minimum = parent ? Math.max(205, Math.hypot(parent.x, parent.y) + 100) : 205;
+      if (distance < minimum) {
+        const angle = distance > 0 ? Math.atan2(particle.y, particle.x) : hashUnit(particle.id) * Math.PI * 2;
+        particle.x = Math.cos(angle) * minimum;
+        particle.y = Math.sin(angle) * minimum;
       }
     }
   }

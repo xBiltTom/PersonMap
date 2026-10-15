@@ -236,6 +236,14 @@ export interface GraphNodeData {
   discovered_at?: string | null;
   is_root?: boolean;
   group_id?: string | null;
+  correlation?: {
+    weight: number;
+    level: string;
+    reasons: string[];
+    ownership_status: "unverified";
+    placement_parent_id?: string;
+    placement_relation?: string;
+  };
   [key: string]: unknown;
 }
 

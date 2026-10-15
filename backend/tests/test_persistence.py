@@ -167,7 +167,7 @@ def test_same_username_between_independent_findings_is_an_edge():
     b = _entity(platform="keybase", metadata={"username": "JPerez"}, source_tool="keybase_resolver")
 
     assert detect_relationships(a, b) == [
-        ("same_username", False, {"username": "jperez"})
+        ("same_username", False, {"username": "jperez", "visual_weight": 0.03, "semantics": "observed_relation_not_ownership", "policy_version": 2})
     ]
 
 
@@ -201,10 +201,10 @@ def test_uses_email_is_detected_in_both_directions():
     profile = _entity(metadata={"emails": ["JPerez@uni.edu.pe"]})
 
     assert detect_relationships(email, profile) == [
-        ("shares_declared_email", True, {"email": "jperez@uni.edu.pe"})
+        ("shares_declared_email", True, {"emails": ["jperez@uni.edu.pe"], "visual_weight": 0.82, "semantics": "observed_relation_not_ownership", "policy_version": 2})
     ]
     assert detect_relationships(profile, email) == [
-        ("shares_declared_email", True, {"email": "jperez@uni.edu.pe"})
+        ("shares_declared_email", True, {"emails": ["jperez@uni.edu.pe"], "visual_weight": 0.82, "semantics": "observed_relation_not_ownership", "policy_version": 2})
     ]
 
 
@@ -217,10 +217,10 @@ def test_linked_to_is_detected_in_both_directions():
     )
 
     assert detect_relationships(profile, target) == [
-        ("explicit_profile_link", True, {"linked_profile": "https://instagram.com/jperez"})
+        ("explicit_profile_link", True, {"source_url": "https://github.com/jperez", "linked_profile": "https://instagram.com/jperez", "visual_weight": 0.65, "semantics": "observed_relation_not_ownership", "policy_version": 2})
     ]
     assert detect_relationships(target, profile) == [
-        ("explicit_profile_link", True, {"linked_profile": "https://instagram.com/jperez"})
+        ("explicit_profile_link", True, {"source_url": "https://github.com/jperez", "linked_profile": "https://instagram.com/jperez", "visual_weight": 0.65, "semantics": "observed_relation_not_ownership", "policy_version": 2})
     ]
 
 

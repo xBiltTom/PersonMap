@@ -24,6 +24,7 @@ async def get_investigation_correlation_groups(
         select(Investigation)
         .where(Investigation.id == id)
         .options(
+            selectinload(Investigation.target),
             selectinload(Investigation.correlation_groups),
             selectinload(Investigation.entities),
         )
@@ -33,10 +34,12 @@ async def get_investigation_correlation_groups(
     if not inv:
         raise HTTPException(status_code=404, detail="Investigación no encontrada")
 
+    from app.identity.projection import project_evidence
+    _, current_groups, _ = await project_evidence(inv.id, inv.entities, inv.target)
     entities_by_id = {str(e.id): e for e in inv.entities}
     response_groups: List[CorrelationGroupRead] = []
 
-    for group in inv.correlation_groups:
+    for group in current_groups:
         group_entities = [
             EntityRead.model_validate(entities_by_id[eid])
             for eid in group.entity_ids

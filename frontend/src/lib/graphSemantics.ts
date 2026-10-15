@@ -2,16 +2,28 @@ import type { GraphEdge } from "@/lib/types";
 
 /**
  * El endpoint construye las conexiones objetivo → hallazgo con `source-*`.
- * Las relaciones persistidas entre hallazgos usan `rel-*`. Esta topología, no
- * el nombre de una relación, define si una arista es procedencia/contexto.
+ * Las relaciones entre hallazgos usan `rel-*`. Solo discovered_from es
+ * procedencia: una coincidencia factual con el objetivo permanece visible.
  */
 export function isProvenanceEdge(edge: GraphEdge): boolean {
-  return edge.id.startsWith("source-");
+  return edge.id.startsWith("source-") && edge.relation_type === "discovered_from";
 }
 
 /** Etiquetas observacionales: describen el dato, nunca una identidad inferida. */
 export function getFriendlyRelationLabel(relationType: string, customLabel?: string | null): string {
   const labels: Record<string, string> = {
+    target_email_match: "correo coincidente con el objetivo",
+    target_phone_match: "teléfono coincidente con el objetivo",
+    target_identifier_match: "identificador coincidente con el objetivo",
+    target_context_match: "coincidencia contextual con el objetivo",
+    registration_query: "señal de registro del correo consultado",
+    shares_email_and_username: "correo y alias coincidentes",
+    email_lookup_association: "correo asociado por consulta exacta al proveedor",
+    shares_declared_phone: "teléfono declarado en común",
+    shared_orcid: "ORCID observado en común",
+    shared_gaia_id: "GAIA observado en común",
+    name_and_affiliation: "nombre y afiliación coincidentes",
+    authored_work: "autoría vinculada por identificador",
     discovered_from: "hallazgo derivado",
     publishes_phone: "teléfono publicado",
     mentions_phone: "teléfono mencionado en búsqueda",

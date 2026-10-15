@@ -25,11 +25,10 @@ from app.tools.base import ToolFinding
 from app.tools.social_profiles import parse_social_profile
 from app.schemas.identifiers import CASE_SENSITIVE_TYPES
 
-# Tope de aristas por nodo. El emparejamiento es O(n^2) sobre las entidades de la
-# investigación: con ~30 entidades son ~450 pares, pero al ampliar el catálogo de
-# plataformas una sola investigación puede pasar de 500 entidades (125.000 pares).
-# Sin tope, el mapa digital se vuelve una maraña ilegible y el flush de
-# relaciones domina el tiempo total.
+# Tope de aristas adicionales por nodo. Los árboles de evidencia conservan
+# conectividad aunque un ancla tenga más conexiones. Los índices de señales
+# evitan comparar todos los pares; los árboles conservan los vecindarios sin
+# construir una camarilla entre todos los perfiles que comparten un dato.
 #
 # El límite conserva un mapa navegable. Se priorizan las relaciones que forman
 # grupos porque tienen una prueba explícita, no una puntuación de identidad.
@@ -50,6 +49,7 @@ def _dedupe_value(entity_type, value, metadata):
     if kind is None and value.startswith(("http://", "https://")):
         from app.tools.maigret_ids import identifiers_from_url
         preserve_case = any(item["id_type"] in CASE_SENSITIVE_TYPES for item in identifiers_from_url(value))
+    preserve_case = preserve_case or bool(profile and profile.resource_kind == 'channel_id')
     if preserve_case:
         parsed = urlsplit(value)
         return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path, parsed.query, parsed.fragment))
@@ -139,6 +139,18 @@ def dedupe_findings(findings: List[ToolFinding]) -> List[ToolFinding]:
             merged["verification_status"] = "verified"
         merged["source_tool"] = winner.metadata_info.get("source_tool")
         merged["source_tools"] = provenance[key]
+        from types import SimpleNamespace
+        from app.identity.evidence import POLICY_VERSION, signals
+        correlation_observations = []
+        for observation in observations[key]:
+            source = SimpleNamespace(entity_type=observation.entity_type, platform=observation.platform,
+                value=observation.value, source_tool=observation.metadata_info.get('source_tool'),
+                metadata_info=observation.metadata_info)
+            for item in signals(source):
+                if item not in correlation_observations:
+                    correlation_observations.append(item)
+        merged['correlation_observations'] = correlation_observations[:200]
+        merged['correlation_observations_version'] = POLICY_VERSION
         if winner.entity_type == "academic" and merged.get("academic_records"):
             from app.tools.academic_metadata import preserve_author_association
             preserve_author_association(merged)
@@ -210,74 +222,9 @@ async def persist_findings(
     return entities
 
 
-# Tools que enumeran un mismo identificador semilla a través de muchas
-# plataformas. Dos hallazgos suyos comparten alias/correo por construcción, no
-# por evidencia descubierta.
-ENUMERATION_TOOLS = {
-    "username_finder",
-    "maigret_enricher",
-    "ghunt",
-    "email_enumerator",
-    "phone_enumerator",
-    # Consulta por el correo y el alias del objetivo, así que dos registros
-    # suyos comparten identificador por construcción, no por evidencia.
-    "infostealer_checker",
-}
-
-
 def detect_relationships(a: Entity, b: Entity) -> List[Tuple[str, bool, dict]]:
-    """
-    Devuelve todas las relaciones observables entre dos entidades.
-
-    A diferencia de la versión anterior, ya no existe el caso de reserva
-    `a.platform == b.platform -> ("same_platform", 0.50)`. Aquel criterio no
-    aportaba evidencia (dos cuentas en la misma red no son la misma persona) y
-    además casaba `None == None`, enlazando entre sí a todas las entidades sin
-    plataforma. Al crecer el número de entidades generaba decenas de miles de
-    aristas sin significado que hacían ilegible el mapa digital.
-    """
-    meta_a = a.metadata_info or {}
-    meta_b = b.metadata_info or {}
-
-    relationships: List[Tuple[str, bool, dict]] = []
-
-    # 1. Mismo alias en ambos perfiles. Es contexto útil, pero no une un grupo:
-    # la coincidencia puede estar inducida por la consulta. Se omite entre
-    # hermanos de enumeración: si `username_finder` busca "jperez"
-    #    en 500 plataformas y lo encuentra en 90, esas 90 comparten el alias por
-    #    definición: la arista sería tautológica y generaría 90*89/2 = 4005
-    #    conexiones que no dicen nada sobre la relación entre observaciones.
-    user_a = (meta_a.get("username") or "").lower()
-    user_b = (meta_b.get("username") or "").lower()
-    if user_a and user_b and user_a == user_b and not _are_enumeration_siblings(a, b):
-        relationships.append(("same_username", False, {"username": user_a}))
-
-    # 2. Un perfil declara el correo que la otra entidad representa. Se comprueba
-    #    en ambos sentidos porque el emparejamiento solo visita cada par una vez
-    #    y el orden de las entidades en la lista es arbitrario.
-    if _declares_email(a, meta_b) or _declares_email(b, meta_a):
-        email = a.value if a.entity_type == "email" else b.value
-        relationships.append(("shares_declared_email", True, {"email": email.lower()}))
-
-    # 3. Un perfil enlaza explícitamente al otro.
-    if _links_to(meta_a, b) or _links_to(meta_b, a):
-        relationships.append(("explicit_profile_link", True, {"linked_profile": b.value if _links_to(meta_a, b) else a.value}))
-
-    # Publishing a phone is an observable relationship, not identity evidence.
-    from app.tools.phone_numbers import phone_identity
-    for phone_entity, source_entity in ((a, b), (b, a)):
-        if phone_entity.entity_type != "phone" or source_entity.entity_type == "phone":
-            continue
-        source_meta = source_entity.metadata_info or {}
-        values = [raw for key in ("phones", "extracted_phones")
-                  for raw in (source_meta.get(key, []) if isinstance(source_meta.get(key, []), list) else [])
-                  if isinstance(raw, str)]
-        identity = phone_identity(phone_entity.value)
-        if identity and any(phone_identity(raw) == identity for raw in values):
-            rel_type = "mentions_phone" if source_entity.entity_type == "search_mention" else "publishes_phone"
-            relationships.append((rel_type, False, {"phone": identity, "source_url": source_entity.value}))
-
-    return relationships
+    from app.identity.evidence import pair_evidence
+    return pair_evidence(a, b)
 
 
 def normalize_source_tool(source_tool: Optional[str]) -> str:
@@ -293,72 +240,82 @@ def normalize_source_tool(source_tool: Optional[str]) -> str:
     return (source_tool or "").rsplit(":", 1)[-1]
 
 
-def _are_enumeration_siblings(a: Entity, b: Entity) -> bool:
-    """True si ambas entidades salieron de la misma tool de enumeración."""
-    tool_a = normalize_source_tool(a.source_tool)
-    tool_b = normalize_source_tool(b.source_tool)
-    return tool_a == tool_b and tool_a in ENUMERATION_TOOLS
-
-
-def _declares_email(email_entity: Entity, other_meta: dict) -> bool:
-    """True si `other_meta` lista el correo que representa `email_entity`."""
-    if email_entity.entity_type != "email":
-        return False
-    emails = other_meta.get("emails") or []
-    if not isinstance(emails, list):
-        return False
-    return email_entity.value.lower() in [str(e).lower() for e in emails]
-
-
-def _links_to(meta: dict, other: Entity) -> bool:
-    """True si algún perfil enlazado en `meta` apunta al valor de `other`."""
-    links = meta.get("linked_profiles") or []
-    if not isinstance(links, list):
-        return False
-    return any(other.value in str(link) for link in links)
-
-
-async def build_relationships(
-    investigation_id: str,
-    entities: List[Entity],
-    db: AsyncSession,
-) -> List[Relationship]:
-    """
-    Construye las aristas del grafo entre las entidades ya persistidas.
-
-    Requiere que `entities` venga de `persist_findings` (o de un flush previo),
-    porque necesita los UUID asignados.
-    """
-    degree: Dict[str, int] = {}
-    candidates: List[Tuple[bool, Entity, Entity, str, dict]] = []
-
-    for i, ent_a in enumerate(entities):
-        for ent_b in entities[i + 1:]:
-            for rel_type, supports_group, evidence in detect_relationships(ent_a, ent_b):
-                candidates.append((supports_group, ent_a, ent_b, rel_type, evidence))
-
-    candidates.sort(key=lambda c: c[0], reverse=True)
-
-    created: List[Relationship] = []
-    for supports_group, ent_a, ent_b, rel_type, evidence in candidates:
-        key_a, key_b = str(ent_a.id), str(ent_b.id)
-        if degree.get(key_a, 0) >= MAX_EDGES_PER_ENTITY:
+def infer_relationships(entities, priorities=None):
+    """A strong evidence forest preserves connectivity; extra edges stay bounded."""
+    from app.identity.evidence import signals, pair_evidence
+    from app.identity.resolver import UnionFind
+    priorities = priorities or {}
+    observed = {str(entity.id): signals(entity) for entity in entities}
+    from collections import defaultdict
+    from app.identity.evidence import resource_key, strong_values, strings
+    by_id = {str(entity.id): entity for entity in entities}
+    indexes, resources = defaultdict(list), defaultdict(list)
+    for entity in entities:
+        key = str(entity.id)
+        for item in observed[key]:
+            if item['kind'] == 'email' and item['value'] not in strong_values(observed[key], 'email'):
+                continue
+            indexes[(item['kind'], item['value'])].append(key)
+        resource = resource_key(entity.value)
+        if resource:
+            resources[resource].append(key)
+        for value in strong_values(observed[key], 'orcid'):
+            resources[resource_key('https://orcid.org/' + value)].append(key)
+    pairs = set()
+    def connect(left, right):
+        if left != right:
+            pairs.add(tuple(sorted((left, right))))
+    for members in indexes.values():
+        members = sorted(set(members), key=lambda member: (-priorities.get(member, 0), member))
+        # A hub and local neighbors retain connectivity without a quadratic clique.
+        for index, member in enumerate(members):
+            connect(members[0], member)
+            for neighbor in members[index + 1:index + 4]:
+                connect(member, neighbor)
+    for entity in entities:
+        metadata = entity.metadata_info or {}
+        links = [*strings(metadata.get('linked_profiles')), *strings(metadata.get('matched_author_ids'))]
+        for record in metadata.get('academic_records', []) if isinstance(metadata.get('academic_records'), list) else []:
+            for author in record.get('matched_authors', []) if isinstance(record, dict) and isinstance(record.get('matched_authors'), list) else []:
+                if isinstance(author, dict) and isinstance(author.get('orcid'), str):
+                    links.append(author['orcid'])
+        for link in links:
+            for other in resources.get(resource_key(link), []):
+                connect(str(entity.id), other)
+    candidates = []
+    for source, destination in sorted(pairs):
+        a, b = by_id[source], by_id[destination]
+        for relation_type, grouping, evidence in pair_evidence(a, b, observed[source], observed[destination]):
+            candidates.append((grouping, a, b, relation_type, evidence))
+    candidates.sort(key=lambda item: (not item[0], -item[4].get('visual_weight', 0),
+        -max(priorities.get(str(item[1].id), 0), priorities.get(str(item[2].id), 0)),
+        str(item[1].id), str(item[2].id), item[3]))
+    forest = UnionFind([str(entity.id) for entity in entities])
+    visual_forest = UnionFind([str(entity.id) for entity in entities])
+    degree, selected = {}, []
+    for grouping, a, b, kind, evidence in candidates:
+        source, destination = str(a.id), str(b.id)
+        needed = grouping and forest.find(source) != forest.find(destination)
+        needed = needed or (kind in {'same_name', 'name_and_affiliation', 'authored_work'}
+            and visual_forest.find(source) != visual_forest.find(destination))
+        if not needed and (degree.get(source, 0) >= MAX_EDGES_PER_ENTITY or degree.get(destination, 0) >= MAX_EDGES_PER_ENTITY):
             continue
-        if degree.get(key_b, 0) >= MAX_EDGES_PER_ENTITY:
-            continue
+        if grouping:
+            forest.union(source, destination)
+        if kind != 'same_username':
+            visual_forest.union(source, destination)
+        selected.append((a, b, kind, grouping, evidence))
+        degree[source] = degree.get(source, 0) + 1
+        degree[destination] = degree.get(destination, 0) + 1
+    return selected
 
-        rel = Relationship(
-            investigation_id=investigation_id,
-            source_entity_id=ent_a.id,
-            target_entity_id=ent_b.id,
-            relation_type=rel_type,
-            supports_group=supports_group,
-            evidence=evidence,
-        )
+
+async def build_relationships(investigation_id: str, entities: List[Entity], db: AsyncSession) -> List[Relationship]:
+    created = []
+    for a, b, kind, grouping, evidence in infer_relationships(entities):
+        rel = Relationship(investigation_id=investigation_id, source_entity_id=a.id,
+            target_entity_id=b.id, relation_type=kind, supports_group=grouping, evidence=evidence)
         db.add(rel)
         created.append(rel)
-        degree[key_a] = degree.get(key_a, 0) + 1
-        degree[key_b] = degree.get(key_b, 0) + 1
-
     await db.flush()
     return created

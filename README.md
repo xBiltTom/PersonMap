@@ -93,6 +93,8 @@ El agente puede escribir consultas propias con justificación y filtros de domin
 
 Consulta [la guía de conexión y uso de MCP](docs/MCP.md) para preparar la credencial local, conectar clientes y ejecutar las pruebas.
 
+La [política de correlación y cercanía visual](docs/CORRELACION.md) explica las señales de correo y teléfono, los vecindarios del mapa y sus límites: la cercanía ordena candidatos y no confirma pertenencia.
+
 ## Fuentes y artefactos públicos
 
 La [auditoría de cobertura y arquitectura del 12-10-2026](docs/AUDITORIA_OSINT_2026-10-12.md) documenta las mejoras del buscador, el inventario de herramientas, las fuentes evaluadas y el trabajo pendiente para la feria. `SEARCH_MAX_QUERIES` define un presupuesto independiente del proveedor (el ejemplo usa 20); MCP y los agentes reciben `search_coverage` con consultas intentadas y ámbitos pendientes. Brave es un respaldo opcional y el lector público admite PDFs con capa de texto. Los ámbitos consultados no equivalen a cobertura exhaustiva de una plataforma.

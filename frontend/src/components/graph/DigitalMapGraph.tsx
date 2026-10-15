@@ -1174,11 +1174,15 @@ function DigitalMapGraphInner({
         platform: node.data.platform,
         label: node.data.label,
         value: node.data.value,
+        proximity: node.data.correlation?.weight,
+        parentId: node.data.correlation?.placement_parent_id ? `ent-${node.data.correlation.placement_parent_id}` : undefined,
       })),
       evidenceEdges.map((edge) => ({
         source: edge.source,
         target: edge.target,
         relationType: edge.relation_type,
+        weight: typeof (edge.evidence as Record<string, unknown> | null)?.visual_weight === "number"
+          ? (edge.evidence as { visual_weight: number }).visual_weight : undefined,
       }))
     );
 
@@ -1216,7 +1220,7 @@ function DigitalMapGraphInner({
         data: {
           ...entity.data,
           interaction: "idle",
-          isCorrelated: (degree.get(entity.id) ?? 0) > 0 || Boolean(entity.data.group_id),
+          isCorrelated: (degree.get(entity.id) ?? 0) > 0,
         },
       });
     }
