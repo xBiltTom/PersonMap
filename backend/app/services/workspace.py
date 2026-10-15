@@ -20,6 +20,7 @@ from app.core.events import event_bus
 from app.core.fingerprint import run_fingerprint
 from app.engine.persistence import build_relationships, persist_findings
 from app.engine.pivot_rules import extract_and_apply_pivots
+from app.engine.pivot_frontier import PivotFrontier
 from app.engine.trace import PendingObservation, trace_recorder
 from app.core.runtime import durable_runtime, search_limit
 from app.identity.resolver import correlation_resolver
@@ -169,6 +170,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
 
     async def create(self, payload: InvestigationCreate, db):
         extra_data = dict(payload.target.extra_data or {})
+        extra_data["pivot_frontier_mode"] = payload.pivot_mode
         extra_data.pop("maigret_plan", None)
         if payload.maigret_plan:
             extra_data["maigret_plan"] = payload.maigret_plan.model_dump(exclude_none=True)
@@ -317,6 +319,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
             sessions = list((await db.scalars(select(InvestigationSession).where(InvestigationSession.investigation_id == investigation_id)
                                              .order_by(InvestigationSession.started_at.desc()).limit(20))).all())
             return {"investigation": InvestigationRead.model_validate(inv).model_dump(mode="json"),
+                    "pivot_frontier": PivotFrontier(context).snapshot(),
                     "correlation": compact_projection(affinities, correlation_edges),
                     "review_baseline": (inv.metrics or {}).get("review_baseline"),
                     "known_identifiers": context.model_dump(exclude={"extra"}),
@@ -372,11 +375,15 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
         ctx = build_call_context({}, inv.target)
         saved = self.contexts.get(inv.id)
         if use_cached:
+            if settings.pivot_frontier_enabled:
+                ctx.extra.update(deepcopy((inv.metrics or {}).get("collection_runtime", {})))
             if saved:
                 ctx.extra.update(deepcopy(saved.extra))
             ctx.extra.update(deepcopy((inv.metrics or {}).get("external_runtime", {})))
             if "username_finder_scanned" in ctx.extra:
                 ctx.extra["username_finder_scanned"] = set(ctx.extra["username_finder_scanned"])
+        if settings.pivot_frontier_enabled:
+            PivotFrontier(ctx).seed(inv.target)
         findings = [ToolFinding(entity_type=e.entity_type, platform=e.platform, value=e.value,
                                 display_name=e.display_name, metadata_info=dict(e.metadata_info or {})) for e in entities]
         extract_and_apply_pivots(findings, ctx)

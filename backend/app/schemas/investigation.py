@@ -36,6 +36,7 @@ class InvestigationCreate(BaseModel):
     # del proyecto, que es auditar la propia huella, no la de otra persona.
     self_consent: bool = False
     maigret_plan: MaigretPlan | None = None
+    pivot_mode: Literal["standard", "deep"] = "standard"
 
 
 class InvestigationRead(BaseModel):

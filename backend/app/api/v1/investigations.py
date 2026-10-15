@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.events import event_bus
 from app.engine.orchestrator import orchestrator
+from app.engine.pivot_frontier import PivotFrontierResponse
 from app.models.entity import Entity
 from app.models.investigation import Investigation
 from app.models.target import Target
@@ -80,6 +81,16 @@ async def get_investigation(
     if not inv:
         raise HTTPException(status_code=404, detail="Investigación no encontrada")
     return inv
+
+
+@router.get("/investigations/{id}/frontier", response_model=PivotFrontierResponse)
+async def get_investigation_frontier(id: UUID, db: AsyncSession = Depends(get_db)):
+    """Persisted investigation priorities and provenance, without identity claims."""
+    inv = await db.get(Investigation, id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Investigación no encontrada")
+    from app.engine.pivot_frontier import frontier_from_metrics
+    return {"pivot_frontier": frontier_from_metrics(inv.metrics or {})}
 
 
 @router.get("/investigations/{id}/trace", response_model=InvestigationTraceResponse)

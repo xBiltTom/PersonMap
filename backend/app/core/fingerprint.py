@@ -49,6 +49,12 @@ def run_fingerprint() -> Dict[str, Any]:
             breakdown = {}
 
     return {
+        "pivot_frontier": {"version": 1, "enabled": settings.pivot_frontier_enabled,
+            "max_per_round": settings.pivot_max_per_round, "max_total": settings.pivot_max_total,
+            "max_weak_per_round": settings.pivot_max_weak_per_round,
+            "min_priority": settings.pivot_min_priority, "round_cost_budget": settings.pivot_round_cost_budget,
+            "deep_max_rounds": settings.pivot_deep_max_rounds,
+            "corroboration_bonus": settings.pivot_corroboration_bonus},
         "email_enumerator": email_capabilities(),
         "academic": academic_capabilities(),
         "correlation_policy_version": 2,
