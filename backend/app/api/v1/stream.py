@@ -170,8 +170,18 @@ async def get_investigation_logs(id: UUID):
     """Returns all historical execution and orchestration logs for an investigation."""
     str_id = str(id)
     history = event_bus.get_history(str_id)
-    if history:
-        return {"mode": "original", "logs": history}
+    # EventBus también conserva eventos internos (p. ej. fair_progress y
+    # fair_snapshot) que sirven a otras APIs, pero no son líneas de consola.
+    # Devolverlos aquí crea filas sin texto y además hace que el historial
+    # parezca disponible aunque solo contenga esos eventos internos.
+    displayable_history = [
+        event for event in history
+        if isinstance(event, dict)
+        and isinstance(event.get("message"), str)
+        and event["message"].strip()
+    ]
+    if displayable_history:
+        return {"mode": "original", "logs": displayable_history}
 
     # El EventBus es efímero. Tras un reinicio, la proyección histórica sale de
     # la traza persistida y no pretende reproducir el progreso transitorio.

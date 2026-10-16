@@ -14,6 +14,16 @@ export type ConnectionStatus = "connecting" | "live" | "reconnecting" | "closed"
  */
 const MAX_RECONNECT_ATTEMPTS = 8;
 
+/**
+ * EventBus comparte eventos de consola con señales internas. Solo los que
+ * llevan texto legible pertenecen al historial que pinta LiveConsole.
+ */
+function hasConsoleMessage(value: unknown): value is StreamLog {
+  if (!value || typeof value !== "object") return false;
+  const message = (value as { message?: unknown }).message;
+  return typeof message === "string" && message.trim().length > 0;
+}
+
 export interface InvestigationStream {
   logs: StreamLog[];
   status: ConnectionStatus;
@@ -63,8 +73,9 @@ export function useInvestigationStream(
       .then((data) => {
         if (cancelled) return;
         setHistoryMode(data.mode);
-        if (data.logs.length > 0) {
-          setLogs(data.logs);
+        const visibleLogs = data.logs.filter(hasConsoleMessage);
+        if (visibleLogs.length > 0) {
+          setLogs(visibleLogs);
         }
         setHistoryError(null);
       })
@@ -99,7 +110,7 @@ export function useInvestigationStream(
           clearTimeout(updateTimer);
           updateTimer = setTimeout(() => onUpdatedRef.current?.(), 200);
         }
-        if (data.message) {
+        if (hasConsoleMessage(data)) {
           setLogs((prev) => {
             // El backend reproduce el historial al suscribirse, así que tras una
             // reconexión llegan de nuevo eventos ya pintados. Se descartan por
