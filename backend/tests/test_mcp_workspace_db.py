@@ -43,6 +43,88 @@ pytestmark = pytest.mark.db
 
 
 @pytest.mark.asyncio
+async def test_footprint_v2_persists_reloads_and_keeps_subject_and_discovery_separate(isolated_workspace, monkeypatch):
+    from fastapi import FastAPI
+    from app.api.v1 import investigations as routes
+    from app.engine.persistence import persist_findings
+    from app.schemas.entity import EntityRead
+    service, legacy_id = isolated_workspace
+    monkeypatch.setattr(routes, "workspace", service)
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api/v1")
+    async def get_test_db():
+        async with service.session_factory() as db:
+            yield db
+    app.dependency_overrides[get_db] = get_test_db
+    body = {"target": {"input_version": 2, "given_names": "Ana María", "family_names": "Pérez",
+        "emails": [" A@example.org ", "b@example.org", "a@example.org"],
+        "usernames": [{"username": "@ana", "platform": "GitHub"}, {"username": "ana123"}],
+        "phones": ["912 345 678", "+51912345678", "+14155552671"]},
+        "subject_consent": True, "execution_mode": "external", "strategy": "rule_based"}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        denied = await client.post("/api/v1/investigations", json={**body, "subject_consent": False})
+        assert denied.status_code == 422
+        response = await client.post("/api/v1/investigations", json=body)
+        assert response.status_code == 201, response.text
+        inv_id = uuid.UUID(response.json()["id"])
+        seed_input = response.json()["target"]["footprint_input"]
+        assert seed_input["emails"] == ["a@example.org", "b@example.org"]
+        assert seed_input["usernames"][0]["platform"] == "github"
+        assert seed_input["usernames"][1]["platform"] is None
+        assert seed_input["phones"] == ["+51912345678", "+14155552671"]
+        assert not any(item["provenance"]["needs_review"] for item in seed_input["declared_seeds"])
+        async with service.session_factory() as db:
+            inv = await service._investigation(db, inv_id)
+            assert inv.target.extra_data["subject_consent"] is True
+            assert inv.target.extra_data["self_consent"] is False
+            findings = [ToolFinding(entity_type="social_account", value="https://github.com/ana",
+                metadata_info={"source_tool": "fixture", "extracted_emails": ["b@example.org", "new@example.org"],
+                    "extracted_usernames": ["ana123", "new-alias"]}, evidence_urls=["https://github.com/ana"])]
+            saved = await persist_findings(str(inv_id), findings, inv.target, db)
+            assert EntityRead.model_validate(saved[0]).provenance.status == "discovered"
+            await db.commit()
+        # A fresh service/session must reconstruct seeds from PostgreSQL, not RAM.
+        reloaded = WorkspaceService(service.session_factory)
+        context = await reloaded.context(inv_id)
+        known = context["known_identifiers"]
+        assert known["discovered_emails"] == ["new@example.org"]
+        assert known["discovered_usernames"] == ["new-alias"]
+        assert len(known["declared_seeds"]) == 7
+        detail = (await client.get(f"/api/v1/investigations/{inv_id}")).json()
+        assert detail["target"]["footprint_input"] == seed_input
+        assert detail["entities"][0]["provenance"]["needs_review"] is True
+        legacy = (await client.get(f"/api/v1/investigations/{legacy_id}")).json()
+        assert legacy["target"]["username"] == "legacy"
+        assert legacy["target"]["footprint_input"] is None
+        await reloaded.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_mcp_v2_create_requires_subject_consent_and_preserves_all_seeds(isolated_workspace, monkeypatch):
+    import app.mcp.server as mcp_module
+    from app.mcp.auth import MCPTokenGate
+    service, _ = isolated_workspace
+    monkeypatch.setattr(mcp_module, "workspace", service)
+    monkeypatch.setattr(mcp_module.mcp, "_session_manager", None)
+    app = MCPTokenGate(mcp_module.mcp.streamable_http_app())
+    async with mcp_module.mcp.session_manager.run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8000",
+            headers={"Authorization": "Bearer integration-token", "Accept": "application/json, text/event-stream"}) as client:
+            arguments = {"target": {"emails": ["a@example.org", "b@example.org"],
+                "usernames": [{"username": "ana", "platform": "GitHub"}, {"username": "ana-other"}]}}
+            denied = await client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "create_investigation", "arguments": arguments}})
+            assert denied.json()["result"]["isError"] is True
+            response = await client.post("/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "create_investigation", "arguments": {**arguments, "subject_consent": True}}})
+            result = response.json()["result"]
+            assert not result.get("isError"), result
+            created = result["structuredContent"]
+            assert created["target"]["footprint_input"]["emails"] == ["a@example.org", "b@example.org"]
+            assert len(created["target"]["footprint_input"]["declared_seeds"]) == 4
+
+
+@pytest.mark.asyncio
 async def test_current_correlation_projects_existing_dossier_in_graph_and_mcp_without_attribution(isolated_workspace):
     from app.api.v1.graph import get_investigation_graph
     from app.api.v1.identity import get_investigation_correlation_groups

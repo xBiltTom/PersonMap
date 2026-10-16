@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StrictBool, model_validator, field_validator, Field
 from app.schemas.target import TargetCreate, TargetRead
 from app.schemas.entity import EntityRead
 from app.schemas.identity import CorrelationGroupRead
@@ -35,8 +35,15 @@ class InvestigationCreate(BaseModel):
     # y el motor ni siquiera la despacha. Refuerza además el marco pedagógico
     # del proyecto, que es auditar la propia huella, no la de otra persona.
     self_consent: bool = False
+    subject_consent: StrictBool = False
     maigret_plan: MaigretPlan | None = None
     pivot_mode: Literal["standard", "deep"] = "standard"
+
+    @model_validator(mode="after")
+    def require_v2_consent(self):
+        if self.target.input_version == 2 and not self.subject_consent:
+            raise ValueError("Confirma que analizas tus propios datos o cuentas con autorización explícita.")
+        return self
 
 
 class InvestigationRead(BaseModel):
@@ -47,10 +54,15 @@ class InvestigationRead(BaseModel):
     revision: int = 0
     status: str
     summary: Optional[str] = None
-    metrics: Dict[str, Any] = {}
+    metrics: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     completed_at: Optional[datetime] = None
     target: Optional[TargetRead] = None
+
+    @field_validator("metrics", mode="before")
+    @classmethod
+    def historical_empty_metrics(cls, value):
+        return {} if value is None else value
 
     model_config = ConfigDict(from_attributes=True)
 

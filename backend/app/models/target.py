@@ -27,3 +27,7 @@ class Target(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     investigations = relationship("Investigation", back_populates="target", cascade="all, delete-orphan")
+
+    @property
+    def footprint_input(self):
+        return (self.extra_data or {}).get("footprint_input")

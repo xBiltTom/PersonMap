@@ -169,14 +169,15 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
         return inv
 
     async def create(self, payload: InvestigationCreate, db):
-        extra_data = dict(payload.target.extra_data or {})
+        values = payload.target.persistence_values()
+        extra_data = values.pop("extra_data")
         extra_data["pivot_frontier_mode"] = payload.pivot_mode
         extra_data.pop("maigret_plan", None)
         if payload.maigret_plan:
             extra_data["maigret_plan"] = payload.maigret_plan.model_dump(exclude_none=True)
-        target = Target(**payload.target.model_dump(exclude={"extra_data", "identifiers"}), extra_data={
+        target = Target(**values, extra_data={
             **extra_data, "self_consent": payload.self_consent,
-            **({"identifiers": [item.model_dump() for item in payload.target.identifiers]} if payload.target.identifiers else {}),
+            "subject_consent": payload.subject_consent,
         })
         db.add(target)
         await db.flush()

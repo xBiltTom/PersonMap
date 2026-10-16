@@ -78,6 +78,7 @@ class AutonomousOSINTAgent:
                     f"- Nombre: {target.full_name or 'N/A'}\n"
                     f"- Correo: {target.email or 'N/A'}\n"
                     f"- Alias: {target.username or 'N/A'}\n"
+                    f"- Seeds V2 declarados (no atribuyen cuentas encontradas): {json.dumps([{'kind': seed.kind, 'value': seed.value, 'platform': seed.platform} for seed in agent_context.declared_seeds], ensure_ascii=False)}\n"
                     f"- IDs tipados: {json.dumps((target.extra_data or {}).get('identifiers', []), ensure_ascii=False)}\n"
                     f"- Plan Maigret: {json.dumps((target.extra_data or {}).get('maigret_plan', {}), ensure_ascii=False)}\n"
                     f"- Teléfono: {target.phone or 'N/A'}\n"

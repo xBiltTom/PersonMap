@@ -3,7 +3,32 @@
 // Pydantic del backend en backend/app/schemas/*).
 // =====================================================================
 
+export interface DataProvenance {
+  origin: "subject" | "automatic" | "legacy";
+  status: "declared" | "discovered" | "confirmed" | "rejected" | "uncertain";
+  subject_asserted: boolean;
+  matches_declared_identifier: boolean;
+  evidence_urls: string[];
+  needs_review: boolean;
+}
+export interface UsernameSeed { username: string; platform?: string | null }
+export interface DeclaredSeed {
+  kind: "name" | "email" | "username" | "phone";
+  value: string;
+  platform: string | null;
+  provenance: DataProvenance;
+}
+export interface FootprintInput {
+  version: 2;
+  given_names: string | null;
+  family_names: string | null;
+  emails: string[];
+  usernames: UsernameSeed[];
+  phones: string[];
+  declared_seeds: DeclaredSeed[];
+}
 export interface TargetData {
+  footprint_input?: FootprintInput | null;
   id: string;
   full_name?: string | null;
   email?: string | null;
@@ -25,6 +50,7 @@ export interface TargetData {
 export type EngineLayer = "heuristic" | "refinement";
 
 export interface EntityData {
+  provenance?: DataProvenance;
   id: string;
   investigation_id: string;
   entity_type: string;
@@ -423,6 +449,12 @@ export interface SurveyStats {
 // ---------------------------------------------------------------------
 
 export interface TargetInput {
+  input_version?: 1 | 2;
+  given_names?: string | null;
+  family_names?: string | null;
+  emails?: string[];
+  usernames?: UsernameSeed[];
+  phones?: string[];
   full_name?: string | null;
   email?: string | null;
   username?: string | null;
@@ -462,5 +494,6 @@ export interface CreateInvestigationPayload {
    * `false`: esas herramientas fallan cerradas.
    */
   self_consent?: boolean;
+  subject_consent?: boolean;
   maigret_plan?: { scan_mode: MaigretScanMode; options?: { parse?: boolean; enrich?: boolean; permutation_parts?: string[] } };
 }

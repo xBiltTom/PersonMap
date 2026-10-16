@@ -164,6 +164,12 @@ class PivotFrontier:
         }
 
     def seed(self, target=None):
+        from app.schemas.footprint import footprint_input
+        declared = footprint_input(target) if target is not None else None
+        for seed in declared.declared_seeds if declared else self.context.declared_seeds:
+            self.add(seed.kind, seed.value, 0, PivotSupport(
+                observation_key="seed:" + pivot_id(seed.kind, seed.value),
+                source_tool="target_input", evidence_role="user_input", evidence_class="seed"))
         for kind, field in PRIMARY.items():
             value = getattr(target or self.context, field, None)
             if value:
@@ -365,7 +371,7 @@ class PivotFrontier:
                     source_tool="hybrid_suggestion", evidence_role="suggested_input", evidence_class="weak"))
             if kind in DISCOVERED:
                 original = getattr(self.context, DISCOVERED[kind])
-                existing = [*original, getattr(self.context, PRIMARY[kind])]
+                existing = [*original, *self.context.declared_values(kind), getattr(self.context, PRIMARY[kind])]
                 if not any(v and pivot_id(kind, v) == key for v in existing):
                     original.append(value)
             elif kind == "url":
@@ -418,6 +424,8 @@ class PivotFrontier:
         view = self.context.model_copy(deep=False)
         view.extra = dict(self.context.extra)
         allowed = {c.id for c in self.candidates.values() if c.status in {"active", "explored"}}
+        view.declared_seeds = [seed for seed in self.context.declared_seeds
+                               if pivot_id(seed.kind, seed.value) in allowed]
         order = {c.id: n for n, c in enumerate(self.rank())}
         def values(kind, items):
             return sorted((v for v in items if v and pivot_id(kind, v) in allowed), key=lambda v: order[pivot_id(kind, v)])

@@ -192,6 +192,10 @@ async def persist_findings(
             f = dedupe_findings([previous, f])[0]
             f.metadata_info["source_tools"] = list(dict.fromkeys([*old_tools, *f.metadata_info.get("source_tools", [])]))
         metadata = dict(f.metadata_info or {})
+        from app.schemas.footprint import discovered_provenance, is_declared_identifier
+        # Tools (including agents) cannot manufacture a subject's decision.
+        metadata["provenance"] = ((current.metadata_info or {}).get("provenance") if current else None) or discovered_provenance(
+            f.evidence_urls, matches_declared_identifier=is_declared_identifier(target, f.entity_type, f.value, f.platform))
         # Las herramientas ya recogen URLs de evidencia, pero Entity no tenía
         # una columna específica para ellas. Persistirlas dentro del metadata
         # evita una migración y permite que el inspector separe la fuente del

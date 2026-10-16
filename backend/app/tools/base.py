@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
+from app.schemas.footprint import DeclaredSeed
 
 
 class ToolCategory(str, Enum):
@@ -25,6 +26,7 @@ class TargetContext(BaseModel):
     dni: Optional[str] = None
     university: Optional[str] = None
     description: Optional[str] = None
+    declared_seeds: List[DeclaredSeed] = Field(default_factory=list)
 
     discovered_phones: List[str] = Field(default_factory=list)
     discovered_emails: List[str] = Field(default_factory=list)
@@ -32,10 +34,22 @@ class TargetContext(BaseModel):
     discovered_names: List[str] = Field(default_factory=list)
     extra: Dict[str, Any] = Field(default_factory=dict)
 
+    @classmethod
+    def from_target(cls, target):
+        from app.schemas.footprint import footprint_input
+        declared = footprint_input(target)
+        return cls(**{field: getattr(target, field, None) for field in
+            ("full_name", "email", "username", "phone", "dni", "university", "description")},
+            declared_seeds=declared.declared_seeds if declared else [],
+            extra={"self_consent": bool((target.extra_data or {}).get("self_consent"))})
+
+    def declared_values(self, kind: str) -> List[str]:
+        return list(dict.fromkeys(seed.value for seed in self.declared_seeds if seed.kind == kind))
+
     def all_phones(self) -> List[str]:
         from app.tools.phone_numbers import phone_identity
         phones = []
-        for raw in [self.phone, *self.discovered_phones]:
+        for raw in [self.phone, *self.declared_values("phone"), *self.discovered_phones]:
             if not isinstance(raw, str) or not raw.strip():
                 continue
             value = phone_identity(raw) or raw.strip()
@@ -47,7 +61,7 @@ class TargetContext(BaseModel):
         emails = []
         if self.email and self.email.strip():
             emails.append(self.email.strip().lower())
-        for e in self.discovered_emails:
+        for e in [*self.declared_values("email"), *self.discovered_emails]:
             e_clean = e.strip().lower()
             if e_clean not in emails:
                 emails.append(e_clean)
@@ -57,7 +71,7 @@ class TargetContext(BaseModel):
         usernames = []
         if self.username and self.username.strip():
             usernames.append(self.username.strip())
-        for u in self.discovered_usernames:
+        for u in [*self.declared_values("username"), *self.discovered_usernames]:
             u_clean = u.strip()
             if u_clean not in usernames:
                 usernames.append(u_clean)
@@ -91,6 +105,8 @@ class BaseTool(ABC):
     def can_run(self, context: TargetContext) -> bool:
         """Verify if context has at least one required input to run this tool."""
         for field in self.required_inputs:
+            if field in {"email", "username", "phone"} and context.declared_values(field):
+                return True
             val = getattr(context, field, None)
             if val and (isinstance(val, list) and len(val) > 0 or isinstance(val, str) and val.strip()):
                 return True

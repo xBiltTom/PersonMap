@@ -161,13 +161,17 @@ def strong_values(items, kind):
 def target_affinity(entity, target):
     observed = signals(entity)
     matched = []
-    expected_email = email_key(target.email)
-    expected_phone = phone_identity(target.phone) if target.phone else None
+    from app.schemas.footprint import footprint_input
+    declared = footprint_input(target)
+    expected_emails = {email_key(value) for value in ([target.email] + (declared.emails if declared else [])) if value}
+    expected_phones = {phone_identity(value) for value in ([target.phone] + (declared.phones if declared else [])) if value}
+    expected_usernames = {value.casefold() for value in ([target.username] +
+        ([item.username for item in declared.usernames] if declared else [])) if value}
     for item in observed:
-        if ((item['kind'] == 'email' and item['value'] == expected_email)
-                or (item['kind'] == 'phone' and item['value'] == expected_phone)
+        if ((item['kind'] == 'email' and item['value'] in expected_emails)
+                or (item['kind'] == 'phone' and item['value'] in expected_phones)
                 or (item['kind'] == 'name' and item['value'] == name_key(target.full_name))
-                or (item['kind'] == 'username' and isinstance(target.username, str) and item['value'] == target.username.casefold())
+                or (item['kind'] == 'username' and item['value'] in expected_usernames)
                 or (item['kind'] == 'affiliation' and item['value'] == name_key(target.university))):
             matched.append(item)
     ids = (target.extra_data or {}).get('identifiers', [])
@@ -198,7 +202,7 @@ def target_affinity(entity, target):
     if entity.entity_type in {'breach', 'infostealer'}:
         level, weight = 'identifier_record', 0.0
     if entity.entity_type == 'email_registration':
-        if email_key((entity.metadata_info or {}).get('email')) == expected_email and expected_email:
+        if email_key((entity.metadata_info or {}).get('email')) in expected_emails:
             level, weight = 'registration', 0.35
     return {'policy_version': POLICY_VERSION, 'weight': round(weight, 3), 'level': level,
         'reasons': list(dict.fromkeys(signal_label(s) for s in matched)),

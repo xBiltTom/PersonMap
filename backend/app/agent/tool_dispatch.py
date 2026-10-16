@@ -136,7 +136,7 @@ def build_call_context(
         candidate_urls.extend(u for u in supplied_urls if isinstance(u, str) and u.strip())
     candidate_urls = list(dict.fromkeys(candidate_urls))
 
-    base = base_context or TargetContext()
+    base = base_context or TargetContext.from_target(target)
     extra = dict(base.extra)
     if not base_context:
         from app.tools.maigret_ids import identifier_values
@@ -177,6 +177,7 @@ def build_call_context(
         dni=args.get("dni") or base.dni or target.dni,
         university=args.get("university") or base.university or target.university,
         description=target.description,
+        declared_seeds=list(base.declared_seeds),
         discovered_phones=list(base.discovered_phones),
         discovered_emails=list(base.discovered_emails),
         discovered_usernames=list(base.discovered_usernames),

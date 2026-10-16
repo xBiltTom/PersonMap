@@ -7,6 +7,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
+from pydantic import StrictBool
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -148,10 +149,14 @@ async def _call(awaitable):
 
 
 @mcp.tool(annotations=WRITE)
-async def create_investigation(target: TargetCreate, self_consent: bool = False) -> dict[str, Any]:
-    """Create a dossier with form identifiers without launching an internal LLM or rules engine."""
+async def create_investigation(target: TargetCreate, self_consent: bool = False, subject_consent: StrictBool = False) -> dict[str, Any]:
+    """Create an external dossier. V2 lists require explicit subject_consent; never infer it.
+
+    self_consent separately opts into infostealer queries. No internal engine is launched.
+    """
     async with workspace.session_factory() as db:
-        inv = await workspace.create(InvestigationCreate(target=target, execution_mode="external", self_consent=self_consent), db)
+        inv = await workspace.create(InvestigationCreate(target=target, execution_mode="external",
+            self_consent=self_consent, subject_consent=subject_consent), db)
         return {**InvestigationRead.model_validate(inv).model_dump(mode="json"),
                 "web_url": f"{settings.frontend_url.rstrip('/')}/investigation/{inv.id}"}
 

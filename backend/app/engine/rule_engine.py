@@ -118,24 +118,7 @@ class RuleEngine:
         Todos los eventos que emite viajan con `layer: "heuristic"`, para que la
         consola pueda distinguir a simple vista qué capa produjo cada línea.
         """
-        context = initial_context or TargetContext(
-            full_name=target.full_name,
-            email=target.email,
-            username=target.username,
-            phone=target.phone,
-            dni=target.dni,
-            university=target.university,
-            description=target.description,
-            extra={
-                "candidate_urls": [],
-                "avatar_urls": [],
-                "investigation_id": investigation_id,
-                # Consentimiento para las fuentes que revelan a un tercero a
-                # quién se investiga. Viaja en el contexto porque es la
-                # herramienta la que decide si puede ejecutarse.
-                "self_consent": bool((target.extra_data or {}).get("self_consent")),
-            },
-        )
+        context = initial_context or TargetContext.from_target(target)
         context.extra["investigation_id"] = investigation_id
         from app.tools.maigret_ids import add_identifiers
         add_identifiers(context, (target.extra_data or {}).get("identifiers", []), source_tool="target_input")

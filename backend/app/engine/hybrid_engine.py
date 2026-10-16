@@ -562,6 +562,7 @@ class HybridEngine:
             phone=args.get("phone") or context.phone,
             dni=args.get("dni") or context.dni,
             university=args.get("university") or context.university,
+            declared_seeds=list(context.declared_seeds),
             discovered_names=list(context.discovered_names),
             discovered_phones=list(context.discovered_phones),
             discovered_emails=list(context.discovered_emails),
@@ -604,6 +605,7 @@ class HybridEngine:
             f"- Nombre: {target.full_name or 'N/A'}\n"
             f"- Correo: {target.email or 'N/A'}\n"
             f"- Alias: {target.username or 'N/A'}\n"
+            f"- Seeds V2 declarados (no atribuyen cuentas encontradas): {json.dumps([{'kind': seed.kind, 'value': seed.value, 'platform': seed.platform} for seed in ctx.declared_seeds], ensure_ascii=False)}\n"
             f"- IDs tipados conocidos: {json.dumps(ctx.extra.get('maigret_identifiers', []), ensure_ascii=False)}\n"
             f"- Plan Maigret: {json.dumps((target.extra_data or {}).get('maigret_plan', {}), ensure_ascii=False)}\n"
             f"- Teléfono: {target.phone or 'N/A'}\n"

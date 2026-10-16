@@ -100,6 +100,7 @@ async def build_evidence_graph(investigation):
                     "university": target.university,
                     "dni": target.dni,
                     "description": target.description,
+                    "declared_seeds": (target.footprint_input or {}).get("declared_seeds", []),
                     "correlation_policy_version": 2,
                 },
             ),
