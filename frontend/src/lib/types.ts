@@ -644,3 +644,91 @@ export interface CreateInvestigationPayload {
   subject_consent?: boolean;
   maigret_plan?: { scan_mode: MaigretScanMode; options?: { parse?: boolean; enrich?: boolean; permutation_parts?: string[] } };
 }
+
+// Reviewed-only Digital Footprint Reconstruction / Graph V2.
+export type ReconstructionBasis = "DECLARED" | "OBSERVED" | "CORRELATED" | "INFERRED";
+export type ReconstructionGroup = "identity" | "accounts" | "content" | "documents" | "breaches" | "exposure";
+export type ReconstructionKind = "subject" | "name" | "email" | "phone" | "alias" | "domain" | "url" |
+  "account" | "academic_profile" | "document" | "publication" | "repository" | "post" | "breach" | "exposure" | "context";
+export interface ReconstructionEvidence {
+  id: string;
+  source_type: string;
+  source_entity_ids: string[];
+  source_content_ids: string[];
+  platform: string | null;
+  url: string | null;
+  excerpt: string;
+}
+export interface ReconstructionFact {
+  id: string;
+  kind: ReconstructionKind;
+  label: string;
+  basis: ReconstructionBasis;
+  group: ReconstructionGroup;
+  ring: number;
+  platform: string | null;
+  url: string | null;
+  safe_summary: string;
+  ownership_basis: string | null;
+  source_tools: string[];
+  source_entity_ids: string[];
+  source_content_ids: string[];
+  evidence_refs: string[];
+  evidence_count: number;
+  evidence_types: string[];
+  severity: ExposureSeverity | null;
+  date: string | null;
+}
+export interface ReconstructionRelation {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+  basis: ReconstructionBasis;
+  why: string;
+  source_entity_ids: string[];
+  source_content_ids: string[];
+  evidence_refs: string[];
+  evidence_count: number;
+  evidence_types: string[];
+}
+export interface ReconstructionGraph {
+  version: "graph-v2";
+  nodes: ReconstructionFact[];
+  edges: ReconstructionRelation[];
+  omitted_nodes: number;
+  omitted_by_type: Record<string, number>;
+}
+export interface DigitalFootprintReconstruction {
+  version: 1;
+  reconstruction_version: "reconstruction-v1";
+  investigation_id: string;
+  dataset_hash: string;
+  exposure_dataset_hash: string;
+  exposure_hash: string;
+  input_hash: string;
+  coverage: "observed" | "partial";
+  coverage_reasons: string[];
+  identity: Record<"declared" | "accounts" | "public_identifiers" | "academic_presence" | "documents" | "public_content" | "breach_exposure", string[]>;
+  facts: ReconstructionFact[];
+  evidence: Record<string, ReconstructionEvidence>;
+  correlations: ReconstructionRelation[];
+  summary: Array<{ text: string; fact_ids: string[] }>;
+  counts: Record<string, number>;
+  content_by_platform: Record<string, number>;
+  exposure_summary: Record<ExposureSeverity, number>;
+  timeline: Array<{ id: string; date: string; kind: ReconstructionKind; label: string; platform: string | null;
+    fact_ids: string[]; evidence_refs: string[]; basis: "OBSERVED" }>;
+  graph: ReconstructionGraph;
+  generated_at: string;
+}
+export interface ReconstructionReport {
+  version: 1;
+  investigation_id: string;
+  status: ExposureStatus;
+  stale: boolean;
+  cache_hit: boolean;
+  input_hash: string | null;
+  current_input_hash: string | null;
+  snapshot: DigitalFootprintReconstruction | null;
+}

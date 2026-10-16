@@ -523,3 +523,51 @@ y completar/diagnosticar la suite general de fuentes. La extracción institucion
 es conservadora y puede usar mensajes genéricos; no hay comprensión semántica
 global ni una garantía universal sobre nombres arbitrarios. Nada de esta deuda
 introduce reconstrucción de identidad de Fase 6.
+
+## Fase 6 — Digital Footprint Reconstruction + Graph V2
+
+Implementada sobre `ReviewedFootprintDataset` + `ExposureReport` actual:
+
+- Registro único de hechos seguros con bases DECLARED / OBSERVED / CORRELATED;
+  INFERRED reservado, sin uso en esta versión. Sin probabilidades de identidad.
+- Narrativa determinística, identidad declarada/atribuida, identificadores
+  públicos, contexto académico/laboral, artefactos, brechas y timeline segura.
+- Grafo semántico centrado en el sujeto con IDs/orden estables, capas, evidencia
+  referenciada y caps. Posts dependen de cuentas, papers del perfil académico,
+  brechas del correo. Severidad solo en nodos de exposición.
+- Persistencia JSONB `reconstruction_runs` con hash compuesto/versionado,
+  concurrencia transaccional, estados terminales atómicos y staleness. Sin runs
+  running persistentes ni nuevos schedulers.
+- API GET `/reconstruction` y POST `/reconstruction/build`; no ejecuta Exposure
+  ni discovery automáticamente. Stale/ausencia de Exposure produce 409 explícito.
+- Vista `/investigation/{id}/reconstruction`, enlazada desde Exposure Lens,
+  con filtros, pan/zoom, selección de nodos/edges, detalle de evidencia,
+  narrativa, conteos, timeline y aviso de cobertura parcial.
+- Migración `c62d914ae306` sobre `bf781b42de01`, aplicada solo a personmap_lite.
+- Sin LLM, raw candidates, posts/bios crudos ni coautores en la reconstrucción.
+
+Contrato, direcciones de edges, minimización y límites documentados en
+[DIGITAL_FOOTPRINT_RECONSTRUCTION.md](DIGITAL_FOOTPRINT_RECONSTRUCTION.md).
+Fase 7 (rediseño de feria, guided demo y polish final) no se implementa aquí.
+
+Estado de Fase 6: terminada en su alcance funcional. Validación (16-10-2026):
+**36 pruebas de reconstrucción** (27 puras + 9 REST/PostgreSQL) y **77 de
+regresión** Exposure/Verification/Fair/aislamiento aprobadas en ejecuciones
+con solapamiento. **7 pruebas frontend nuevas**, los 4 archivos de tests frontend,
+TypeScript y ESLint completos aprobados. Build de producción `next build
+--webpack` correcto, con la ruta de reconstrucción. Turbopack falla por permiso
+al abrir un puerto del worker CSS incluso tras solicitar ejecución fuera del
+sandbox; no se alteró la configuración para ocultarlo. Sin E2E de navegador real.
+
+Smoke Lite end-to-end correcto: **30 nodos / 52 edges explicadas**, comprobación
+de JSON persistido, exclusión de rejected/uncertain, semántica email-breach y
+perfil-paper, protección ante dirección/horario/términos sensibles, caché y
+cleanup. Alembic final `c62d914ae306 (head)`. person_map permanece intacta.
+
+La suite general agotó 180 s (exit 124): **705 PASSED** registrados, sin fallos
+registrados hasta ese punto; última prueba en curso:
+`test_maigret_capabilities.py::test_all_native_report_formats_work_without_network[graph]`.
+No se afirma que esa prueba falle ni que la suite completa esté verde.
+Maigret/GHunt no se modificaron. Deuda para Fase 7: polish visual, QA de
+interacciones en navegador, grupos expandibles opcionales y flujo guiado;
+retención/GC de snapshots y completar la suite general quedan pendientes.

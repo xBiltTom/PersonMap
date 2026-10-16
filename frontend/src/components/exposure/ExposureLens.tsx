@@ -229,6 +229,12 @@ export function ExposureLens({ investigationId }: { investigationId: string }) {
             </button>
           </section>
 
+          {current && report && ["completed", "partial"].includes(report.status) && (
+            <Link href={`/investigation/${investigationId}/reconstruction`} className={styles.sourceLink}>
+              Reconstruir mi huella pública <ArrowUpRight size={14} />
+            </Link>
+          )}
+
           {report?.status === "pending" && (
             <section className={styles.emptyState}>
               <span className={styles.emptyGlyph}><Globe2 size={20} /></span>

@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     # Exposure Lens is deterministic by default. The optional classifier only
     # receives bounded, attributed public text after local redaction.
     exposure_run_lease_seconds: int = Field(default=120, ge=30, le=900)
+    reconstruction_max_timeline_items: int = Field(default=50, ge=1, le=200)
+    graph_max_total_nodes: int = Field(default=150, ge=10, le=300)
+    graph_max_post_nodes: int = Field(default=30, ge=0, le=100)
+    graph_max_document_nodes: int = Field(default=30, ge=0, le=100)
+    graph_max_exposure_nodes: int = Field(default=30, ge=0, le=100)
     exposure_ai_enabled: bool = False
     exposure_ai_model: Optional[str] = None
     exposure_max_content_items: int = Field(default=100, ge=1, le=500)

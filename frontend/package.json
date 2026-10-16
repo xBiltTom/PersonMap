@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test:graph": "node --experimental-strip-types tests/graphLayout.test.mts",
     "test:footprint": "node --experimental-strip-types tests/footprintInput.test.mts",
-    "test:review": "node --experimental-strip-types tests/reviewState.test.mts"
+    "test:review": "node --experimental-strip-types tests/reviewState.test.mts",
+    "test:reconstruction": "node --experimental-strip-types tests/reconstruction.test.mts"
   },
   "dependencies": {
     "@xyflow/react": "^12.11.6",

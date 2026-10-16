@@ -11,6 +11,7 @@ from app.models.investigation_session import InvestigationSession
 from app.models.analysis_note import AnalysisNote
 from app.models.review_decision import ReviewDecision
 from app.models.exposure_run import ExposureContentCache, ExposureRun
+from app.models.reconstruction_run import ReconstructionRun
 
 __all__ = [
     "Target",
@@ -25,6 +26,7 @@ __all__ = [
     "InvestigationSession",
     "AnalysisNote",
     "ReviewDecision",
+    "ReconstructionRun",
     "ExposureRun",
     "ExposureContentCache",
 ]

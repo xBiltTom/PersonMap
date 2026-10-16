@@ -17,6 +17,7 @@ import type {
   ReviewFinalizeData,
   ReviewedFootprintDataset,
   ExposureReport,
+  ReconstructionReport,
   MetricsComparison,
   SurveyPayload,
   SurveyRead,
@@ -253,4 +254,12 @@ export function createSurvey(payload: SurveyPayload): Promise<SurveyRead> {
 
 export function getSurveyStats(): Promise<SurveyStats> {
   return request<SurveyStats>("/surveys/stats");
+}
+
+export function getReconstruction(id: string): Promise<ReconstructionReport> {
+  return request<ReconstructionReport>("/investigations/" + id + "/reconstruction");
+}
+
+export function buildReconstruction(id: string): Promise<ReconstructionReport> {
+  return request<ReconstructionReport>("/investigations/" + id + "/reconstruction/build", { method: "POST" });
 }
