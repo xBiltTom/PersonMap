@@ -8,6 +8,7 @@ import type { ReconstructionReport } from "../../lib/types";
 import { visibleReconstruction } from "../../lib/reconstructionState";
 import { ReconstructionStatus } from "./ReconstructionStatus";
 import { ReconstructionSections } from "./ReconstructionSections";
+import { ReconstructionAnalysis } from "./ReconstructionAnalysis";
 import styles from "./ReconstructionView.module.css";
 
 const ReconstructionGraph = dynamic(() => import("./ReconstructionGraph"), {
@@ -58,7 +59,8 @@ export function ReconstructionView({ investigationId }: { investigationId: strin
             [snapshot.counts.exposure || 0, "señales de exposición"]].map(([count, label]) =>
             <div key={label}><strong>{count}</strong><span>{label}</span></div>)}
         </section>
-        <ReconstructionGraph key={snapshot.input_hash} snapshot={snapshot} />
+        <ReconstructionAnalysis key={`analysis:${snapshot.input_hash}`} snapshot={snapshot} />
+        <ReconstructionGraph key={`graph:${snapshot.input_hash}`} snapshot={snapshot} />
         <ReconstructionSections snapshot={snapshot} />
       </>}
     </>}

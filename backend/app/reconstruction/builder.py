@@ -1,7 +1,7 @@
 """The registry is the single source for identity, narrative, timeline and graph.
 
-Never reads bios, captions, post text, authorship free text or review candidates.
-Only typed dataset fields and locally minimized Exposure evidence are projected.
+Reviewed post text is analyzed locally; only minimized category evidence is projected.
+Review candidates and unconfirmed accounts never enter the reconstruction.
 """
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -9,13 +9,14 @@ from urllib.parse import urlsplit
 
 from app.exposure.detectors import exact_emails, exact_phones, domain_from_url
 from app.reconstruction.graph import build_graph
+from app.reconstruction.analysis import assess_posts, identity_portrait
 from app.reconstruction.narrative import build_narrative, build_timeline, content_counts
 from app.reconstruction.registry import FactRegistry, fingerprint, canonical
 from app.reconstruction.safety import safe_identifier, safe_platform, safe_day, minimized_evidence, safe_url as _safe_url
 from app.schemas.exposure import ExposureReport
 from app.schemas.reconstruction import DigitalFootprintReconstruction, ReconstructionIdentity
 from app.schemas.review import ReviewedFootprintDataset
-from app.services.exposure_lens import _is_attributed, CATEGORY_LABELS
+from app.services.exposure_lens import _is_attributed, _units, _stable_content_id, CATEGORY_LABELS
 
 RECONSTRUCTION_VERSION = 'reconstruction-v1'
 GRAPH_VERSION = 'graph-v2'
@@ -137,6 +138,9 @@ def build_snapshot(dataset: ReviewedFootprintDataset, exposure: ExposureReport, 
                         'La huella revisada vincula este documento al perfil académico mediante su relación registrada.',
                         refs + registry.facts[parent].evidence_refs)
 
+    post_units = {(unit['source_id'], unit['source_content_id']): unit
+                  for unit in _units(dataset, accounts) if unit['content_type'] == 'social_post'}
+    assessment_inputs = {}
     posts = sorted([p for p in dataset.social_content if isinstance(p, dict)], key=lambda p: canonical({
         key: p.get(key) for key in ('account_entity_id', 'id', 'url', 'posted_at', 'published_at', 'timestamp', 'content_type')
     }))
@@ -146,7 +150,6 @@ def build_snapshot(dataset: ReviewedFootprintDataset, exposure: ExposureReport, 
             continue
         url = _safe_url(post.get('url'))
         external_id = post.get('id')
-        # Text is deliberately not a fallback ID source.
         if not external_id and not url:
             continue
         stable = canonical([parent, str(external_id or url)])
@@ -168,6 +171,7 @@ def build_snapshot(dataset: ReviewedFootprintDataset, exposure: ExposureReport, 
                           if type(post.get(field)) is int and post[field] >= 0),
                       date=safe_day(post.get('posted_at') or post.get('published_at') or post.get('timestamp')))
         identity.public_content.append(key)
+        assessment_inputs[key] = post_units.get((str(post.get('account_entity_id') or ''), _stable_content_id(post)))
         collaborative = post.get('authorship_role') == 'coauthor'
         registry.relate(parent, key, 'COAUTHORED' if collaborative else 'PUBLISHED', 'OBSERVED',
                         'La cuenta figura explícitamente como colaboradora de esta publicación.' if collaborative else
@@ -328,6 +332,9 @@ def build_snapshot(dataset: ReviewedFootprintDataset, exposure: ExposureReport, 
         fact.safe_summary = ('Identificador declarado también observado públicamente.' if fact.basis == 'DECLARED'
                              else 'Identificador observado explícitamente en una fuente atribuida.')
 
+    assessments = assess_posts(registry, sorted(assessment_inputs.items()), exposure)
+    portrait = identity_portrait(registry, assessments)
+
     for field in type(identity).model_fields:
         setattr(identity, field, sorted(set(getattr(identity, field))))
     facts = sorted(registry.facts.values(), key=lambda f: (f.ring, f.id))
@@ -340,6 +347,7 @@ def build_snapshot(dataset: ReviewedFootprintDataset, exposure: ExposureReport, 
         coverage_reasons=sorted(set([*exposure.partial_reasons, *(['acquisition_partial'] if dataset.execution.get('acquisition_partial') else [])])),
         identity=identity, facts=facts, evidence=dict(sorted(registry.evidence.items())),
         correlations=sorted(registry.relations.values(), key=lambda e: e.id), summary=build_narrative(registry),
+        post_assessments=assessments, identity_portrait=portrait,
         counts=counts, content_by_platform=content_counts(registry), exposure_summary=exposure.summary,
         timeline=build_timeline(registry, config['reconstruction_max_timeline_items']), graph=build_graph(registry, config),
         generated_at=generated_at or datetime.now(timezone.utc),

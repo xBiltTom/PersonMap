@@ -75,6 +75,9 @@ class GraphV2(BaseModel):
 class NarrativeClaim(BaseModel):
     text: str
     fact_ids: list[str]
+    basis: Literal['DECLARED', 'OBSERVED', 'CORRELATED'] | None = None
+    caveat: str | None = None
+    evidence_refs: list[str] = Field(default_factory=list)
 
 
 class TimelineItem(BaseModel):
@@ -98,6 +101,30 @@ class ReconstructionIdentity(BaseModel):
     breach_exposure: list[str] = Field(default_factory=list)
 
 
+class PostRiskSignal(BaseModel):
+    category: str
+    label: str
+    severity: ExposureSeverity
+    observation: str
+    why_it_matters: str
+    recommendations: list[str]
+    evidence_refs: list[str]
+    analysis_method: Literal['deterministic', 'ai'] = 'deterministic'
+
+
+class PostAssessment(BaseModel):
+    fact_id: str
+    severity: ExposureSeverity | None = None
+    status: Literal['signals_detected', 'no_signals', 'no_text']
+    signals: list[PostRiskSignal] = Field(default_factory=list)
+    explanation: str
+    recommendations: list[str] = Field(default_factory=list)
+    title: str = ''
+    context: str = ''
+    limitations: list[str] = Field(default_factory=list)
+    analysis_method: Literal['deterministic', 'ai'] = 'deterministic'
+
+
 class DigitalFootprintReconstruction(BaseModel):
     version: Literal[1] = 1
     reconstruction_version: Literal['reconstruction-v1'] = 'reconstruction-v1'
@@ -113,6 +140,9 @@ class DigitalFootprintReconstruction(BaseModel):
     evidence: dict[str, EvidenceRef]
     correlations: list[ReconstructionRelation]
     summary: list[NarrativeClaim]
+    identity_portrait: list[NarrativeClaim] = Field(default_factory=list)
+    post_assessments: list[PostAssessment] = Field(default_factory=list)
+    content_analysis_status: Literal['deterministic', 'completed', 'partial', 'fallback'] = 'deterministic'
     narrative_highlights: list[NarrativeClaim] = Field(default_factory=list)
     narrative_method: Literal["deterministic", "ai_assisted"] = "deterministic"
     narrative_status: Literal["deterministic", "completed", "fallback"] = "deterministic"

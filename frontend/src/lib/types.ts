@@ -707,6 +707,23 @@ export interface ReconstructionGraph {
   omitted_nodes: number;
   omitted_by_type: Record<string, number>;
 }
+export interface PostAssessment {
+  fact_id: string;
+  severity: ExposureSeverity | null;
+  status: "signals_detected" | "no_signals" | "no_text";
+  explanation: string;
+  recommendations: string[];
+  title?: string;
+  context?: string;
+  limitations?: string[];
+  analysis_method?: "deterministic" | "ai";
+  signals: Array<{
+    category: string; label: string; severity: ExposureSeverity;
+    observation: string; why_it_matters: string; recommendations: string[];
+    evidence_refs: string[]; analysis_method: "deterministic" | "ai";
+  }>;
+}
+
 export interface DigitalFootprintReconstruction {
   version: 1;
   reconstruction_version: "reconstruction-v1";
@@ -722,6 +739,10 @@ export interface DigitalFootprintReconstruction {
   evidence: Record<string, ReconstructionEvidence>;
   correlations: ReconstructionRelation[];
   summary: Array<{ text: string; fact_ids: string[] }>;
+  identity_portrait?: Array<{ text: string; fact_ids: string[]; basis?: "DECLARED" | "OBSERVED" | "CORRELATED" | null;
+    caveat?: string | null; evidence_refs?: string[] }>;
+  post_assessments?: PostAssessment[];
+  content_analysis_status?: "deterministic" | "completed" | "partial" | "fallback";
   narrative_highlights?: Array<{ text: string; fact_ids: string[] }>;
   narrative_method?: "deterministic" | "ai_assisted";
   narrative_status?: "deterministic" | "completed" | "fallback";

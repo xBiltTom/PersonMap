@@ -21,10 +21,11 @@ def reconstruction_config():
     return {key: getattr(settings, key) for key in (
         'reconstruction_max_timeline_items', 'graph_max_total_nodes', 'graph_max_post_nodes',
         'graph_max_document_nodes', 'graph_max_exposure_nodes',
-    )} | {'evidence_policy': 'reviewed-typed-fields-and-minimized-exposure-v2',
+    )} | {'evidence_policy': 'reviewed-post-analysis-and-identity-v3',
          'ai_presentation': settings.reconstruction_ai_enabled,
+         'context_date': datetime.now(timezone.utc).date().isoformat(),
          'presentation_model': settings.llm_model if settings.reconstruction_ai_enabled else None,
-         'presentation_policy': 'existing-fact-ids-only-v1'}
+         'presentation_policy': 'quoted-contextual-reading-v3'}
 
 
 def exposure_fingerprint(report):
@@ -96,7 +97,9 @@ async def build_reconstruction(db: AsyncSession, investigation_id: UUID):
         dataset, exposure, data_hash, exposure_hash, input_hash, config = await _inputs(db, investigation_id, lock=True)
         existing = (await db.scalars(select(ReconstructionRun).where(
             ReconstructionRun.investigation_id == investigation_id, ReconstructionRun.input_hash == input_hash))).first()
-        retry_presentation = existing and settings.reconstruction_ai_enabled and (existing.snapshot or {}).get("narrative_status") == "fallback"
+        retry_presentation = existing and settings.reconstruction_ai_enabled and (
+            (existing.snapshot or {}).get('narrative_status') == 'fallback'
+            or (existing.snapshot or {}).get('content_analysis_status') in {'fallback', 'partial'})
         if existing and not retry_presentation:
             response = _response(existing, input_hash, cache_hit=True)
             await db.commit()
@@ -104,6 +107,8 @@ async def build_reconstruction(db: AsyncSession, investigation_id: UUID):
         started_at = datetime.now(timezone.utc)
         snapshot = build_snapshot(dataset, exposure, investigation_id=str(investigation_id),
             data_hash=data_hash, exposure_hash=exposure_hash, input_hash=input_hash, config=config)
+        from app.reconstruction.semantic import analyze_snapshot
+        snapshot = await analyze_snapshot(snapshot, dataset, db=db)
         from app.reconstruction.presentation import present_snapshot
         snapshot = await present_snapshot(snapshot)
         snapshot.generated_at = datetime.now(timezone.utc)
