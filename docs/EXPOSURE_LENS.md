@@ -208,3 +208,91 @@ This phase does not write a narrative identity, infer interests or personality,
 build a full identity graph, or answer “who you are.” It reports only explainable
 public exposure in the human-reviewed dataset. Phase 6 can consume these
 findings as evidence but must preserve their provenance and safety boundaries.
+
+## Mini Fase 5.1 — Execution lease and recovery
+
+`EXPOSURE_RUN_LEASE_SECONDS=120` (30–900 seconds) bounds each analysis attempt
+with an async timeout. `started_at` is the lease timestamp; no new columns or
+migration are needed. Internally `running_active` means elapsed time <= lease;
+`running_abandoned` means elapsed time > lease. There is no scheduler/heartbeat.
+
+POST semantics for the same investigation/dataset/version/config:
+
+| Stored state | Action |
+| --- | --- |
+| completed / partial | Return saved report |
+| running, active | Return running; do not analyze again |
+| running, abandoned | Claim the same row, clear old results/counters, restart timestamp |
+| failed | Claim the same row and retry |
+| absent | Insert one logical run |
+
+Creation uses PostgreSQL `INSERT ON CONFLICT DO NOTHING` against the existing
+unique constraint. The investigation and run row locks serialize claims;
+locks are released by commit before content analysis. Concurrent identical
+POSTs therefore share one run and only the claimant invokes analysis/AI.
+Final writes are conditional on status and attempt timestamp, preventing a
+late worker from overwriting a replacement. Failure rolls back uncommitted
+content cache entries before marking the owned attempt failed with completed_at.
+Cancellation follows the same cleanup; a hard process kill is recovered by lease.
+
+GET only observes: an abandoned running row is projected as `status=failed`
+so the existing retry action is available. It never updates the row or starts
+analysis. This projection does not change dataset staleness semantics.
+
+## Mini Fase 5.1 — Evidence minimization and persistence
+
+Category builders run before content signals enter cache/report JSON. Location
+uses a general observation or a redacted specific-location message. Temporal
+uses a generic reference without hours or routines. Education/work extracts
+only an institution marker and a short capitalized name; ambiguous names fall
+back to a generic context message. Biographical evidence extracts only the
+explicit professional-role token. Documents and generic content use fixed
+messages. No builder falls back to raw sentences or paragraphs.
+
+Examples:
+
+- `Tengo lupus y estudio en Universidad X` → `Contexto educativo observado: Universidad X.`
+- `Trabajo en Empresa Y y todos los martes entro a las 08:10` → `Contexto laboral observado: Empresa Y.`
+- `Nos vemos en Calle Olivos 123 para el evento de Universidad Z` → education
+  retains `Universidad Z`; location uses `[redactada]`.
+
+These exclusions hold even for terms outside the sensitive-word regex. Existing
+address/routine/family/sensitive/contact filters remain defense in depth. Exact
+contact evidence still contains only the extracted public contact string.
+Optional AI excerpts are discarded and reconstructed locally from the original
+unit and allowed category. AI severity stays capped by local rules. Top
+Exposures uses these same minimized signals, including its nested evidence.
+The config hash includes `evidence_policy=category-minimization-v2`, so old
+cached classifications and reports are not reused by new POST analyses.
+Historical saved reports remain historical; this change does not rewrite them.
+URLs reject unsafe decoded paths (including nested percent encoding and common
+separators) and remove queries/fragments. Analysis does not log source text or
+full model prompts.
+
+`ExposureRun.findings`, `top_exposures`, and `ExposureContentCache.result` receive
+already minimized JSON, independent of frontend rendering. An abandoned run
+never invalidates safe content cache. AI batch failure leaves misses uncached.
+
+The global content cache has no investigation ownership or full dataset, and
+contains only hashes/config/model plus sanitized signals. It can survive deletion
+of an investigation. Proposed retention is 30 days by `created_at`, including
+obsolete evidence-policy versions, via a future operator-controlled batch delete;
+there is currently no automatic GC or retention guarantee. No scheduler or
+cleanup route is introduced in this mini phase. Hashes should still be treated
+as pseudonymous data. Historical reports need a separate retention policy.
+
+## Hardening validation (2026-10-16)
+
+- Exposure: 37 tests passed (pure helpers plus real PostgreSQL/REST in disposable
+  Lite schemas), covering active/abandoned/failed claims, concurrent POSTs,
+  expired workers succeeding/failing after replacement, content-cache reuse,
+  minimized AI output/local severity, persisted JSON, and encoded URLs.
+- Verification Gate: 9 DB tests passed against personmap_lite.
+- Fair Orchestrator: 29 tests passed.
+- Lite smoke: passed with address, schedule, unknown sensitive terminology and
+  institutional context; assertions inspect report and persisted JSON; cleanup
+  removes fixture records. Public Alembic revision remains bf781b42de01 (head).
+- TypeScript (`tsc --noEmit --incremental false`), full frontend ESLint and
+  `git diff --check`: passed.
+- General suite is subject to the existing GHunt/Maigret runtime limitations;
+  see the Mini Fase 5.1 validation notes in FAIR_V2_PLAN.md for the bounded run.

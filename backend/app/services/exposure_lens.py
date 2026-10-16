@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -12,7 +13,7 @@ from urllib.parse import unquote, urlsplit
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -39,6 +40,7 @@ from app.exposure.detectors import (
     normalize_text,
     public_urls,
     safe_excerpt,
+    safe_category_evidence,
 )
 from app.models.exposure_run import ExposureContentCache, ExposureRun
 from app.models.investigation import Investigation
@@ -143,6 +145,7 @@ def _analysis_config() -> tuple[dict[str, Any], str | None, str]:
         "max_text_chars": settings.exposure_max_text_chars,
         "max_findings": settings.exposure_max_findings,
         "max_text_excerpt": settings.exposure_max_text_excerpt,
+        "evidence_policy": "category-minimization-v2",
         "address_policy": "redact-specific-generalize-v1",
         "routine_policy": "do-not-synthesize-or-quote-v1",
         "sensitive_policy": "no-sensitive-traits-v1",
@@ -236,7 +239,16 @@ def _safe_url(value: Any) -> str | None:
         parts = urlsplit(value.strip())
         if parts.scheme not in {"http", "https"} or not parts.hostname or parts.username or parts.password:
             return None
-        decoded = unquote(value)
+        decoded = value
+        # Decode nested encodings as well as separators used in URL paths.
+        for _ in range(8):
+            expanded = unquote(decoded)
+            if expanded == decoded:
+                break
+            decoded = expanded
+        else:
+            return None
+        decoded = re.sub(r"[+/_-]+", " ", decoded)
         if (has_precise_address(decoded) or has_operational_routine(decoded)
                 or SENSITIVE_SUBJECT_RE.search(decoded) or FAMILY_REFERENCE_RE.search(decoded)):
             return None
@@ -432,17 +444,17 @@ def _local_signals(unit: dict[str, Any]) -> list[dict[str, str]]:
         signals.append(_signal("location_disclosure", "high",
             "La fuente contiene una referencia de ubicación específica [redactada]."))
     elif has_general_location(text):
-        signals.append(_signal("location_disclosure", "medium", safe_excerpt(text, settings.exposure_max_text_excerpt)))
+        signals.append(_signal("location_disclosure", "medium", safe_category_evidence("location_disclosure", text, settings.exposure_max_text_excerpt)))
     if has_temporal_disclosure(text):
         severity: ExposureSeverity = "medium" if has_operational_routine(text) or re.search(
             r"\b(?:trip|travel|viaje|viajando|visitando|vacation|vacaciones|event|evento)\b", text, re.I
         ) else "low"
-        excerpt = safe_excerpt(text, settings.exposure_max_text_excerpt)
+        excerpt = safe_category_evidence("temporal_exposure", text, settings.exposure_max_text_excerpt)
         signals.append(_signal("temporal_exposure", severity, excerpt))
     if EDU_WORK_RE.search(text):
-        signals.append(_signal("education_work_context", "medium", safe_excerpt(text, settings.exposure_max_text_excerpt)))
+        signals.append(_signal("education_work_context", "medium", safe_category_evidence("education_work_context", text, settings.exposure_max_text_excerpt)))
     if BIO_ROLE_RE.search(text):
-        signals.append(_signal("biographical_identifiers", "low", safe_excerpt(text, settings.exposure_max_text_excerpt)))
+        signals.append(_signal("biographical_identifiers", "low", safe_category_evidence("biographical_identifiers", text, settings.exposure_max_text_excerpt)))
     return signals
 
 
@@ -520,8 +532,8 @@ async def _cached_content_signals(
             }[category]
             if any(item["category"] == category for item in signals):
                 continue
-            signals.append(_signal(category, ai_severity, safe_excerpt(
-                raw.get("evidence_excerpt", ""), settings.exposure_max_text_excerpt), "ai"))
+            signals.append(_signal(category, ai_severity, safe_category_evidence(
+                category, str(unit["text"]), settings.exposure_max_text_excerpt), "ai"))
         # Content cache stores only safe classifications and bounded excerpts.
         encoded = _canonical_json(signals)
         decoded = json.loads(encoded)
@@ -862,7 +874,7 @@ def _content_and_document_signals(
             labels = [CATEGORY_LABELS.get(category, category) for category in categories]
             content_id = unit.get("source_content_id")
             excerpt = next((item["excerpt"] for item in signals if item["category"] != "content_disclosure"),
-                           safe_excerpt(unit["text"], settings.exposure_max_text_excerpt))
+                           safe_category_evidence("content_disclosure", "", settings.exposure_max_text_excerpt))
             evidence = _evidence(unit, excerpt)
             collector.add(
                 "content_disclosure", unit["content_id"], severity, "Publicación con señales de exposición",
@@ -1184,66 +1196,81 @@ async def get_report(db: AsyncSession, investigation_id: UUID) -> ExposureReport
             status="pending",
         )
     report = _report_from_run(latest)
+    if _running_abandoned(latest):
+        # Read-only projection: persisted state is recovered only by POST.
+        report.status = "failed"
     report.current_dataset_hash = current_hash
     report.stale = latest.dataset_hash != current_hash
     return report
 
 
+def _running_abandoned(run: ExposureRun) -> bool:
+    return (run.status == "running" and
+            (datetime.now(timezone.utc) - run.started_at).total_seconds()
+            > settings.exposure_run_lease_seconds)
+
+
 async def analyze(db: AsyncSession, investigation_id: UUID) -> ExposureReport:
     _, dataset, data_hash = await _current_dataset(db, investigation_id, lock=True)
     config, model, config_hash = _analysis_config()
-    existing = (await db.scalars(select(ExposureRun).where(
+    # The unique constraint arbitrates creation even if another caller does not
+    # hold the investigation lock. Lock the winning row before claiming retries.
+    await db.execute(pg_insert(ExposureRun).values(
+        investigation_id=investigation_id, dataset_hash=data_hash,
+        config_hash=config_hash, analysis_version=ANALYSIS_VERSION,
+        status="pending", config=config, model=model,
+    ).on_conflict_do_nothing(constraint="uq_exposure_run_dataset_config"))
+    run = (await db.scalars(select(ExposureRun).where(
         ExposureRun.investigation_id == investigation_id,
         ExposureRun.dataset_hash == data_hash,
         ExposureRun.analysis_version == ANALYSIS_VERSION,
         ExposureRun.config_hash == config_hash,
-    ).with_for_update())).first()
-    if existing and existing.status in {"completed", "partial"}:
-        return _report_from_run(existing, cache_hit=True)
-    if existing and existing.status == "running":
-        return _report_from_run(existing)
-    now = datetime.now(timezone.utc)
-    if existing:
-        run = existing
-        run.status = "running"
-        run.started_at = now
-        run.completed_at = None
-        run.summary = {}
-        run.findings = []
-        run.top_exposures = []
-    else:
-        run = ExposureRun(
-            investigation_id=investigation_id,
-            dataset_hash=data_hash,
-            config_hash=config_hash,
-            analysis_version=ANALYSIS_VERSION,
-            status="running",
-            started_at=now,
-            model=model,
-            config=config,
-        )
-        db.add(run)
-    await db.commit()
-    await db.refresh(run)
-    try:
-        report = await _build_analysis(db, investigation_id, dataset, data_hash, config, model, config_hash)
-        run.status = report.status
-        run.completed_at = report.generated_at
-        run.model = model
-        run.summary = report.summary.model_dump(mode="json")
-        run.findings = [item.model_dump(mode="json") for item in report.findings]
-        run.top_exposures = [item.model_dump(mode="json") for item in report.top_exposures]
-        run.analyzed_content_count = report.analyzed_content_count
-        run.skipped_content_count = report.skipped_content_count
-        persisted_config = dict(config)
-        persisted_config["category_counts"] = report.categories
-        persisted_config["partial_reasons"] = report.partial_reasons
-        run.config = persisted_config
+    ).with_for_update())).one()
+    if run.status in {"completed", "partial"}:
+        report = _report_from_run(run, cache_hit=True)
         await db.commit()
         return report
-    except Exception:
-        run.status = "failed"
-        run.completed_at = datetime.now(timezone.utc)
-        run.config = config
+    if run.status == "running" and not _running_abandoned(run):
+        report = _report_from_run(run)
+        await db.commit()
+        return report
+    attempt_started = datetime.now(timezone.utc)
+    run.status = "running"
+    run.started_at = attempt_started
+    run.completed_at = None
+    run.summary = {}
+    run.findings = []
+    run.top_exposures = []
+    run.config = config
+    run.analyzed_content_count = run.skipped_content_count = 0
+    run_id = run.id
+    await db.commit()
+    # Fence final writes by the attempt timestamp. A worker that outlives its
+    # lease cannot overwrite a replacement, including on exception/cancellation.
+    owned = (ExposureRun.id == run_id, ExposureRun.status == "running",
+             ExposureRun.started_at == attempt_started)
+    try:
+        async with asyncio.timeout(settings.exposure_run_lease_seconds):
+            report = await _build_analysis(db, investigation_id, dataset, data_hash, config, model, config_hash)
+        saved = await db.execute(update(ExposureRun).where(*owned).values(
+            status=report.status, completed_at=report.generated_at, model=model,
+            summary=report.summary.model_dump(mode="json"),
+            findings=[item.model_dump(mode="json") for item in report.findings],
+            top_exposures=[item.model_dump(mode="json") for item in report.top_exposures],
+            analyzed_content_count=report.analyzed_content_count,
+            skipped_content_count=report.skipped_content_count,
+            config={**config, "category_counts": report.categories, "partial_reasons": report.partial_reasons},
+        ).execution_options(synchronize_session=False))
+        if saved.rowcount == 0:
+            await db.rollback()
+            return _report_from_run(await db.get(ExposureRun, run_id, populate_existing=True))
+        await db.commit()
+        return report
+    except (Exception, asyncio.CancelledError):
+        # Roll back cache writes and any failed SQL transaction before recording failure.
+        await db.rollback()
+        await db.execute(update(ExposureRun).where(*owned).values(
+            status="failed", completed_at=datetime.now(timezone.utc), config=config,
+        ).execution_options(synchronize_session=False))
         await db.commit()
         raise

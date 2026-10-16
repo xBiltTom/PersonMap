@@ -98,7 +98,9 @@ async def run_smoke() -> None:
                             "id": f"{FIXTURE_TAG}-post",
                             "url": f"https://www.tiktok.com/@{FIXTURE_TAG}/video/{FIXTURE_TAG}",
                             "caption": (
-                                "Visiting Cusco tomorrow for Universidad del Norte. "
+                                "Tengo lupus y estudio en Universidad del Norte. "
+                                "Trabajo en Empresa Y y todos los martes entro a las 08:10. "
+                                "Nos vemos en Calle Olivos 123 para el evento. "
                                 f"Contact {FIXTURE_TAG}@example.org."
                             ),
                             "posted_at": now.date().isoformat(),
@@ -186,6 +188,22 @@ async def run_smoke() -> None:
             serialized = str(report)
             assert str(entities[2].id) not in serialized
             assert str(entities[3].id) not in serialized
+            assert report["categories"]["education_work_context"] >= 1
+            assert report["categories"]["location_disclosure"] >= 1
+            assert report["categories"]["temporal_exposure"] >= 1
+            assert "Universidad del Norte" in serialized
+            for forbidden in ("lupus", "08:10", "Calle Olivos 123", "todos los martes"):
+                assert forbidden not in serialized
+            async with factory() as db:
+                saved = (await db.scalars(select(ExposureRun).where(
+                    ExposureRun.investigation_id == investigation_id
+                ))).one()
+                caches = (await db.scalars(select(ExposureContentCache).where(
+                    ExposureContentCache.content_hash.in_(cache_hashes)
+                ))).all()
+                persisted = str([saved.findings, saved.top_exposures, *[c.result for c in caches]])
+                for forbidden in ("lupus", "08:10", "Calle Olivos 123", "todos los martes"):
+                    assert forbidden not in persisted
 
         async with factory() as db:
             fixture_cache = (await db.scalars(select(ExposureContentCache).where(

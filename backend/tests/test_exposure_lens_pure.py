@@ -120,3 +120,42 @@ async def test_ai_structured_output_discards_sensitive_and_actionable_signals(mo
     assert "Tuesday at 8" not in json.dumps(result)
     assert "sister" not in json.dumps(result).lower() and "Ana" not in json.dumps(result)
     assert "political" not in json.dumps(result).lower()
+
+
+@pytest.mark.parametrize(('text', 'expected'), [
+    ('Tengo lupus y estudio en Universidad X', 'Contexto educativo observado: Universidad X.'),
+    ('Soy adventista y estudio en Universidad del Norte.', 'Contexto educativo observado: Universidad del Norte.'),
+    ('Trabajo en Empresa Y y todos los martes entro a las 08:10', 'Contexto laboral observado: Empresa Y.'),
+    ('Nos vemos en Calle X 123 para el evento de Universidad Z', 'Contexto educativo observado: Universidad Z.'),
+])
+def test_category_minimization_preserves_only_institution(text, expected):
+    from app.exposure.detectors import safe_category_evidence, SENSITIVE_SUBJECT_RE
+    from app.services.exposure_lens import _local_signals, _Collector, _content_and_document_signals
+    assert not SENSITIVE_SUBJECT_RE.search('lupus adventista')
+    assert safe_category_evidence('education_work_context', text) == expected
+    unit = {'text': text, 'content_id': 'post:1', 'content_type': 'social_post'}
+    signals = _local_signals(unit)
+    collector = _Collector()
+    top = _content_and_document_signals(collector, [unit], {'post:1': signals})
+    persisted = json.dumps([x.model_dump() for x in collector.ordered(100)] + [x.model_dump() for x in top])
+    for forbidden in ('lupus', 'adventista', '08:10', 'Calle X 123', 'todos los martes'):
+        assert forbidden not in persisted
+
+
+@pytest.mark.parametrize('category', ['location_disclosure', 'temporal_exposure',
+                                     'biographical_identifiers', 'education_work_context',
+                                     'content_disclosure', 'public_documents'])
+def test_unknown_text_fails_closed(category):
+    from app.exposure.detectors import safe_category_evidence
+    assert 'secreto desconocido' not in safe_category_evidence(category, 'secreto desconocido')
+
+
+@pytest.mark.parametrize('path', ['Calle%20Olivos%20123', 'Av.%2520Los%2520Olivos%2520123',
+    'every%20Tuesday%20at%208', 'my%20sister%20Ana', 'health',
+    'every+Tuesday+at+8', 'Calle_Olivos_123'])
+def test_encoded_unsafe_evidence_urls_are_rejected(path):
+    assert _safe_url('https://example.org/' + path) is None
+
+
+def test_safe_url_removes_query_and_fragment():
+    assert _safe_url('https://example.org/post?id=1#section') == 'https://example.org/post'

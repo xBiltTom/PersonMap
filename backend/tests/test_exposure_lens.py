@@ -380,6 +380,8 @@ async def test_ai_failure_keeps_deterministic_findings_and_returns_partial(expos
     assert report["partial_reasons"] == ["ai_failure"]
     assert report["categories"]["alias_reuse"] == 1
     assert report["categories"]["breach_exposure"] == 1
+    async with workspace["factory"]() as db:
+        assert not (await db.scalars(select(ExposureContentCache))).all()
 
 
 @pytest.mark.asyncio
@@ -406,3 +408,167 @@ async def test_partial_fair_source_coverage_is_not_presented_as_complete(exposur
         f"/api/v1/investigations/{workspace['investigation_id']}/exposure"
     )
     assert restored.json()["partial_reasons"] == ["acquisition_partial"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('state', ['active', 'abandoned', 'failed'])
+async def test_running_lease_and_failed_retry(exposure_workspace, monkeypatch, state):
+    from datetime import timedelta
+    from app.services import exposure_lens
+    ws = exposure_workspace
+    await _finalize(ws)
+    path = f"/api/v1/investigations/{ws['investigation_id']}/exposure"
+    assert (await ws['client'].post(path + '/analyze')).status_code == 200
+    async with ws['factory']() as db:
+        run = (await db.scalars(select(ExposureRun))).one()
+        run_id = run.id
+        run.status = 'failed' if state == 'failed' else 'running'
+        run.started_at = datetime.now(timezone.utc) - timedelta(
+            seconds=settings.exposure_run_lease_seconds + 1 if state == 'abandoned' else 0)
+        run.completed_at = None
+        cache_ids = (await db.scalars(select(ExposureContentCache.id))).all()
+        await db.commit()
+    original = exposure_lens._build_analysis
+    calls = 0
+    async def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return await original(*args, **kwargs)
+    monkeypatch.setattr(exposure_lens, '_build_analysis', counted)
+    observed = await ws['client'].get(path)
+    assert observed.json()['status'] == ('failed' if state in {'abandoned', 'failed'} else 'running')
+    assert calls == 0
+    response = await ws['client'].post(path + '/analyze')
+    assert response.status_code == 200, response.text
+    assert response.json()['status'] == ('running' if state == 'active' else 'completed')
+    assert calls == (0 if state == 'active' else 1)
+    async with ws['factory']() as db:
+        runs = (await db.scalars(select(ExposureRun))).all()
+        assert [r.id for r in runs] == [run_id]
+        assert set((await db.scalars(select(ExposureContentCache.id))).all()) == set(cache_ids)
+    if state != 'active':
+        assert response.json()['cache_hit'] is True
+
+
+@pytest.mark.asyncio
+async def test_concurrent_post_claims_one_analysis(exposure_workspace, monkeypatch):
+    import asyncio
+    from app.services import exposure_lens
+    ws = exposure_workspace
+    await _finalize(ws)
+    started, release = asyncio.Event(), asyncio.Event()
+    calls = 0
+    original = exposure_lens._build_analysis
+    async def blocked(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+        return await original(*args, **kwargs)
+    monkeypatch.setattr(exposure_lens, '_build_analysis', blocked)
+    path = f"/api/v1/investigations/{ws['investigation_id']}/exposure/analyze"
+    async def follower():
+        await asyncio.wait_for(started.wait(), 10)
+        try:
+            response = await asyncio.wait_for(ws['client'].post(path), 10)
+            assert response.status_code == 200, response.text
+            assert response.json()['status'] == 'running'
+            return response
+        finally:
+            release.set()
+    first, second = await asyncio.gather(ws['client'].post(path), follower())
+    assert first.status_code == second.status_code == 200
+    assert calls == 1
+    async with ws['factory']() as db:
+        assert len((await db.scalars(select(ExposureRun))).all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_analysis_exception_is_failed_then_retryable(exposure_workspace, monkeypatch):
+    from app.services import exposure_lens
+    ws = exposure_workspace
+    await _finalize(ws)
+    original = exposure_lens._build_analysis
+    async def broken(*args, **kwargs):
+        raise RuntimeError('controlled failure')
+    monkeypatch.setattr(exposure_lens, '_build_analysis', broken)
+    path = f"/api/v1/investigations/{ws['investigation_id']}/exposure/analyze"
+    with pytest.raises(RuntimeError, match='controlled failure'):
+        await ws['client'].post(path)
+    async with ws['factory']() as db:
+        run = (await db.scalars(select(ExposureRun))).one()
+        run_id = run.id
+        assert run.status == 'failed' and run.completed_at is not None
+    monkeypatch.setattr(exposure_lens, '_build_analysis', original)
+    assert (await ws['client'].post(path)).json()['status'] == 'completed'
+    async with ws['factory']() as db:
+        assert [r.id for r in (await db.scalars(select(ExposureRun))).all()] == [run_id]
+
+
+@pytest.mark.asyncio
+async def test_ai_excerpts_are_rebuilt_before_cache_and_persistence(exposure_workspace, monkeypatch):
+    from app.services import exposure_lens
+    ws = exposure_workspace
+    await _finalize(ws)
+    monkeypatch.setattr(settings, 'exposure_ai_enabled', True)
+    monkeypatch.setattr(settings, 'exposure_ai_model', 'fixture/model')
+    async def classifier(model, items, **kwargs):
+        return {item['content_id']: [{
+            'category': 'biographical_identifiers', 'severity': 'high',
+            'evidence_excerpt': 'Tengo lupus y soy adventista; Calle Olivos 123 a las 08:10',
+        }] for item in items}
+    monkeypatch.setattr(exposure_lens.exposure_ai, 'classify_batch', classifier)
+    path = f"/api/v1/investigations/{ws['investigation_id']}/exposure/analyze"
+    response = await ws['client'].post(path)
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert all(f['severity'] == 'low' for f in report['findings']
+               if f['analysis_method'] == 'ai' and f['category'] == 'biographical_identifiers')
+    async with ws['factory']() as db:
+        run = (await db.scalars(select(ExposureRun))).one()
+        caches = (await db.scalars(select(ExposureContentCache))).all()
+        persisted = json.dumps([run.findings, run.top_exposures, *[c.result for c in caches]])
+        for forbidden in ('lupus', 'adventista', 'Olivos 123', '08:10'):
+            assert forbidden not in persisted
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("old_fails", [False, True])
+async def test_expired_worker_cannot_overwrite_replacement(exposure_workspace, monkeypatch, old_fails):
+    import asyncio
+    from datetime import timedelta
+    from app.services import exposure_lens
+    ws = exposure_workspace
+    await _finalize(ws)
+    started, release = asyncio.Event(), asyncio.Event()
+    calls = 0
+    original = exposure_lens._build_analysis
+    async def blocked(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            started.set()
+            await release.wait()
+            if old_fails:
+                raise RuntimeError('expired worker')
+        return await original(*args, **kwargs)
+    monkeypatch.setattr(exposure_lens, '_build_analysis', blocked)
+    path = f"/api/v1/investigations/{ws['investigation_id']}/exposure/analyze"
+    first = asyncio.create_task(ws['client'].post(path))
+    try:
+        await asyncio.wait_for(started.wait(), 10)
+        async with ws['factory']() as db:
+            run = (await db.scalars(select(ExposureRun))).one()
+            run.started_at -= timedelta(seconds=settings.exposure_run_lease_seconds + 1)
+            await db.commit()
+        second = await ws['client'].post(path)
+        assert second.status_code == 200 and second.json()['status'] == 'completed'
+    finally:
+        release.set()
+        if old_fails:
+            with pytest.raises(RuntimeError, match='expired worker'):
+                await first
+        else:
+            assert (await first).json()['status'] == 'completed'
+    async with ws['factory']() as db:
+        assert (await db.scalars(select(ExposureRun))).one().status == 'completed'

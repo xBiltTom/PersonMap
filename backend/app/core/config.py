@@ -18,6 +18,7 @@ class Settings(BaseSettings):
 
     # Exposure Lens is deterministic by default. The optional classifier only
     # receives bounded, attributed public text after local redaction.
+    exposure_run_lease_seconds: int = Field(default=120, ge=30, le=900)
     exposure_ai_enabled: bool = False
     exposure_ai_model: Optional[str] = None
     exposure_max_content_items: int = Field(default=100, ge=1, le=500)

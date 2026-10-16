@@ -184,19 +184,51 @@ def has_general_location(value: str) -> bool:
     return bool(LOCATION_CONTEXT_RE.search(value))
 
 
+def safe_category_evidence(category: str, value: str, limit: int = 280) -> str:
+    """Extract only an explicit signal; unknown/ambiguous context fails closed.
+
+    Case-sensitive name tokens deliberately stop at prose/conjunctions. Never
+    quote a sentence surrounding an institution or a professional role.
+    """
+    text = normalize_text(value)
+    if category == "location_disclosure":
+        result = ("Referencia de ubicación específica [redactada]." if has_precise_address(text)
+                  else "Se observó una ubicación general en una fuente pública.")
+    elif category == "temporal_exposure":
+        result = "Referencia temporal pública observada [generalizada]."
+    elif category == "education_work_context":
+        # Only institution markers plus a short, explicitly capitalized name.
+        token = r"[A-ZÁÉÍÓÚÜÑ][a-záéíóúüñA-ZÁÉÍÓÚÜÑ-]*"
+        name = rf"{token}(?:(?: (?:de|del|la|los|las|of))? {token}){{0,5}}"
+        match = re.search(
+            rf"(?i:\b(universidad|university|college|instituto|institute|empresa|company)) "
+            rf"((?:(?:de|del|la|los|las|of) )?{name})(?![\w-])", text,
+        )
+        result = "Se observó contexto público de estudio o trabajo."
+        if match:
+            institution = match.group(0)
+            if not (SENSITIVE_SUBJECT_RE.search(institution) or FAMILY_REFERENCE_RE.search(institution)
+                    or has_precise_address(institution) or TIME_RE.search(institution)):
+                kind = "laboral" if match.group(1).lower() in {"empresa", "company"} else "educativo"
+                result = f"Contexto {kind} observado: {institution}."
+    elif category == "biographical_identifiers":
+        match = BIO_ROLE_RE.search(text)
+        result = (f"Cargo público observado: {match.group(0)}." if match
+                  else "Se observó un identificador biográfico público.")
+    elif category == "public_documents":
+        result = "Documento público atribuido con identificadores visibles."
+    else:
+        result = "Se observó una señal pública de exposición."
+    return result[:limit]
+
+
 def safe_excerpt(value: str, limit: int = 280) -> str:
-    clean = normalize_text(value)
-    clean = FAMILY_REFERENCE_RE.sub("[referencia familiar omitida]", clean)
-    if has_precise_address(clean):
-        return "La fuente contiene una referencia de ubicación específica [redactada]."
-    if has_operational_routine(clean):
-        return "La fuente contiene referencias temporales repetidas [generalizadas]."
-    clean = EMAIL_RE.sub("[correo visible]", clean)
-    clean = PHONE_RE.sub("[teléfono visible]", clean)
-    clean = SENSITIVE_SUBJECT_RE.sub("[tema sensible omitido]", clean)
-    clean = FAMILY_REFERENCE_RE.sub("[referencia familiar omitida]", clean)
-    clean = TIME_RE.sub("[hora omitida]", clean)
-    return clean[:limit].rstrip()
+    """Generic fallback never reproduces unstructured source text."""
+    if has_precise_address(value):
+        return "La fuente contiene una referencia de ubicación específica [redactada]."[:limit]
+    if has_operational_routine(value):
+        return "La fuente contiene referencias temporales repetidas [generalizadas]."[:limit]
+    return safe_category_evidence("content_disclosure", value, limit)
 
 
 def ai_safe_text(value: str, limit: int) -> str:

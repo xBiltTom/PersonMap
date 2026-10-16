@@ -487,3 +487,39 @@ pnpm build
   no se cambia el modo de módulos del proyecto para silenciarlo.
 - `git diff --check` sin errores. No se han probado disponibilidad de fuentes
   externas ni tiempos Lite: eso no forma parte de Foundation V2.
+
+## Mini Fase 5.1 — Exposure Lens Hardening
+
+- Lease configurable con `started_at`, timeout, recuperación de `running`
+  abandonado y retry de `failed` sobre la misma fila; sin nueva migración.
+- UNIQUE preservado, INSERT ON CONFLICT y bloqueos transaccionales para claims;
+  escritura final condicionada al intento para impedir sobrescrituras tardías.
+- GET observa y presenta ejecuciones vencidas como failed sin iniciar trabajo.
+- Excerpts mínimos por categoría y fallback cerrado, también en IA, Top
+  Exposures y JSON persistido. Política nueva en config_hash.
+- Caché global saneada reutilizable tras recuperación; retención futura de
+  30 días documentada, sin GC automático.
+- Validación únicamente en personmap_lite; Fase 6 queda fuera del alcance.
+
+Validación de la mini fase (16-10-2026): **37 Exposure + 9 Verification Gate +
+29 Fair aprobadas**, smoke Lite con verificación de JSON persistido y cleanup
+correcto, TypeScript y ESLint completos sin errores. Alembic público de
+personmap_lite permanece en `bf781b42de01 (head)`; sin migraciones nuevas ni
+conexiones a person_map. No se modificó main ni se implementó Fase 6.
+
+Suite general: intento fuera del sandbox con `timeout 180 ... pytest -vv`,
+terminado por plazo (exit 124). El log registra **707 PASSED**, sin fallos
+registrados hasta entonces; última prueba en curso:
+`test_maigret_integration.py::test_native_probe_extraction_enrichment_and_complementary_coverage`.
+Esto no demuestra que esa prueba falle: la suite completa queda sin validar.
+Dos intentos previos dentro del sandbox también agotaron 180 s; el detallado
+quedó en `test_ghunt.py::test_http_capabilities_and_mcp_contract_do_not_expose_session`.
+Los tests DB Exposure dentro del sandbox no pudieron conectar y se repitieron
+fuera, donde pasaron. No se modificaron Maigret/GHunt para alterar estos resultados.
+
+Deuda: GC/retención operativa de caché e informes históricos (política propuesta
+30 días para caché), revisión separada del JSON histórico anterior al hardening,
+y completar/diagnosticar la suite general de fuentes. La extracción institucional
+es conservadora y puede usar mensajes genéricos; no hay comprensión semántica
+global ni una garantía universal sobre nombres arbitrarios. Nada de esta deuda
+introduce reconstrucción de identidad de Fase 6.
