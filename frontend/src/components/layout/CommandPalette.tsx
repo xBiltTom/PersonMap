@@ -91,7 +91,7 @@ function CommandPaletteModal() {
           setIsCommandPaletteOpen(false);
         },
       },
-      {
+      /* {
         id: "nav-eval",
         category: "Navegación",
         title: "Métricas y Evaluación Científica",
@@ -101,7 +101,7 @@ function CommandPaletteModal() {
           router.push("/evaluation");
           setIsCommandPaletteOpen(false);
         },
-      },
+      }, */
     ];
 
     if (activeInvestigation) {

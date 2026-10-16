@@ -13,7 +13,7 @@ import {
   Network,
   FileText,
   ShieldCheck,
-  BarChart3,
+  // BarChart3,
   ExternalLink,
   ChevronDown,
   Search,
@@ -126,7 +126,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`fixed md:sticky top-14 z-30 h-[calc(100vh-3.5rem)] w-60 shrink-0 border-r border-[#162234] bg-[#090e17] flex flex-col justify-between select-none transition-transform duration-200 ease-in-out ${
+      className={`fixed md:sticky top-14 z-30 h-[calc(100vh-3.5rem)] w-60 shrink-0 border-r border-edge bg-sidebar flex flex-col justify-between select-none transition-transform duration-200 ease-in-out ${
         isSidebarOpen
           ? "translate-x-0 shadow-2xl"
           : "-translate-x-full md:translate-x-0"
@@ -139,7 +139,7 @@ export function Sidebar() {
           <Link
             href="/"
             onClick={() => setIsSidebarOpen(false)}
-            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-mono transition-colors ${
+            className={`flex items-center gap-2.5 px-3 py-2 text-xs font-mono transition-colors ${
               pathname === "/"
                 ? "bg-[#142032] text-sky-300 font-semibold border border-[#213550]"
                 : "text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent"
@@ -152,7 +152,7 @@ export function Sidebar() {
           <Link
             href="/auditorias/nueva"
             onClick={() => setIsSidebarOpen(false)}
-            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-mono transition-colors ${
+            className={`flex items-center gap-2.5 px-3 py-2 text-xs font-mono transition-colors ${
               pathname === "/auditorias/nueva"
                 ? "bg-[#142032] text-sky-300 font-semibold border border-[#213550]"
                 : "text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent"
@@ -165,7 +165,7 @@ export function Sidebar() {
           <Link
             href="/expedientes"
             onClick={() => setIsSidebarOpen(false)}
-            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-mono transition-colors ${
+            className={`flex items-center gap-2.5 px-3 py-2 text-xs font-mono transition-colors ${
               pathname === "/expedientes"
                 ? "bg-[#142032] text-sky-300 font-semibold border border-[#213550]"
                 : "text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent"
@@ -190,7 +190,7 @@ export function Sidebar() {
               <button
                 type="button"
                 onClick={toggleSwitcher}
-                className={`w-full p-2.5 rounded-lg border text-left transition-all cursor-pointer select-none ${
+                className={`w-full p-2.5 border text-left transition-all cursor-pointer select-none ${
                   isSwitcherOpen
                     ? "bg-[#0e1726] border-sky-500/40 shadow-lg shadow-sky-950/20"
                     : "bg-[#0d1420] border-[#1a2636] hover:border-[#25374d] hover:bg-[#101927]"
@@ -214,7 +214,7 @@ export function Sidebar() {
                     {activeInvestigation?.code || "PM-CASE"}
                   </span>
                   <span
-                    className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-medium border ${
+                    className={`text-[9px] font-mono px-1.5 py-0.2 font-medium border ${
                       activeInvestigation?.status === "completed"
                         ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
                         : activeInvestigation?.status === "running"
@@ -235,7 +235,7 @@ export function Sidebar() {
 
               {/* Accordion Dropdown Content */}
               {isSwitcherOpen && (
-                <div className="rounded-lg border border-[#1e2f46] bg-[#070e18] p-2 shadow-2xl animate-fade-in space-y-2">
+                <div className="border border-[#1e2f46] bg-[#070e18] p-2 shadow-2xl animate-fade-in space-y-2">
                   {/* Minibuscador */}
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />
@@ -245,7 +245,7 @@ export function Sidebar() {
                       value={switcherSearch}
                       onChange={(e) => setSwitcherSearch(e.target.value)}
                       placeholder="Filtrar expedientes..."
-                      className="w-full pl-7 pr-2.5 py-1 rounded-md border border-[#1b2b3e] bg-[#0c1422] font-mono text-[11px] text-slate-200 placeholder-slate-500 focus:border-sky-400 focus:outline-none"
+                      className="w-full pl-7 pr-2.5 py-1 border border-[#1b2b3e] bg-[#0c1422] font-mono text-[11px] text-slate-200 placeholder-slate-500 focus:border-sky-400 focus:outline-none"
                     />
                   </div>
 
@@ -276,7 +276,7 @@ export function Sidebar() {
                             key={inv.id}
                             type="button"
                             onClick={() => handleSelectInvestigation(inv)}
-                            className={`w-full flex items-center justify-between p-1.5 rounded-md text-left transition-colors text-xs font-mono cursor-pointer ${
+                            className={`w-full flex items-center justify-between p-1.5 text-left transition-colors text-xs font-mono cursor-pointer ${
                               isCurrent
                                 ? "bg-sky-500/15 border border-sky-500/30 text-sky-200"
                                 : "hover:bg-[#101a28] text-slate-300 border border-transparent"
@@ -333,7 +333,7 @@ export function Sidebar() {
               <button
                 type="button"
                 onClick={() => handleSubTabClick("findings")}
-                className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-mono transition-colors text-left ${
+                className={`w-full flex items-center justify-between px-3 py-1.5 text-xs font-mono transition-colors text-left ${
                   isInsideInvestigation && activeTab !== "report"
                     ? "bg-[#142032] text-sky-300 font-semibold border border-[#213550]"
                     : "text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent"
@@ -344,7 +344,7 @@ export function Sidebar() {
                   <span className="truncate">Workspace</span>
                 </div>
                 {typeof activeInvestigation?.findingsCount === "number" && (
-                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[#162234] text-slate-300 border border-[#22344d]">
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 bg-[#162234] text-slate-300 border border-[#22344d]">
                     {activeInvestigation.findingsCount}
                   </span>
                 )}
@@ -353,7 +353,7 @@ export function Sidebar() {
               <button
                 type="button"
                 onClick={() => handleSubTabClick("report")}
-                className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-mono transition-colors text-left ${
+                className={`w-full flex items-center justify-between px-3 py-1.5 text-xs font-mono transition-colors text-left ${
                   isInsideInvestigation && activeTab === "report"
                     ? "bg-[#142032] text-sky-300 font-semibold border border-[#213550]"
                     : "text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent"
@@ -373,7 +373,7 @@ export function Sidebar() {
           <Link
             href="/seguridad"
             onClick={() => setIsSidebarOpen(false)}
-            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-mono transition-colors ${
+            className={`flex items-center gap-2.5 px-3 py-2 text-xs font-mono transition-colors ${
               pathname === "/seguridad"
                 ? "bg-[#142032] text-amber-300 font-semibold border border-[#213550]"
                 : "text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent"
@@ -383,10 +383,11 @@ export function Sidebar() {
             <span>Autodefensa</span>
           </Link>
 
-          <Link
+          {/* Enlace a Evaluación desactivado temporalmente para la exposición */}
+          {/* <Link
             href="/evaluation"
             onClick={() => setIsSidebarOpen(false)}
-            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-mono transition-colors ${
+            className={`flex items-center gap-2.5 px-3 py-2 text-xs font-mono transition-colors ${
               pathname === "/evaluation"
                 ? "bg-[#142032] text-purple-300 font-semibold border border-[#213550]"
                 : "text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent"
@@ -394,13 +395,13 @@ export function Sidebar() {
           >
             <BarChart3 className="w-4 h-4 text-purple-400 shrink-0" />
             <span>Evaluación</span>
-          </Link>
+          </Link> */}
 
           <a
             href="https://github.com/xBiltTom/PersonMap"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-between px-3 py-2 rounded-lg text-xs font-mono text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent transition-colors"
+            className="flex items-center justify-between px-3 py-2 text-xs font-mono text-slate-400 hover:text-slate-200 hover:bg-[#0e1624] border border-transparent transition-colors"
           >
             <div className="flex items-center gap-2.5">
               <FileText className="w-4 h-4 text-slate-500 shrink-0" />

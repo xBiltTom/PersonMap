@@ -105,7 +105,7 @@ export function Navbar() {
             <span>Autodefensa</span>
           </Link>
 
-          <Link
+          {/* <Link
             href="/evaluation"
             aria-current={pathname === "/evaluation" ? "page" : undefined}
             className={`flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-md border transition-colors shrink-0 whitespace-nowrap ${
@@ -115,7 +115,7 @@ export function Navbar() {
             }`}
           >
             <span>Métricas Paper</span>
-          </Link>
+          </Link> */}
         </div>
       </div>
     </header>

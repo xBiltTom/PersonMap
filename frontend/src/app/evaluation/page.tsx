@@ -1,3 +1,5 @@
+// Vista desactivada temporalmente para la exposición (conservada para uso futuro)
+/*
 import { EvaluationView } from "@/components/evaluation/EvaluationView";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -17,4 +19,11 @@ export default function EvaluationPage() {
       <EvaluationView />
     </div>
   );
+}
+*/
+
+import { notFound } from "next/navigation";
+
+export default function EvaluationPage() {
+  notFound();
 }
