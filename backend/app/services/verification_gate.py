@@ -17,7 +17,7 @@ from app.models.investigation import Investigation
 from app.models.relationship import Relationship
 from app.models.review_decision import ReviewDecision
 from app.models.target import Target
-from app.schemas.footprint import DataProvenance, account_ownership, footprint_input
+from app.schemas.footprint import DataProvenance, account_ownership, footprint_input, is_declared_identifier
 from app.schemas.review import (
     BreachExposure, InfostealerExposure, FairReviewState, FairSourceState, InvestigationReviewResponse,
     ReviewCandidate, ReviewCounts, ReviewSource, ReviewedDecisionRecord,
@@ -30,6 +30,9 @@ DECISIONS = {"confirmed", "rejected", "uncertain"}
 PROFILE_ENTITY_TYPES = {"social_account", "sensitive_account", "google_account", "academic_profile"}
 IDENTITY_ENTITY_TYPES = PROFILE_ENTITY_TYPES | {"email", "phone", "email_registration"}
 SENSITIVE_QUERY_KEYS = {"token", "access_token", "api_key", "apikey", "key", "auth", "authorization", "session", "password", "secret"}
+SOCIAL_ACCOUNT_TYPES = {"social_account", "sensitive_account"}
+PROFILE_REFERENCE_TYPES = SOCIAL_ACCOUNT_TYPES | {"search_mention", "image_match", "web_page"}
+EXTRACTED_PROFILE_REFERENCE_TYPES = PROFILE_REFERENCE_TYPES - SOCIAL_ACCOUNT_TYPES
 
 
 def _metadata(entity: Entity) -> dict:
@@ -49,6 +52,12 @@ def _provenance(entity: Entity) -> DataProvenance:
         })
     except Exception:
         return DataProvenance(origin="legacy", status="discovered")
+
+
+def _needs_review(provenance: DataProvenance) -> bool:
+    return provenance.needs_review or (
+        provenance.origin == "legacy" and provenance.status in {"discovered", "uncertain"}
+    )
 
 
 def safe_public_url(value) -> str | None:
@@ -77,15 +86,32 @@ def _urls(values) -> list[str]:
 
 
 def is_declared_account(entity: Entity, target: Target) -> bool:
-    if entity.entity_type not in {"social_account", "sensitive_account"}:
+    if entity.entity_type not in PROFILE_REFERENCE_TYPES:
         return False
     profile = parse_social_profile(entity.value)
-    username = profile.username if profile else _metadata(entity).get("username")
-    if not isinstance(username, str) or not username:
+    if profile is None:
+        if entity.entity_type not in SOCIAL_ACCOUNT_TYPES:
+            return False
+        username = _metadata(entity).get("username")
+        if not isinstance(username, str) or not username:
+            return False
+        platform = entity.platform
+    else:
+        username = profile.username
+        platform = profile.platform
+    if not username:
         return False
-    platform = profile.platform if profile else entity.platform
     declared = footprint_input(target)
     return account_ownership(declared.declared_seeds if declared else [], platform, username)["status"] == "subject_declared"
+
+
+def _profile_key(entity: Entity) -> tuple[str, str] | None:
+    if entity.entity_type not in PROFILE_REFERENCE_TYPES:
+        return None
+    profile = parse_social_profile(entity.value)
+    if not profile:
+        return None
+    return canonical_platform(profile.platform), profile.username.casefold()
 
 
 def _reviewable_kind(entity: Entity, target: Target) -> str | None:
@@ -96,17 +122,26 @@ def _reviewable_kind(entity: Entity, target: Target) -> str | None:
     if entity_type in {"social_account", "sensitive_account"}:
         if is_declared_account(entity, target):
             return None
-        if provenance.origin == "automatic" and provenance.status in {"discovered", "confirmed", "rejected", "uncertain"}:
+        if (provenance.origin == "automatic" and provenance.status in {"discovered", "confirmed", "rejected", "uncertain"}) \
+                or (provenance.origin == "legacy" and provenance.status in {"discovered", "uncertain"}):
             return "account"
         return None
+    if entity_type in EXTRACTED_PROFILE_REFERENCE_TYPES:
+        # Search and image results are normally context only. A URL that parses
+        # as a public individual profile is actionable even if the follow-up
+        # URL extractor did not persist a canonical social_account row.
+        if not parse_social_profile(entity.value) or is_declared_account(entity, target):
+            return None
+        return "account" if _needs_review(provenance) else None
     if entity_type == "academic" and entity.platform == "openalex_author":
-        return "academic_profile" if provenance.needs_review else None
+        return "academic_profile" if _needs_review(provenance) else None
     if entity_type not in IDENTITY_ENTITY_TYPES:
         return None
     if entity_type in {"email", "phone"}:
-        if provenance.matches_declared_identifier:
+        if (provenance.matches_declared_identifier
+                or is_declared_identifier(target, entity_type, entity.value, entity.platform)):
             return None
-    if provenance.needs_review:
+    if _needs_review(provenance):
         return {
             "email": "email", "phone": "phone", "email_registration": "account",
             "google_account": "account", "academic_profile": "academic_profile",
@@ -137,8 +172,12 @@ def _candidate_reason(entity: Entity, target: Target, sources: list[ReviewSource
         if meta.get("affiliation_match") is True and meta.get("query_name"):
             return "Perfil académico encontrado con coincidencia de nombre y afiliación."
         return "Perfil académico público relacionado por el motor académico; la autoría aún requiere tu revisión."
-    if entity.entity_type in {"social_account", "sensitive_account"}:
+    if entity.entity_type in PROFILE_REFERENCE_TYPES:
         profile = parse_social_profile(entity.value)
+        if entity.entity_type == "search_mention" and profile:
+            return f"La búsqueda web encontró un enlace directo a un perfil público de {profile.platform}; el enlace no confirma quién lo usa."
+        if entity.entity_type == "image_match" and profile:
+            return f"Una búsqueda de imágenes encontró un enlace a un perfil público de {profile.platform}; la imagen no confirma quién lo usa."
         declared = footprint_input(target)
         matching_alias = next((seed.value for seed in (declared.declared_seeds if declared else [])
                                if seed.kind == "username" and profile and seed.value.casefold() == profile.username.casefold()), None)
@@ -163,11 +202,11 @@ def _candidate(entity: Entity, target: Target, decision: ReviewDecision | None,
     if not category and not decision:
         return None
     # A declared account is never reviewable, even if malformed legacy data has a decision row.
-    if entity.entity_type in {"social_account", "sensitive_account"} and is_declared_account(entity, target):
+    if entity.entity_type in PROFILE_REFERENCE_TYPES and is_declared_account(entity, target):
         return None
 
     meta = _metadata(entity)
-    profile = parse_social_profile(entity.value) if entity.entity_type in {"social_account", "sensitive_account"} else None
+    profile = parse_social_profile(entity.value) if entity.entity_type in PROFILE_REFERENCE_TYPES else None
     username = (profile.username if profile else meta.get("username") or meta.get("preferred_username"))
     public_url = safe_public_url(meta.get("profile_url") or meta.get("url") or (profile.url if profile else None))
     evidence_urls = _urls(meta.get("evidence_urls", []))
@@ -294,10 +333,25 @@ async def get_review_response(db: AsyncSession, investigation: Investigation, ta
     decisions = await _load_decisions(db, investigation.id)
     observations = await _load_observations(db, investigation.id)
     candidates = []
+    existing_profile_candidates = {
+        _profile_key(entity) for entity in entities
+        if entity.entity_type in SOCIAL_ACCOUNT_TYPES
+        and _has_review_work(entity, target, decisions.get(entity.id))
+    }
+    seen_profile_references = set()
     for entity in entities:
         decision = decisions.get(entity.id)
         if not _has_review_work(entity, target, decision):
             continue
+        if entity.entity_type in EXTRACTED_PROFILE_REFERENCE_TYPES:
+            profile_key = _profile_key(entity)
+            if profile_key is None:
+                continue
+            # Prefer the canonical social_account row when extraction already
+            # produced one. Keep a previously reviewed reference visible.
+            if decision is None and (profile_key in existing_profile_candidates or profile_key in seen_profile_references):
+                continue
+            seen_profile_references.add(profile_key)
         item = _candidate(entity, target, decision, observations.get(entity.id, []))
         if item:
             candidates.append(item)
@@ -375,7 +429,7 @@ def _record(entity: Entity | None, *, entity_type: str, value: str, platform: st
             seed_id: str | None = None, username: str | None = None) -> ReviewedEntity:
     meta = _metadata(entity) if entity else {}
     provenance = _provenance(entity) if entity else DataProvenance(origin="subject", status="declared", subject_asserted=True)
-    profile = parse_social_profile(entity.value) if entity and entity.entity_type in {"social_account", "sensitive_account"} else None
+    profile = parse_social_profile(entity.value) if entity and entity.entity_type in PROFILE_REFERENCE_TYPES else None
     profile_url = safe_public_url(meta.get("profile_url") or meta.get("url") or (profile.url if profile else None))
     sources = _safe_collection_sources(meta.get("collection_sources"))
     tools = meta.get("source_tools") if isinstance(meta.get("source_tools"), list) else []
@@ -452,6 +506,19 @@ async def build_dataset(db: AsyncSession, investigation: Investigation, target: 
             accounts.append(_record(entity, entity_type=entity.entity_type, value=entity.value,
                 ownership={"status": "subject_confirmed", "subject_asserted": True}, content_source=entity))
             included_account_ids.add(entity.id)
+    included_profile_keys = {_profile_key(entity) for entity in entities if entity.id in included_account_ids}
+    for entity in entities:
+        if entity.entity_type not in EXTRACTED_PROFILE_REFERENCE_TYPES or entity.id not in confirmed:
+            continue
+        profile = parse_social_profile(entity.value)
+        profile_key = _profile_key(entity)
+        if profile is None or is_declared_account(entity, target) or profile_key in included_profile_keys:
+            continue
+        accounts.append(_record(entity, entity_type="social_account", value=profile.url,
+            platform=profile.platform, ownership={"status": "subject_confirmed", "subject_asserted": True},
+            content_source=entity, username=profile.username))
+        included_account_ids.add(entity.id)
+        included_profile_keys.add(profile_key)
 
     declared_emails = {seed.value.lower(): seed for seed in seeds if seed.kind == "email"}
     declared_phones = {seed.value: seed for seed in seeds if seed.kind == "phone"}

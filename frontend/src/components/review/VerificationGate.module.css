@@ -139,6 +139,11 @@
 .sectionKicker { color: #8492a6; font-size: 9px; }
 .sectionIntro h2 { margin: 4px 0 0; color: #eff2f5; font: 500 23px var(--font-sans, sans-serif); letter-spacing: -.025em; }
 .pendingLabel { padding: 5px 8px; border: 1px solid rgba(56, 189, 248, .2); color: var(--gate-paper); background: rgba(56, 189, 248, .045); font: 9px var(--font-mono, monospace); }
+.sectionTools { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
+.refreshButton { display: inline-flex; min-height: 28px; align-items: center; justify-content: center; gap: 6px; padding: 5px 8px; border: 1px solid #29384b; border-radius: 5px; color: #aab8c9; background: #101a27; font: 9px var(--font-mono, monospace); cursor: pointer; }
+.refreshButton:hover:not(:disabled) { border-color: #53647b; color: #f1f5f9; }
+.refreshButton:disabled { cursor: wait; opacity: .65; }
+.spinning { animation: gate-spin .8s linear infinite; }
 .pendingList, .cardList { display: grid; gap: 10px; }
 .candidate { min-width: 0; padding: 15px 16px 13px; border: 1px solid #203047; border-radius: 10px; background: linear-gradient(135deg, #101a28, #0d1521 65%); box-shadow: 0 8px 24px rgba(0, 0, 0, .12); }
 .candidate:focus-within { border-color: #495342; }
@@ -236,7 +241,7 @@
   .profileLink span { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .loader { animation: none; }
+  .loader, .spinning { animation: none; }
   .decisionButton { transition: none; }
 }
 

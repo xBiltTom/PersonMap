@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -14,6 +14,7 @@ import {
   FileQuestion,
   Fingerprint,
   ListChecks,
+  RefreshCw,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -462,22 +463,48 @@ export function VerificationGate({ investigationId }: { investigationId: string 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [finalizing, setFinalizing] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const reviewRequest = useRef<Promise<void> | null>(null);
 
-  const loadReview = useCallback(async () => {
-    try {
-      const result = await getInvestigationReview(investigationId);
-      setReview(result);
-      setError(null);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "No se pudo cargar la revisión.");
-    } finally {
-      setLoading(false);
-    }
+  const loadReview = useCallback(() => {
+    if (reviewRequest.current) return reviewRequest.current;
+
+    const request = (async () => {
+      try {
+        const result = await getInvestigationReview(investigationId);
+        setReview(result);
+        setError(null);
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "No se pudo cargar la revisión.");
+      } finally {
+        setLoading(false);
+        reviewRequest.current = null;
+      }
+    })();
+    reviewRequest.current = request;
+    return request;
   }, [investigationId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void loadReview(); }, 0);
     return () => window.clearTimeout(timer);
+  }, [loadReview]);
+
+  useEffect(() => {
+    if (!review || review.review_status === "complete" || busyId !== null || finalizing) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadReview();
+    }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [busyId, finalizing, loadReview, review?.review_status]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadReview();
+    } finally {
+      setRefreshing(false);
+    }
   }, [loadReview]);
 
   const handleDecision = useCallback(async (candidate: ReviewCandidate, decision: ReviewDecisionValue) => {
@@ -633,7 +660,14 @@ export function VerificationGate({ investigationId }: { investigationId: string 
         <section className={styles.reviewColumn} aria-labelledby="discoveries-title">
           <div className={styles.sectionIntro}>
             <div><span className={styles.sectionKicker}>RESULTADOS DE LA BÚSQUEDA</span><h2 id="discoveries-title">Revisa cada coincidencia</h2></div>
-            {review.counts.pending > 0 && <span className={styles.pendingLabel}>{review.counts.pending} por revisar</span>}
+            <div className={styles.sectionTools}>
+              {review.counts.pending > 0 && <span className={styles.pendingLabel}>{review.counts.pending} por revisar</span>}
+              <button type="button" className={styles.refreshButton} onClick={() => void handleRefresh()}
+                disabled={refreshing || busyId !== null || finalizing} aria-label="Actualizar resultados de revisión">
+                <RefreshCw size={13} className={refreshing ? styles.spinning : ""} aria-hidden="true" />
+                {refreshing ? "Actualizando…" : "Actualizar"}
+              </button>
+            </div>
           </div>
           <p className={styles.sectionHelp}>Las decisiones se guardan automáticamente. Puedes cambiar una respuesta mientras la revisión siga abierta.</p>
 
