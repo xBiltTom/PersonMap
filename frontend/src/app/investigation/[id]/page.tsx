@@ -23,7 +23,6 @@ import {
   Network,
   Table,
   Clock,
-  BookOpen,
   Terminal,
   RefreshCw,
   Download,
@@ -343,7 +342,7 @@ export default function InvestigationDetailPage({
   const lowerTabs = [
     { id: "findings", label: `Hallazgos (${findingsCount})`, icon: Table },
     { id: "timeline", label: "Trazabilidad", icon: Clock },
-    { id: "analysis", label: `Análisis (${investigation.analysis_notes?.length ?? 0})`, icon: BookOpen },
+    // { id: "analysis", label: `Análisis (${investigation.analysis_notes?.length ?? 0})`, icon: BookOpen },
     { id: "console", label: "Consola", icon: Terminal },
   ];
 
