@@ -22,6 +22,7 @@ Strategy = Literal["auto", "rule_based", "agentic", "hybrid"]
 
 class InvestigationCreate(BaseModel):
     target: TargetCreate
+    acquisition_mode: Literal["normal", "fair"] = "normal"
     # Se valida como enumeración cerrada: antes era un `str` libre, de modo que
     # una errata ("agentico", "hybird") se aceptaba con HTTP 201 y la
     # investigación caía silenciosamente al motor de reglas, contaminando la
@@ -41,6 +42,8 @@ class InvestigationCreate(BaseModel):
 
     @model_validator(mode="after")
     def require_v2_consent(self):
+        if self.acquisition_mode == "fair" and self.execution_mode != "internal":
+            raise ValueError("Fair usa ejecución interna; el workspace externo conserva su modo normal.")
         if self.target.input_version == 2 and not self.subject_consent:
             raise ValueError("Confirma que analizas tus propios datos o cuentas con autorización explícita.")
         return self
@@ -50,6 +53,7 @@ class InvestigationRead(BaseModel):
     id: UUID
     target_id: UUID
     strategy: str
+    acquisition_mode: Literal["normal", "fair"] = "normal"
     execution_mode: str = "internal"
     revision: int = 0
     status: str

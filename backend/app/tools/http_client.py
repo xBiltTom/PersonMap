@@ -33,6 +33,7 @@ from typing import Any, Deque, Optional
 
 import httpx
 
+from app.tools.acquisition_observation import observe
 from app.core.config import settings
 from app.tools.public_network import PublicNetworkBackend, UnsafePublicURL
 
@@ -234,6 +235,7 @@ class ResilientTransport(httpx.AsyncHTTPTransport):
                     await response.aclose()
                     await asyncio.sleep(self.base_delay * (2 ** attempt) + random.uniform(0, self.jitter))
                     continue
+                observe(status=response.status_code)
                 return response
             except (
                 httpx.TimeoutException,
@@ -245,6 +247,7 @@ class ResilientTransport(httpx.AsyncHTTPTransport):
                 if attempt < self.max_retries:
                     await asyncio.sleep(self.base_delay * (2 ** attempt) + random.uniform(0, self.jitter))
                     continue
+                observe(error=exc)
                 raise
 
         if last_exc:
@@ -296,14 +299,20 @@ def build_client(
 async def get(client: httpx.AsyncClient, url: str, **kwargs: Any) -> Optional[httpx.Response]:
     """Convenience GET returning None (instead of raising) on total failure."""
     try:
-        return await client.get(url, **kwargs)
-    except Exception:
+        response = await client.get(url, **kwargs)
+        observe(status=response.status_code)
+        return response
+    except Exception as error:
+        observe(error=error)
         return None
 
 
 async def post(client: httpx.AsyncClient, url: str, **kwargs: Any) -> Optional[httpx.Response]:
     """Convenience POST returning None (instead of raising) on total failure."""
     try:
-        return await client.post(url, **kwargs)
-    except Exception:
+        response = await client.post(url, **kwargs)
+        observe(status=response.status_code)
+        return response
+    except Exception as error:
+        observe(error=error)
         return None

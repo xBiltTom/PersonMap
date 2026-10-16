@@ -179,5 +179,9 @@ class ApifySocialTool(BaseTool):
                 await asyncio.gather(*(execute_one(*job) for job in jobs))
         except TimeoutError:
             diagnostics.append({"status": "batch_timeout"})
+        except asyncio.CancelledError:
+            if context.extra.get("preserve_partial_on_cancel") is not True:
+                raise
+            diagnostics.append({"status": "batch_timeout_or_cancelled"})
         del diagnostics[:-50]
         return findings

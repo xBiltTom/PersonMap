@@ -42,6 +42,10 @@ class Orchestrator:
             target = investigation.target
 
             try:
+                if (investigation.metrics or {}).get("acquisition_mode") == "fair":
+                    from app.engine.fair_engine import fair_engine
+                    await fair_engine.execute_investigation(str_id, target, db)
+                    return
                 # 2. Extracción OSINT: tres estrategias seleccionables.
                 #
                 #    `rules` y `agentic` son las dos condiciones experimentales

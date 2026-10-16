@@ -4,6 +4,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    # Fair is selected per investigation, never inferred from normal strategies.
+    fair_total_deadline_seconds: float = Field(default=225, ge=1, le=600, allow_inf_nan=False)
+    fair_finalization_seconds: float = Field(default=20, gt=0, le=120, allow_inf_nan=False)
+    fair_cancellation_seconds: float = Field(default=6, gt=0, le=30, allow_inf_nan=False)
+    fair_checkpoint_seconds: float = Field(default=5, gt=0, le=30, allow_inf_nan=False)
+    fair_max_waves: int = Field(default=3, ge=1, le=3)
+    fair_parallelism: int = Field(default=16, ge=1, le=32)
+    fair_username_sites: int = Field(default=100, ge=1, le=200)
+    fair_search_queries: int = Field(default=8, ge=1, le=30)
+    fair_apify_platforms: list[str] = Field(default_factory=lambda: ["instagram", "tiktok", "youtube"])
+    fair_disabled_sources: list[str] = Field(default_factory=list)
+
     # Database
     database_url: str = "postgresql+asyncpg://postgres@localhost:5432/person_map"
 

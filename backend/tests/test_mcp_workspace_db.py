@@ -983,3 +983,56 @@ async def test_parallel_batch_preserves_evidence_runtime_and_web_state(isolated_
     assert same_tool.value.status_code == 409
     release.set()
     await service.tasks[uuid.UUID(next_job["id"])]
+
+
+@pytest.mark.asyncio
+async def test_fair_acquisition_persists_partial_snapshot_traces_and_recovers_db_write(isolated_workspace, monkeypatch):
+    from app.engine import fair_engine as fair_module
+    from app.engine.fair_plan import FairPlan, SourcePlan
+    from app.engine.fair_engine import FairEngine
+    from app.tools.registry import tool_registry
+    service, _ = isolated_workspace
+    class BreachFixture(BaseTool):
+        name = "breach_checker"
+        description = "Synthetic breach exposure"
+        category = ToolCategory.BREACH
+        required_inputs = ["email"]
+        async def execute(self, context):
+            return [ToolFinding(entity_type="breach", value=context.email,
+                metadata_info={"email": context.email, "breaches": ["Synthetic"]})]
+    monkeypatch.setattr(tool_registry, "_tools", {"breach_checker": BreachFixture()})
+    plan = FairPlan(deadline_seconds=5, finalization_seconds=.5, cancellation_seconds=.2,
+        checkpoint_seconds=.5, progress_interval_seconds=.01,
+        sources=(SourcePlan("breach_checker", 0, 1, "email"),))
+    original = fair_module.persist_findings
+    writes = 0
+    async def fail_once(*args, **kwargs):
+        nonlocal writes
+        writes += 1
+        if writes == 1:
+            raise RuntimeError("synthetic transient storage error")
+        return await original(*args, **kwargs)
+    monkeypatch.setattr(fair_module, "persist_findings", fail_once)
+    async with service.session_factory() as db:
+        inv = await service.create(InvestigationCreate(target=TargetCreate(emails=["one@example.org", "two@example.org"]),
+            subject_consent=True, acquisition_mode="fair", strategy="hybrid"), db)
+        inv_id = inv.id
+        run = await FairEngine(plan=plan).execute_investigation(str(inv_id), inv.target, db)
+    assert run.persistence_errors == 1 and run.persistence == "persisted"
+    detail = await service.detail(inv_id)
+    assert detail["acquisition_mode"] == "fair"
+    assert detail["status"] == "completed" and detail["metrics"]["engine_used"] == "fair"
+    assert detail["metrics"]["ai_enhanced"] is False and detail["correlation_groups"] == []
+    snapshot = detail["metrics"]["fair_snapshot"]
+    assert len(snapshot["breaches"]) == 2
+    assert all(item["entity_id"] for item in snapshot["findings"])
+    assert {e["value"] for e in detail["entities"]} == {"one@example.org", "two@example.org"}
+    assert all(e["provenance"]["origin"] == "automatic" for e in detail["entities"])
+    async with service.session_factory() as db:
+        executions = list((await db.scalars(select(ToolExecution).where(ToolExecution.investigation_id == inv_id))).all())
+        observations = list((await db.scalars(select(EntityObservation).where(EntityObservation.investigation_id == inv_id))).all())
+        assert len(executions) == len(observations) == 2
+        assert all(e.engine == "fair" and e.status == "completed" for e in executions)
+        from app.api.v1.investigations import fair_acquisition_state
+        response = await fair_acquisition_state(inv_id, db)
+        assert response["snapshot"]["execution"]["semantics"] == "discovery_not_attributed_dataset"

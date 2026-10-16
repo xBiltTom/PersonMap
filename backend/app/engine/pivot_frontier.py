@@ -303,14 +303,24 @@ class PivotFrontier:
                 candidate.reasons.append(f"{candidate.independent_source_count} independent source families")
         return sorted(self.candidates.values(), key=lambda c: (-c.pivot_priority, c.discovered_round, c.id))
 
-    def next(self, round_index, mode="standard"):
+    def next(self, round_index, mode="standard", *, limits=None):
+        limits = limits or {}
         from app.tools.registry import tool_registry
         readiness = self.context.model_copy(deep=False)
         for kind, field in DISCOVERED.items():
             primary = PRIMARY[kind]
             if not getattr(readiness, primary) and getattr(readiness, field):
                 setattr(readiness, primary, getattr(readiness, field)[0])
-        ready = {tool.name for tool in tool_registry.get_all() if tool.can_run(readiness)}
+        ready = set()
+        for tool in tool_registry.get_all():
+            if limits.get("allowed_tools") is not None and tool.name not in limits["allowed_tools"]:
+                continue
+            try:
+                if tool.can_run(readiness):
+                    ready.add(tool.name)
+            except Exception:
+                if not limits.get("ignore_readiness_errors"):
+                    raise
         ranked = self.rank()
         admitted = sum(bool(c.selected_rounds) for c in ranked if c.confidence_class != "P0")
         previous = {c.id for c in ranked if round_index in c.selected_rounds and c.confidence_class != "P0"}
@@ -328,17 +338,19 @@ class PivotFrontier:
             reason = None
             if candidate.id in previous:
                 pass  # Repeated selection in one LLM turn cannot reset budgets.
+            elif candidate.discovered_round >= limits.get("max_discovered_round", float("inf")):
+                reason = "wave budget"
             elif not ready.intersection(candidate.possible_tools):
                 reason = "no compatible tool currently runnable"
-            elif admitted >= settings.pivot_max_total and not candidate.selected_rounds:
+            elif admitted >= limits.get("max_total", settings.pivot_max_total) and not candidate.selected_rounds:
                 reason = "total exploration budget"
-            elif round_count >= settings.pivot_max_per_round:
+            elif round_count >= limits.get("max_per_round", settings.pivot_max_per_round):
                 reason = "round pivot budget"
-            elif cost + candidate.exploration_cost > settings.pivot_round_cost_budget:
+            elif cost + candidate.exploration_cost > limits.get("cost_budget", settings.pivot_round_cost_budget):
                 reason = "round exploration cost budget"
-            elif mode != "deep" and candidate.pivot_priority < settings.pivot_min_priority:
+            elif mode != "deep" and candidate.pivot_priority < limits.get("min_priority", settings.pivot_min_priority):
                 reason = "standard priority threshold"
-            elif mode != "deep" and candidate.confidence_class == "P4" and weak >= settings.pivot_max_weak_per_round:
+            elif mode != "deep" and candidate.confidence_class == "P4" and weak >= limits.get("max_weak_per_round", settings.pivot_max_weak_per_round):
                 reason = "standard weak pivot budget"
             if reason:
                 candidate.status, candidate.deferred_reason = "deferred", reason

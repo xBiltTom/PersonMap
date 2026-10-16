@@ -348,16 +348,16 @@ fingerprints estables para reutilizar ejecuciones sin pagar de nuevo.
 - [Actor runs / abort](https://docs.apify.com/api/v2/actor-runs).
 - [API y flujo de datasets](https://docs.apify.com/api/v2).
 
-## Preparación para Fase 3 (sin implementarla)
+## Integración con Fase 3
 
-La futura Lite puede consultar matriz/router, ordenar fuentes nativas rápidas y
-llamar a la misma BaseTool solo para candidatos admitidos, reutilizando reservas,
-normalizadores y pivotes. Aún no hay preset Lite nuevo, deadline global de 3–4
-minutos, Verification Gate, Exposure Lens, reconstrucción IA, Graph V2 ni UI de
-feria. No se usa texto público para producir inferencias sobre el sujeto.
+La Fase 3 usa esta misma BaseTool dentro de adquisición Fair paralela y acotada.
+El [orquestador Fair](FAIR_ORCHESTRATOR.md) respeta el routing Fase 2.1, las
+reservas, los builds, los normalizadores y Frontier. Su deadline configurable
+es 225 s, un objetivo operativo sin SLA real garantizado. Verification Gate,
+Exposure Lens, reconstrucción IA, Graph V2 y UI Fair siguen pendientes.
 
 La Fase 2.1 reemplaza la reserva de filas por Actor con presupuestos separados de
-perfiles y contenido. La Fase 3 podrá reservar margen por oleada sin cambiar transporte.
+perfiles y contenido. La Fase 3 reutiliza esas cuotas entre oleadas sin cambiar transporte.
 
 ## Fase 2.1 — Fair Routing & Live Validation
 
@@ -540,8 +540,9 @@ necesitan medición y parsers contra outputs reales antes de habilitarse.
 El ledger de investigación sigue sin checkpoint transaccional pre-POST resistente
 a caída dura y sin coordinación distribuida multi-worker. Configurar cuotas
 pequeñas; un batch nunca amplía esas cuotas. La orquestación nativa/Apify sigue
-la planificación existente, sin SLA global nuevo. No se cambian especialistas,
-presets, UI, correlación, grafo ni se inicia Fase 3.
+la planificación del [orquestador Fair](FAIR_ORCHESTRATOR.md), con deadline
+configurable pero sin SLA real garantizado. Fase 3 conserva especialistas y
+budgets; Gate, Exposure Lens, reconstrucción, grafo y UI Fair siguen pendientes.
 
 ### Pruebas de cierre de Fase 2.1
 

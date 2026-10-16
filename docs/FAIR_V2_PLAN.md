@@ -186,8 +186,9 @@ se conserva, no se reimplementa. Ver [arquitectura, evaluación y límites](APIF
   **fixture-tested**. Scraping/coste/latencia comparados: **not live-tested**.
   Ningún Actor real/pagado se ejecutó; no se inventan métricas.
 
-Fases 3–7 continúan pendientes. No se introduce SLA, orquestador Lite completo,
-Verification Gate, Exposure Lens, reconstrucción IA ni rediseño del grafo/frontend.
+Al cerrar Fase 2, las fases 3–7 seguían pendientes. La Fase 3 implementada abajo
+añade adquisición Fair; Verification Gate, Exposure Lens, reconstrucción IA y
+rediseño del grafo/frontend siguen pendientes.
 
 Validación de Fase 2: 205 casos de integración/regresión (73 nuevos de Apify),
 17 pruebas PostgreSQL/REST/MCP, 205 de fuentes nativas y 63 de Maigret/WhatsMyName
@@ -259,15 +260,66 @@ con reservas antiguas se añadió tras la colección general y está entre las 9
 `git diff --check` sin errores. Las corridas restringidas bloqueadas se interrumpieron;
 las corridas generales/BD aprobadas se ejecutaron fuera del sandbox.
 
-No se implementan Orchestrator Lite, SLA, Gate UI, Exposure Lens, IA, Graph V2 ni frontend.
+Al cierre de Fase 2.1 no se implementaban Orchestrator Lite ni fases posteriores.
+La Fase 3 siguiente añade solo adquisición acotada; las fases 4–7 siguen pendientes.
 
-## Fase 3 — PersonMap Lite Orchestrator (pendiente)
+## Fase 3 — PersonMap Lite Orchestrator (implementada)
 
-Modo acotado de aproximadamente 3–4 minutos: breach checker, GHunt, búsqueda,
-OpenAlex/Crossref, GitHub, Gravatar, teléfono, correo rápido y Maigret Lite.
-Conservar registry, dispatch, cobertura, trazas y persistencia. Añadir presupuesto
-global/cancelación y reservar segunda oleada para nuevos emails/alias y Apify.
-No modificar hoy presets ni prometer ese tiempo con motores actuales.
+Base `dac0fdd861e6010b03cb916dc501c22330c7121d`, misma rama.
+[Contrato, fuentes, API, límites y benchmark](FAIR_ORCHESTRATOR.md).
+
+- Modo explícito por investigación: `acquisition_mode=fair` y ejecución interna;
+  normal sigue siendo el default. No cambia strategies rules/agentic/hybrid ni
+  activa Fair en el workspace externo. Métricas `engine_used=fair`, sin IA.
+- SourcePlan declarativo con prioridad, primera wave, timeout, scope, límites,
+  enabled, critical, coste y permiso para pivots. GET `/sources/fair` lo expone.
+- Wave 0 seeds; Wave 1 adquisición paralela (brechas primero, Gravatar, GHunt,
+  GitHub/email, academia, SearchDorker, username discovery, teléfono, Apify declarado);
+  Wave 2 pivots admitidos y Wave 3 último enriquecimiento. Se solapan: el resultado
+  rápido puede abrir la siguiente oleada sin esperar a una fuente lenta.
+- Hard deadline configurable de 225 s: por defecto 199 s adquisición, hasta 6 s
+  limpieza y 20 s reservados para checkpoints/snapshot. Opcionales ceden primero.
+  Es un objetivo operativo de 3–4 minutos, no un SLA real demostrado con mocks.
+- Todos los emails/aliases declarados se planifican por input cuando el especialista
+  lo necesita. Se respetan sus cuotas; las omisiones por cuota se hacen visibles.
+  Brechas por email mantienen observaciones separadas, sin atribuir identidad.
+- Se reutiliza Pivot Frontier con límites Fair: 6/wave, 12 total, coste relativo
+  100, mínimo 390 y cero P4 débiles. Tres generaciones máximas; archivo y soportes
+  no se borran. No existe un segundo sistema de pivots.
+- Apify conserva arquitectura, builds, batching y ledger Fase 2.1. Declaradas con
+  plataforma arrancan temprano; automáticas necesitan observación/admisión.
+  Fair incluye Instagram/TikTok/YouTube dentro de la allowlist del operador;
+  Threads queda fuera por defecto; no se añaden adapters Reddit/X/Facebook.
+- Maigret Lite usa fast/hasta 100 sitios, sin enrich/parse/retries en esa vista.
+  SearchDorker, Academia, GHunt, GitHub, teléfono y demás especialistas conservan
+  su implementación. El modo normal conserva sus opciones y rondas anteriores.
+- Progreso estable por fuente/intent/wave, terminales completed/partial/timeout/
+  skipped/budget_exhausted/provider_unavailable/not_applicable/failed. API detail,
+  `/investigations/{id}/fair`, SSE y trazas comunes permiten inspección.
+- Checkpoints serializados de entidades/observaciones/runtime. Fallos de una
+  escritura no borran commits anteriores ni hallazgos en memoria. Snapshot final
+  contiene referencias a Entity y al Frontier, sin otro almacén de evidencias ni
+  DigitalFootprintDataset atribuido. Fase 4 resolverá IDs y ownership existente.
+- Benchmark offline: fuentes 1 s/5 s/20 s, pivot y enriquecimiento simulado;
+  deadline 7 s. [Informe](audits/fair-orchestrator-offline-2026-10-16.json).
+  No se realizaron nuevas llamadas pagadas ni se infiere un SLA real.
+- Deuda: bus por proceso, ledger Apify no transaccional pre-POST, costes distribuidos,
+  plugins que bloqueen el event loop requieren aislamiento y no hay durabilidad
+  garantizada cuando toda SQL permanece caída. `cleanup_pending` expone limpieza
+  incompleta en vez de bloquear el snapshot.
+
+Validación final específica: **163 pruebas aprobadas**, de ellas **29 Fair**,
+con routing/Apify/Frontier/híbrido. **19 pruebas PostgreSQL/REST/MCP aprobadas**
+sobre sesiones de checkpoint aisladas, incluida recuperación ante fallo transitorio.
+Benchmark final: **6.4027 s** con deadline simulado **7 s**, cinco checks aprobados.
+Regresión final: **1047 aprobadas, 21 excluidas por marcadores**, **186.72 s**,
+con `--ignore=tests/test_scan_progress.py` (cinco pruebas lentas preexistentes,
+sin modificaciones). `git diff --check` limpio. Las primeras corridas restringidas
+que se bloquearon se interrumpieron; las corridas general/BD aprobadas usaron
+acceso al transporte local fuera del sandbox. No hubo nuevas llamadas Apify reales.
+
+Fases 4–7 siguen pendientes: no Gate UI, Exposure Lens, reconstrucción, Graph V2
+ni Frontend Fair Edition.
 
 ## Fase 4 — Verification Gate (pendiente)
 

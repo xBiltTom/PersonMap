@@ -185,6 +185,8 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
         await db.flush()
         inv = Investigation(target_id=target.id, target=target, strategy=payload.strategy,
                             execution_mode=payload.execution_mode, status="pending")
+        if payload.acquisition_mode == "fair":
+            inv.metrics = {"acquisition_mode": "fair", "engine_used": "fair"}
         if payload.execution_mode == "external":
             inv.metrics = {"engine_used": "external", "execution_mode": "external"}
         db.add(inv)

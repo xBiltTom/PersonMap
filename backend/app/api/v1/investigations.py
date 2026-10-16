@@ -155,3 +155,28 @@ async def delete_investigation(
     await event_bus.publish("registry", {"type": "investigation_deleted", "investigation_id": str(id)})
 
     return {"status": "success", "message": "Investigación eliminada"}
+
+
+@router.get("/sources/fair", response_model=dict)
+async def fair_source_plan():
+    """Inspect acquisition policy without starting tools or contacting providers."""
+    from app.engine.fair_plan import FairPlan
+    from app.tools.registry import tool_registry
+    return FairPlan.configured().inspect(tool_registry)
+
+
+@router.get("/investigations/{id}/fair", response_model=dict)
+async def fair_acquisition_state(id: UUID, db: AsyncSession = Depends(get_db)):
+    """Progress + discovery references for future review; no ownership decisions."""
+    inv = await db.get(Investigation, id)
+    if inv is None:
+        raise HTTPException(404, "Investigación no encontrada")
+    metrics = inv.metrics or {}
+    if metrics.get("acquisition_mode") != "fair":
+        raise HTTPException(404, "La investigación no usa adquisición Fair")
+    history = event_bus.get_history(str(id))
+    progress = next((event for event in reversed(history) if event.get("type") == "fair_progress"), None)
+    snapshot = next((event["snapshot"] for event in reversed(history) if event.get("type") == "fair_snapshot"), None)
+    recovery = next((event["findings"] for event in reversed(history) if event.get("type") == "fair_unpersisted_findings"), [])
+    return {"version": 1, "progress": progress or metrics.get("fair_progress"),
+            "snapshot": snapshot or metrics.get("fair_snapshot"), "unpersisted_findings": recovery}

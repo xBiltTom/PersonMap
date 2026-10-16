@@ -1,0 +1,644 @@
+{
+  "kind": "offline_simulation_not_operational_sla",
+  "scale": 1,
+  "synthetic_delays_seconds": {
+    "social_verifier": 1,
+    "gravatar_deep": 5,
+    "username_finder": 20,
+    "apify_social": 0.5
+  },
+  "elapsed_seconds": 6.4027,
+  "deadline_seconds": 7,
+  "timeline": [
+    {
+      "source": "social_verifier",
+      "event": "started",
+      "elapsed": 0.06451038899831474
+    },
+    {
+      "source": "gravatar_deep",
+      "event": "started",
+      "elapsed": 0.06455200299751596
+    },
+    {
+      "source": "username_finder",
+      "event": "started",
+      "elapsed": 0.06457608699929551
+    },
+    {
+      "source": "social_verifier",
+      "event": "finished",
+      "elapsed": 1.0654045089977444
+    },
+    {
+      "source": "apify_social",
+      "event": "started",
+      "elapsed": 3.0009434159983357
+    },
+    {
+      "source": "apify_social",
+      "event": "finished",
+      "elapsed": 3.501343840998743
+    },
+    {
+      "source": "gravatar_deep",
+      "event": "finished",
+      "elapsed": 5.066564159998961
+    },
+    {
+      "source": "username_finder",
+      "event": "cancelled",
+      "elapsed": 6.461314972999389
+    },
+    {
+      "source": "username_finder",
+      "event": "finished",
+      "elapsed": 6.461316722998163
+    }
+  ],
+  "sources": {
+    "social_verifier": {
+      "status": "partial",
+      "critical": true,
+      "reason": "source_invocation_budget",
+      "findings_count": 1,
+      "attempts": [
+        {
+          "id": "283b760d-54db-4e7c-88b8-684ef0b2843a",
+          "wave": 1,
+          "status": "completed",
+          "reason": null,
+          "started_at": "2026-10-16T05:02:36.781654+00:00",
+          "completed_at": "2026-10-16T05:02:37.785156+00:00",
+          "findings_count": 1,
+          "input_key": "87631b348832daff1b7314b9"
+        }
+      ]
+    },
+    "gravatar_deep": {
+      "status": "budget_exhausted",
+      "critical": true,
+      "reason": "source_invocation_budget",
+      "findings_count": 0,
+      "attempts": [
+        {
+          "id": "5687b86d-eaf7-4364-bafb-03a4513160db",
+          "wave": 1,
+          "status": "completed",
+          "reason": null,
+          "started_at": "2026-10-16T05:02:36.782229+00:00",
+          "completed_at": "2026-10-16T05:02:41.786284+00:00",
+          "findings_count": 0,
+          "input_key": "736cf62777be1996967f329e"
+        }
+      ]
+    },
+    "username_finder": {
+      "status": "timeout",
+      "critical": true,
+      "reason": "scheduler_deadline",
+      "findings_count": 0,
+      "attempts": [
+        {
+          "id": "26e09283-4409-4e15-afc8-180de5a33dea",
+          "wave": 1,
+          "status": "timeout",
+          "reason": "scheduler_deadline",
+          "started_at": "2026-10-16T05:02:36.782731+00:00",
+          "completed_at": "2026-10-16T05:02:43.180948+00:00",
+          "findings_count": 0,
+          "input_key": "234a6eed03d04a6caf30a8f2"
+        }
+      ]
+    },
+    "apify_social": {
+      "status": "completed",
+      "critical": true,
+      "reason": null,
+      "findings_count": 1,
+      "attempts": [
+        {
+          "id": "9796d174-ca9b-4b0a-a387-bcce85c4fb8a",
+          "wave": 2,
+          "status": "completed",
+          "reason": null,
+          "started_at": "2026-10-16T05:02:39.719261+00:00",
+          "completed_at": "2026-10-16T05:02:40.221023+00:00",
+          "findings_count": 1,
+          "input_key": "42d8b59034955edf35511d03"
+        }
+      ]
+    }
+  },
+  "pivots": {
+    "version": 1,
+    "semantics": "investigation_priority_not_identity_probability",
+    "pending": [],
+    "active": [],
+    "explored": [
+      {
+        "id": "username:d62624766fbe5546d3e1f3c4",
+        "type": "username",
+        "value": "benchmarkperson",
+        "discovered_round": 0,
+        "confidence_class": "P0",
+        "pivot_priority": 1000,
+        "expected_information_gain": "high",
+        "exploration_cost": 20,
+        "status": "explored",
+        "support_count": 3,
+        "independent_source_count": 1,
+        "supports": [
+          {
+            "observation_key": "seed:username:d62624766fbe5546d3e1f3c4",
+            "source_tool": "target_input",
+            "source_url": null,
+            "source_observation_id": null,
+            "source_execution_id": null,
+            "evidence_role": "user_input",
+            "evidence_class": "seed",
+            "independent_key": null
+          },
+          {
+            "observation_key": "b67f357ba334fa2529621e98",
+            "source_tool": "social_verifier",
+            "source_url": "https://instagram.com/benchmarkperson",
+            "source_observation_id": null,
+            "source_execution_id": "283b760d-54db-4e7c-88b8-684ef0b2843a",
+            "evidence_role": "observed_username",
+            "evidence_class": "contextual",
+            "independent_key": "instagram.com"
+          },
+          {
+            "observation_key": "1dfcd81596f27e189e26e963",
+            "source_tool": "apify_social",
+            "source_url": "https://instagram.com/benchmarkperson",
+            "source_observation_id": null,
+            "source_execution_id": "9796d174-ca9b-4b0a-a387-bcce85c4fb8a",
+            "evidence_role": "observed_username",
+            "evidence_class": "contextual",
+            "independent_key": "instagram.com"
+          }
+        ],
+        "possible_tools": [
+          "apify_social",
+          "gravatar_deep",
+          "social_verifier",
+          "username_finder"
+        ],
+        "input_fields": [],
+        "explored_by": [
+          "social_verifier",
+          "apify_social",
+          "gravatar_deep"
+        ],
+        "selected_rounds": [
+          1
+        ],
+        "reasons": [
+          "observed_username",
+          "user_input"
+        ],
+        "score_components": {
+          "evidence_strength": 1000,
+          "corroboration_bonus": 0,
+          "source_quality": 0,
+          "expected_information_gain": 10,
+          "exploration_cost": -20,
+          "repetition_penalty": -3,
+          "weak_context_penalty": 0
+        },
+        "deferred_reason": null
+      },
+      {
+        "id": "url:0603d22c9a1625a83ee695d0",
+        "type": "url",
+        "value": "https://instagram.com/benchmarkperson",
+        "discovered_round": 1,
+        "confidence_class": "P1",
+        "pivot_priority": 792,
+        "expected_information_gain": "medium",
+        "exploration_cost": 20,
+        "status": "explored",
+        "support_count": 2,
+        "independent_source_count": 1,
+        "supports": [
+          {
+            "observation_key": "b83adf356ac3d2e43bfdf6b4",
+            "source_tool": "social_verifier",
+            "source_url": "https://instagram.com/benchmarkperson",
+            "source_observation_id": null,
+            "source_execution_id": "283b760d-54db-4e7c-88b8-684ef0b2843a",
+            "evidence_role": "observed_profile_url",
+            "evidence_class": "strong",
+            "independent_key": "instagram.com"
+          },
+          {
+            "observation_key": "851954cb8f373c4b4a91cbc1",
+            "source_tool": "apify_social",
+            "source_url": "https://instagram.com/benchmarkperson",
+            "source_observation_id": null,
+            "source_execution_id": "9796d174-ca9b-4b0a-a387-bcce85c4fb8a",
+            "evidence_role": "observed_profile_url",
+            "evidence_class": "strong",
+            "independent_key": "instagram.com"
+          }
+        ],
+        "possible_tools": [
+          "apify_social",
+          "gravatar_deep",
+          "social_verifier",
+          "username_finder"
+        ],
+        "input_fields": [
+          "candidate_urls"
+        ],
+        "explored_by": [
+          "apify_social"
+        ],
+        "selected_rounds": [
+          2
+        ],
+        "reasons": [
+          "observed_profile_url"
+        ],
+        "score_components": {
+          "evidence_strength": 800,
+          "corroboration_bonus": 0,
+          "source_quality": 5,
+          "expected_information_gain": 8,
+          "exploration_cost": -20,
+          "repetition_penalty": -1,
+          "weak_context_penalty": 0
+        },
+        "deferred_reason": null
+      }
+    ],
+    "deferred": [],
+    "summary": {
+      "total": 2,
+      "pending": 0,
+      "active": 0,
+      "explored": 2,
+      "deferred": 0,
+      "high": 2,
+      "medium": 0,
+      "low": 0
+    },
+    "decisions": [
+      {
+        "round": 1,
+        "mode": "fair",
+        "selected": [
+          "username:d62624766fbe5546d3e1f3c4"
+        ],
+        "estimated_cost": 0,
+        "deferred": 0
+      },
+      {
+        "round": 1,
+        "mode": "fair",
+        "selected": [
+          "username:d62624766fbe5546d3e1f3c4"
+        ],
+        "estimated_cost": 0,
+        "deferred": 0
+      },
+      {
+        "round": 1,
+        "mode": "fair",
+        "selected": [
+          "username:d62624766fbe5546d3e1f3c4"
+        ],
+        "estimated_cost": 0,
+        "deferred": 0
+      },
+      {
+        "round": 1,
+        "mode": "fair",
+        "selected": [
+          "username:d62624766fbe5546d3e1f3c4"
+        ],
+        "estimated_cost": 0,
+        "deferred": 0
+      },
+      {
+        "round": 1,
+        "mode": "fair",
+        "selected": [
+          "username:d62624766fbe5546d3e1f3c4"
+        ],
+        "estimated_cost": 0,
+        "deferred": 0
+      },
+      {
+        "round": 1,
+        "mode": "fair",
+        "selected": [
+          "username:d62624766fbe5546d3e1f3c4"
+        ],
+        "estimated_cost": 0,
+        "deferred": 0
+      },
+      {
+        "round": 1,
+        "mode": "fair",
+        "selected": [
+          "username:d62624766fbe5546d3e1f3c4"
+        ],
+        "estimated_cost": 0,
+        "deferred": 0
+      },
+      {
+        "round": 1,
+        "mode": "fair",
+        "selected": [
+          "username:d62624766fbe5546d3e1f3c4"
+        ],
+        "estimated_cost": 0,
+        "deferred": 0
+      },
+      {
+        "round": 1,
+        "mode": "fair",
+        "selected": [
+          "username:d62624766fbe5546d3e1f3c4"
+        ],
+        "estimated_cost": 0,
+        "deferred": 0
+      },
+      {
+        "round": 1,
+        "mode": "fair",
+        "selected": [
+          "username:d62624766fbe5546d3e1f3c4"
+        ],
+        "estimated_cost": 0,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [
+          "url:0603d22c9a1625a83ee695d0"
+        ],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [
+          "url:0603d22c9a1625a83ee695d0"
+        ],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [
+          "url:0603d22c9a1625a83ee695d0"
+        ],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [
+          "url:0603d22c9a1625a83ee695d0"
+        ],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [
+          "url:0603d22c9a1625a83ee695d0"
+        ],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      },
+      {
+        "round": 2,
+        "mode": "fair",
+        "selected": [],
+        "estimated_cost": 20,
+        "deferred": 0
+      }
+    ],
+    "duplicate_executions_avoided": 0
+  },
+  "checks": {
+    "concurrent_start": true,
+    "bounded_return": true,
+    "slow_cancelled": true,
+    "partial_findings_survive": true,
+    "pivot_enriched_wave_two": true
+  }
+}

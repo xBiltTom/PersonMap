@@ -49,6 +49,8 @@ class SocialSourceRouter:
         available = state.get("unavailable") or availability()
         consent = context.extra.get("subject_consent") is True
         allowed = {canonical_platform(value) for value in settings.apify_platforms}
+        if "apify_platform_allowlist" in context.extra:
+            allowed &= {canonical_platform(value) for value in context.extra["apify_platform_allowlist"]}
         hints = {(seed.value.casefold(), canonical_platform(seed.platform)) for seed in context.declared_seeds
                  if seed.kind == "username" and seed.platform}
         # Respect Frontier's admitted execution view, not the unfiltered archive.

@@ -18,6 +18,10 @@ class Investigation(Base):
     execution_mode = Column(String(20), default="internal", server_default="internal", nullable=False)
     revision = Column(Integer, default=0, server_default="0", nullable=False)
 
+    @property
+    def acquisition_mode(self):
+        return (self.metrics or {}).get("acquisition_mode", "normal")
+
     # Status: "pending", "running", "completed", "failed"
     status = Column(String(50), default="pending", nullable=False, index=True)
 

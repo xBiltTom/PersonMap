@@ -9,9 +9,10 @@ from app.models.investigation import Investigation
 router = APIRouter()
 
 # Etiquetas de los tres brazos experimentales, en el orden en que se presentan.
-ENGINES = ("rules", "agentic", "hybrid", "external")
+ENGINES = ("rules", "agentic", "hybrid", "external", "fair")
 
 ENGINE_LABELS = {
+    "fair": "Fair / Lite (adquisición)",
     "rules": "Motor por Reglas",
     "agentic": "Agente IA Autónomo",
     "hybrid": "Híbrido (Reglas + IA)",

@@ -148,7 +148,8 @@ class UsernameFinderTool(BaseTool):
         context.extra["username_finder_catalog_id"] = catalogue_id
         fast = context.extra.get("username_scan_mode") == "fast"
         if fast:
-            sites = sites[:max(1, settings.mcp_username_fast_sites)]
+            sites = sites[:min(max(1, settings.mcp_username_fast_sites),
+                               max(1, context.extra.get("username_site_limit", settings.mcp_username_fast_sites)))]
 
         investigation_id = context.extra.get("investigation_id")
         semaphore = asyncio.Semaphore(
