@@ -2,6 +2,7 @@
 import json
 
 RUNTIME_KEYS = (
+    "apify_runtime", "social_native_profiles",
     "pivot_frontier", "pivot_frontier_mode",
     "email_enum_checked", "email_enum_diagnostics", "email_enum_config_id",
     "ghunt_checked", "ghunt_diagnostics", "ghunt_config_id", "ghunt_resolved_gaia",

@@ -43,6 +43,69 @@ pytestmark = pytest.mark.db
 
 
 @pytest.mark.asyncio
+async def test_apify_uses_shared_workspace_trace_persistence_and_durable_budget(isolated_workspace, monkeypatch):
+    from app.engine.persistence import persist_findings
+    from app.tools import http_client
+    from app.tools.apify_social import execution_summary
+    service, _ = isolated_workspace
+    monkeypatch.setattr(settings, "apify_enabled", True)
+    monkeypatch.setattr(settings, "apify_token", SecretStr("apify_api_DB_TEST_SECRET"))
+    monkeypatch.setattr(settings, "apify_platforms", ["instagram"])
+    monkeypatch.setattr(settings, "apify_max_runs", 1)
+    posted = []
+    def respond(req):
+        if req.method == "POST":
+            posted.append(str(req.url))
+            return httpx.Response(201, json={"data": {"id": "dbRun123", "actId": "dbActor123", "status": "SUCCEEDED",
+                "defaultDatasetId": "dbDataset123", "buildId": "dbBuild123", "buildNumber": "0.1.2"}})
+        return httpx.Response(200, json=[{"username": "fixture", "url": "https://instagram.com/fixture", "private": False,
+            "fullName": "Fixture Person", "biography": "Public fixture bio", "externalUrls": [{"url": "mailto:public@example.org"}],
+            "latestPosts": [{"id": "post1", "url": "https://instagram.com/p/FIXTURE1", "caption": "Public caption"}]}])
+    monkeypatch.setattr(http_client, "build_client", lambda **kwargs: httpx.AsyncClient(
+        transport=httpx.MockTransport(respond), headers=kwargs.get("headers"), follow_redirects=False))
+    async with service.session_factory() as db:
+        inv = await service.create(InvestigationCreate(target=TargetCreate(usernames=[{"username": "fixture", "platform": "instagram"}]),
+            subject_consent=True, execution_mode="external"), db)
+        await persist_findings(str(inv.id), [ToolFinding(entity_type="social_account", value="https://instagram.com/fixture",
+            platform="instagram", metadata_info={"source_tool": "social_verifier", "verification_status": "verified", "username": "fixture"})], inv.target, db)
+        await db.commit()
+    opened = await service.open_session(inv.id, SessionCreate(client="apify-fixture"))
+    arguments = ToolRequest(tool_name="apify_social", inputs=ToolInputs(candidate_urls=["https://instagram.com/fixture"]),
+        rationale="Read bounded public profile content after native existence evidence")
+    submitted = await service.submit_tool(inv.id, uuid.UUID(opened["id"]), arguments)
+    task = service.tasks.get(uuid.UUID(submitted["id"]))
+    if task:
+        await task
+    detail = await service.detail(inv.id)
+    assert len(detail["entities"]) == 1
+    entity = detail["entities"][0]
+    assert entity["provenance"]["origin"] == "automatic" and entity["provenance"]["status"] == "discovered"
+    assert set(entity["metadata_info"]["source_tools"]) == {"social_verifier", "apify_social"}
+    source = entity["metadata_info"]["collection_sources"][0]
+    assert source["run_id"] == "dbRun123" and source["dataset_id"] == "dbDataset123" and source["build_id"] == "dbBuild123"
+    assert entity["metadata_info"]["public_content"][0]["text"] == "Public caption"
+    fresh = WorkspaceService(service.session_factory)
+    projected = await fresh.context(inv.id)
+    assert projected["known_identifiers"]["discovered_emails"] == ["public@example.org"]
+    assert projected["social_sources"]["apify"]["runs_reserved"] == 1
+    assert any(item["strategy"] == "hybrid" for item in projected["social_sources"]["routing"])
+    async with fresh.session_factory() as db:
+        reloaded = await fresh._investigation(db, inv.id)
+        observations = list((await db.scalars(select(EntityObservation).where(EntityObservation.investigation_id == inv.id))).all())
+        assert len(observations) == 1
+        executions = list((await db.scalars(select(ToolExecution).where(ToolExecution.investigation_id == inv.id))).all())
+        assert executions[0].input_summary["apify"]["runs_reserved"] == 1
+        assert execution_summary(fresh._context(reloaded, []))["runs_reserved"] == 1
+    reused = await service.submit_tool(inv.id, uuid.UUID(opened["id"]), arguments)
+    assert reused["reused"] is True and reused["id"] == submitted["id"] and len(posted) == 1
+    with pytest.raises(HTTPException) as exhausted:
+        await service.submit_tool(inv.id, uuid.UUID(opened["id"]), arguments.model_copy(update={"force": True}))
+    assert exhausted.value.status_code == 422 and len(posted) == 1
+    assert "apify_api_DB_TEST_SECRET" not in json.dumps(projected)
+    await fresh.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_footprint_v2_persists_reloads_and_keeps_subject_and_discovery_separate(isolated_workspace, monkeypatch):
     from fastapi import FastAPI
     from app.api.v1 import investigations as routes

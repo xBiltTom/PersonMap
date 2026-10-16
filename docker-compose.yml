@@ -86,8 +86,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    env_file:
-      - .env
+    # Only public frontend settings. Do not inject backend/APIFY_TOKEN secrets.
     environment:
       # El navegador del usuario llama a localhost:8000, no al nombre
       # de servicio Docker. Ajusta si despliegas detrás de un proxy/dominio.

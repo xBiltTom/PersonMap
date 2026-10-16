@@ -101,10 +101,13 @@ def dedupe_findings(findings: List[ToolFinding]) -> List[ToolFinding]:
         key = finding_dedupe_key(f)
         observations.setdefault(key, []).append(f)
 
-        tool = normalize_source_tool((f.metadata_info or {}).get("source_tool"))
         tools = provenance.setdefault(key, [])
-        if tool and tool not in tools:
-            tools.append(tool)
+        prior_tools = (f.metadata_info or {}).get("source_tools", [])
+        prior_tools = prior_tools if isinstance(prior_tools, list) else []
+        for raw_tool in [(f.metadata_info or {}).get("source_tool"), *prior_tools]:
+            tool = normalize_source_tool(raw_tool) if isinstance(raw_tool, str) else ""
+            if tool and tool not in tools:
+                tools.append(tool)
 
         # Igual que con la procedencia por herramienta, la capa que produjo el
         # hallazgo se acumula en lugar de sobrescribirse: el motor híbrido

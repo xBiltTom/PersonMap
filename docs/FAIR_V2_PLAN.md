@@ -1,6 +1,6 @@
 # PersonMap Fair V2 — contrato de evolución
 
-Rama: `feat/footprint-lite-fair-demo`. Alcance de esta entrega: **solo Fase 1**.
+Rama: `feat/footprint-lite-fair-demo`. Entregas cerradas: **Fase 1 y Fase 2**.
 Base auditada: `main` en `e5a199ba34df0cdb100322f3e2cf7969e82268ed` (sin modificar).
 Los datos iniciales son propios o cuentan con autorización explícita. Descubrir
 un identificador, verificar que existe un perfil y atribuirlo a una persona son
@@ -152,14 +152,46 @@ deberá combinar declared + confirmed con IDs de evidencia, excluyendo rejected,
 discovered y uncertain del conjunto atribuido. IA tendrá procedencia separada
 de las decisiones del sujeto, nunca origin=subject/automatic confirmado.
 
-## Fase 2 — Apify Social Layer (pendiente)
+## Fase 2 — Apify Social Layer (implementada)
 
-Evaluar Actors de Instagram, TikTok, Reddit, X, Facebook, YouTube, Threads y
-otras plataformas según cobertura, calidad y coste. Reutilizar normalización,
-namespace opcional y procedencia automática; cada resultado debe conservar
-Actor/versión, run/dataset, URL y fecha, sin exponer tokens. No reemplazar
-SearchDorker, OpenAlex/Crossref, GHunt ni especialistas más precisos.
-No existe integración real ni dependencia Apify en esta entrega.
+Base de esta fase: `b7f90f6e892d9b48e05e7c3ebfe5b83f86b845c9`; Foundation V2
+se conserva, no se reimplementa. Ver [arquitectura, evaluación y límites](APIFY.md).
+
+- Capa desacoplada `social/`: specs/matriz, router, cliente REST y parsers.
+  BaseTool `apify_social` registrada en el pipeline común, sin otro almacén de
+  evidencias. Inputs, datasets, outputs y errores están acotados y son mockeables.
+- Ocho Actors prioritarios evaluados mediante Store/README/esquemas: Instagram,
+  TikTok, Threads y YouTube integrados; Reddit/X/LinkedIn diferidos; el Actor
+  Facebook evaluado sirve Pages, no perfiles personales. Sin reemplazar fuentes
+  nativas ni alterar pesos/semántica de correlación.
+- Router native-first: namespace prioriza, no confirma. Requiere observación
+  nativa plausible y admisión de Frontier antes de enriquecer; un username sin
+  plataforma no se expande ciegamente a todos los Actors. SearchDorker conserva
+  sus filtros; solo sus URLs exactas de perfil con match literal son candidatas.
+- Desactivado por defecto; token backend + plataformas permitidas + consentimiento
+  general explícito. Se mantienen SearchDorker, GHunt, OpenAlex/Crossref, Maigret/
+  WhatsMyName, GitHub, Gravatar, email, brechas, teléfono y documentos.
+- Procedencia `collection_sources` con actor/run/dataset/build, URL, fecha e input
+  allowlisted; persistencia común `automatic/discovered`, ownership unverified.
+  Contenido público estructurado en metadata, sin IA ni extracción de privados.
+- Límites por expediente de Actors/runs/filas/cargos reservados, tiempos,
+  reintentos GET y paralelismo. `force` no borra reservas. Runtime existente
+  persistido; no hay todavía ledger pre-POST resistente a crash duro ni límite
+  distribuido. Los starts ambiguos no se reintentan y los conocidos se abortan
+  best-effort al cancelar. Es una limitación documentada, no una garantía oculta.
+- `GET /api/v1/sources/social` y contexto MCP permiten inspección sin secretos.
+  Compose deja de inyectar `.env` backend en frontend; no cambia su diseño.
+- Validación del catálogo/API: **validated**. Integración y normalización:
+  **fixture-tested**. Scraping/coste/latencia comparados: **not live-tested**.
+  Ningún Actor real/pagado se ejecutó; no se inventan métricas.
+
+Fases 3–7 continúan pendientes. No se introduce SLA, orquestador Lite completo,
+Verification Gate, Exposure Lens, reconstrucción IA ni rediseño del grafo/frontend.
+
+Validación de Fase 2: 205 casos de integración/regresión (73 nuevos de Apify),
+17 pruebas PostgreSQL/REST/MCP, 205 de fuentes nativas y 63 de Maigret/WhatsMyName
+aprobados. Frontend: seis pruebas y TypeScript sin errores. Los detalles de la
+suite general, límites y ausencia de scraping real están en `APIFY.md`.
 
 ## Fase 3 — PersonMap Lite Orchestrator (pendiente)
 
@@ -224,7 +256,7 @@ no implementa el rediseño completo ni presenta funciones aún inexistentes.
   atribuciones entre cuentas por compartir alias o componente de grafo.
 - No se incluye `opencode.json` preexistente sin seguimiento en este commit.
 
-## Validación de esta entrega
+## Validación de Foundation V2 (Fase 1)
 
 Ejecutado el 15-10-2026, con identidades ficticias y sin consultas OSINT reales:
 

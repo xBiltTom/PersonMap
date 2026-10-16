@@ -221,6 +221,25 @@ class Settings(BaseSettings):
     academic_batch_timeout: float = 60
     github_api_token: Optional[SecretStr] = None
 
+    # Optional public social enrichment. No Actor runs without operator opt-in,
+    # an allowlisted platform AND the subject consent recorded on the target.
+    apify_enabled: bool = False
+    apify_token: Optional[SecretStr] = None
+    apify_platforms: list[str] = Field(default_factory=lambda: ["instagram", "tiktok"])
+    apify_actor_builds: dict[str, str] = Field(default_factory=dict)
+    apify_max_actors: int = Field(default=2, ge=0, le=10)
+    apify_max_runs: int = Field(default=2, ge=0, le=20)
+    apify_max_items_per_actor: int = Field(default=5, ge=1, le=100)
+    apify_dataset_page_size: int = Field(default=5, ge=1, le=100)
+    apify_run_timeout: int = Field(default=60, ge=5, le=300)
+    apify_batch_timeout: float = Field(default=150, ge=1, le=600)
+    apify_request_timeout: float = Field(default=15, ge=1, le=60)
+    apify_max_retries: int = Field(default=1, ge=0, le=3)  # GET only, never run starts
+    apify_parallelism: int = Field(default=1, ge=1, le=4)
+    apify_max_charge_per_run_usd: float = Field(default=0.05, gt=0, le=5, allow_inf_nan=False)
+    apify_max_charge_per_investigation_usd: float = Field(default=0.10, ge=0, le=10, allow_inf_nan=False)
+    apify_max_response_bytes: int = Field(default=2_000_000, ge=1024, le=8_000_000)
+
     @property
     def brave_enabled(self) -> bool:
         return bool(self.brave_api_key and self.brave_api_key.get_secret_value().strip())

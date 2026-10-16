@@ -80,6 +80,10 @@ def build_tool_schemas() -> List[Dict[str, Any]]:
             },
         })
     for schema in schemas:
+        if schema["function"]["name"] == "apify_social":
+            parameters = schema["function"]["parameters"]
+            parameters["required"] = []
+            parameters["anyOf"] = [{"required": [field]} for field in ("username", "candidate_urls")]
         if schema["function"]["name"] in {"maigret_enricher", "ghunt", "academic_finder"}:
             parameters = schema["function"]["parameters"]
             parameters["required"] = []
@@ -184,6 +188,7 @@ def build_call_context(
         discovered_names=list(base.discovered_names),
         extra={
             **extra,
+            "subject_consent": (target.extra_data or {}).get("subject_consent") is True,
             "candidate_urls": candidate_urls,
             # Sin esto, el agente autónomo nunca podría ejecutar las fuentes que
             # exigen consentimiento, ni siquiera habiéndolo dado: construye su

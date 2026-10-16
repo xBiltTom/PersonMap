@@ -50,6 +50,8 @@ class RuleEngine:
     MAX_ROUNDS = 4
 
     def _get_tool_run_key(self, tool, context: TargetContext) -> str:
+        if tool.name == "apify_social":
+            return tool.name + "|" + tool.input_fingerprint(context)
         parts = [tool.name]
         for req in getattr(tool, "required_inputs", []):
             if req == "username":
@@ -260,6 +262,9 @@ class RuleEngine:
                     if runnable[index].name == "academic_finder":
                         from app.tools.academic_finder import execution_summary
                         execution.input_summary = {**(execution.input_summary or {}), "academic": execution_summary(context)}
+                    if runnable[index].name == "apify_social":
+                        from app.tools.apify_social import execution_summary
+                        execution.input_summary = {**(execution.input_summary or {}), "apify": execution_summary(context)}
                     await trace_recorder.complete_tool(
                         execution,
                         findings_count=len(outcome.findings),
@@ -420,6 +425,9 @@ class RuleEngine:
             if tool.name == "academic_finder":
                 from app.tools.academic_finder import execution_summary
                 note = " Consultas académicas: " + json.dumps(execution_summary(context)["counts"], ensure_ascii=False) + "."
+            if tool.name == "apify_social":
+                from app.tools.apify_social import execution_summary
+                note = " Apify: " + json.dumps(execution_summary(context), ensure_ascii=False) + "."
             await event_bus.publish(investigation_id, {
                 "type": "tool_complete",
                 "tool": tool.name,

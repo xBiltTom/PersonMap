@@ -20,6 +20,7 @@ from app.tools.infostealer_checker import InfostealerCheckerTool
 from app.tools.phone_lookup import PhoneLookupTool
 from app.tools.github_deep_scanner import GitHubDeepScannerTool
 from app.tools.reverse_image_search import ReverseImageSearchTool
+from app.tools.apify_social import ApifySocialTool
 
 
 class ToolRegistry:
@@ -49,6 +50,7 @@ class ToolRegistry:
         # URL Extraction & Deep Social Scraping
         self.register(SocialUrlExtractorTool())
         self.register(SocialVerifierTool())
+        self.register(ApifySocialTool())
 
         # Search Engines & Academic Footprint
         self.register(SearchDorkerTool())

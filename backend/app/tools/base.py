@@ -41,7 +41,8 @@ class TargetContext(BaseModel):
         return cls(**{field: getattr(target, field, None) for field in
             ("full_name", "email", "username", "phone", "dni", "university", "description")},
             declared_seeds=declared.declared_seeds if declared else [],
-            extra={"self_consent": bool((target.extra_data or {}).get("self_consent"))})
+            extra={"self_consent": bool((target.extra_data or {}).get("self_consent")),
+                   "subject_consent": (target.extra_data or {}).get("subject_consent") is True})
 
     def declared_values(self, kind: str) -> List[str]:
         return list(dict.fromkeys(seed.value for seed in self.declared_seeds if seed.kind == kind))

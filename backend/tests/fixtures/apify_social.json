@@ -1,0 +1,35 @@
+{
+  "_notice": "Synthetic fixtures modeled on Store output schemas reviewed 2026-10-15. These are NOT live scraper results.",
+  "instagram": [
+    {
+      "username": "fixture.person",
+      "url": "https://www.instagram.com/fixture.person/",
+      "fullName": "Fixture Person",
+      "biography": "Public bio. Free-text stray@example.org must not become a pivot.",
+      "private": false,
+      "profilePicUrl": "https://example.org/avatar.jpg",
+      "externalUrl": "https://example.org/public",
+      "externalUrls": [
+        {"url": "mailto:public@example.org"},
+        {"url": "https://github.com/fixture-alias"}
+      ],
+      "relatedProfiles": [{"username": "unrelated_suggestion"}],
+      "latestPosts": [
+        {"id": "post1", "url": "https://www.instagram.com/p/FIXTURE1/", "ownerUsername": "fixture.person", "caption": "A public university event", "timestamp": "2026-10-01T12:00:00Z", "hashtags": ["campus"], "mentions": ["other_person"], "latestComments": [{"username": "comment_author", "text": "Not a target alias"}]},
+        {"id": "post1", "url": "https://www.instagram.com/p/FIXTURE1/", "ownerUsername": "fixture.person", "caption": "A public university event", "timestamp": "2026-10-01T12:00:00Z", "hashtags": ["campus"], "mentions": ["other_person"]},
+        {"id": "post2", "url": "https://www.instagram.com/p/OTHER/", "ownerUsername": "someone_else", "caption": "Do not attach another author's post"}
+      ]
+    }
+  ],
+  "tiktok": [
+    {"id": "1001", "webVideoUrl": "https://www.tiktok.com/@fixture_person/video/1001", "text": "Public caption", "createTimeISO": "2026-10-01T12:00:00Z", "hashtags": [{"name": "learning"}], "mentions": ["colleague"], "authorMeta": {"name": "fixture_person", "nickName": "Fixture Person", "signature": "Public short biography", "profileUrl": "https://www.tiktok.com/@fixture_person", "privateAccount": false, "avatar": "https://example.org/tiktok-avatar.jpg", "bioLink": "https://example.org/public"}},
+    {"id": "1002", "webVideoUrl": "https://www.tiktok.com/@fixture_person/video/1002", "text": "Another public caption", "authorMeta": {"name": "fixture_person", "nickName": "Fixture Person", "signature": "Public short biography", "profileUrl": "https://www.tiktok.com/@fixture_person", "privateAccount": false}}
+  ],
+  "threads": [
+    {"username": "fixture_person", "url": "https://www.threads.net/@fixture_person", "full_name": "Fixture Person", "biography": "A public Threads bio", "is_private": false, "profile_pic_url": "https://example.org/threads-avatar.jpg", "bio_links": [{"url": "https://example.org/public"}], "latestPosts": [{"id": "thread1", "code": "THR1", "caption": {"text": "Public post text"}, "taken_at": 1790856000, "user": {"username": "fixture_person", "text_post_app_is_private": false}, "organic_tracking_token": "THIS_FIELD_MUST_NOT_BE_PERSISTED"}]}
+  ],
+  "youtube": [
+    {"id": "abcdefghijk", "url": "https://www.youtube.com/watch?v=abcdefghijk", "title": "Public fixture video", "date": "2026-10-01", "aboutChannelInfo": {"channelUsername": "@fixturechannel", "channelUrl": "https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv", "channelId": "UCabcdefghijklmnopqrstuv", "channelName": "Fixture Channel", "channelDescription": "Public channel description", "channelAvatarUrl": "https://example.org/youtube-avatar.jpg", "channelDescriptionLinks": [{"url": "https://example.org/public"}], "inputChannelUrl": "https://www.youtube.com/@fixturechannel"}},
+    {"id": "lmnopqrstuv", "url": "https://www.youtube.com/watch?v=lmnopqrstuv", "title": "Another public video", "channelUsername": "@fixturechannel", "channelUrl": "https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv", "channelName": "Fixture Channel", "channelDescription": "Public channel description"}
+  ]
+}

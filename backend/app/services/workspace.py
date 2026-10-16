@@ -66,7 +66,7 @@ def merge_runtime(current, baseline, incoming, *, extent=False, counter=False):
             result = {key: value for key, value in result.items() if not key.startswith(prefix)}
             baseline = {key: value for key, value in baseline.items() if not key.startswith(prefix)}
     for key, value in incoming.items():
-        if key in baseline and value == baseline[key]:
+        if key in baseline and value == baseline[key] and key != "social_native_profiles":
             continue
         prior = baseline.get(key)
         latest = result.get(key)
@@ -99,6 +99,8 @@ def merge_runtime(current, baseline, incoming, *, extent=False, counter=False):
 def call_fingerprint(tool_name: str, context: TargetContext) -> str:
     # Only actual inputs; never ephemeral caches, secrets, budgets or event IDs.
     tool = EXTERNAL_TOOLS[tool_name]
+    if tool_name == "apify_social":
+        return tool.input_fingerprint(context)
     values = {}
     for field in tool.required_inputs:
         if field == "username":
@@ -304,6 +306,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
 
     async def context(self, investigation_id: UUID) -> dict:
         from app.tools.maigret_catalog import capabilities
+        from app.social.capabilities import capabilities as social_capabilities
+        from app.social.router import SocialSourceRouter
+        from app.tools.apify_social import execution_summary as apify_summary
         async with self.session_factory() as db:
             inv = await self._investigation(db, investigation_id)
             entities = list((await db.scalars(select(Entity).where(Entity.investigation_id == investigation_id))).all())
@@ -320,6 +325,8 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
             sessions = list((await db.scalars(select(InvestigationSession).where(InvestigationSession.investigation_id == investigation_id)
                                              .order_by(InvestigationSession.started_at.desc()).limit(20))).all())
             return {"investigation": InvestigationRead.model_validate(inv).model_dump(mode="json"),
+                    "social_sources": {"capabilities": social_capabilities(),
+                        "routing": SocialSourceRouter().explain(context), "apify": apify_summary(context)},
                     "pivot_frontier": PivotFrontier(context).snapshot(),
                     "correlation": compact_projection(affinities, correlation_edges),
                     "review_baseline": (inv.metrics or {}).get("review_baseline"),
@@ -376,6 +383,10 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
         ctx = build_call_context({}, inv.target)
         saved = self.contexts.get(inv.id)
         if use_cached:
+            # Paid-source coverage is independent of Frontier's feature flag.
+            # Keep other legacy cache-loading behavior unchanged.
+            collection = (inv.metrics or {}).get("collection_runtime", {})
+            ctx.extra.update({key: deepcopy(collection[key]) for key in ("apify_runtime", "social_native_profiles") if key in collection})
             if settings.pivot_frontier_enabled:
                 ctx.extra.update(deepcopy((inv.metrics or {}).get("collection_runtime", {})))
             if saved:
@@ -491,7 +502,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
             base_context = self._context(inv, entities)
             # A forced repeat refreshes only this tool's cache, preserving other tools' work.
             # Search retains its budgets even when repeating an explicit query.
-            if payload.force and tool.name != "search_dorker":
+            if payload.force and tool.name not in {"search_dorker", "apify_social"}:
                 for key in list(base_context.extra):
                     if key.startswith(getattr(tool, "cache_prefix", tool.name + "_")):
                         base_context.extra.pop(key)
@@ -536,7 +547,7 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 from app.tools.academic_finder import select_call_inputs
                 select_call_inputs(context, inputs)
             runnable = tool.can_run(context)
-            if not runnable and tool.name not in {"ghunt", "email_enumerator", "google_account_osint", "email_checker", "academic_finder"}:
+            if not runnable and tool.name not in {"ghunt", "email_enumerator", "google_account_osint", "email_checker", "academic_finder", "apify_social"}:
                 raise HTTPException(422, "Faltan entradas requeridas para la herramienta")
             if tool.name == "public_page_reader" and not payload.inputs.candidate_urls:
                 raise HTTPException(422, "Selecciona explícitamente las URLs que se leerán")
@@ -627,6 +638,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                 if tool.name == "academic_finder":
                     from app.tools.academic_finder import execution_summary
                     execution.input_summary = {**execution.input_summary, "academic": execution_summary(context)}
+                if tool.name == "apify_social":
+                    from app.tools.apify_social import execution_summary
+                    execution.input_summary = {**execution.input_summary, "apify": execution_summary(context)}
                 if tool.name == "search_dorker":
                     execution.input_summary = {**execution.input_summary,
                         "search_status": context.extra.get("search_last_status"),

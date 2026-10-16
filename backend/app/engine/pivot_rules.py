@@ -187,6 +187,8 @@ def extract_and_apply_pivots(findings: List[ToolFinding], context: TargetContext
 
     context.extra["candidate_urls"] = candidate_urls
     context.extra["avatar_urls"] = avatar_urls
+    from app.social.router import remember_native_profiles
+    remember_native_profiles(findings, context)
     if settings.pivot_frontier_enabled:
         from app.engine.pivot_frontier import PivotFrontier
         frontier = PivotFrontier(context)

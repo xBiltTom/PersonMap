@@ -48,7 +48,9 @@ def run_fingerprint() -> Dict[str, Any]:
         except Exception:
             breakdown = {}
 
+    from app.social.capabilities import capabilities as social_capabilities
     return {
+        "social_sources": social_capabilities(),
         "pivot_frontier": {"version": 1, "enabled": settings.pivot_frontier_enabled,
             "max_per_round": settings.pivot_max_per_round, "max_total": settings.pivot_max_total,
             "max_weak_per_round": settings.pivot_max_weak_per_round,
