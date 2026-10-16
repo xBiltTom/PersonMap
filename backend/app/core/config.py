@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     fair_disabled_sources: list[str] = Field(default_factory=list)
 
     reconstruction_ai_enabled: bool = False
+    mcp_media_max_images: int = Field(default=4, ge=1, le=8)
+    mcp_media_max_download_bytes: int = Field(default=10_000_000, ge=100_000, le=25_000_000)
+    mcp_media_max_output_bytes: int = Field(default=1_500_000, ge=100_000, le=3_000_000)
+    mcp_media_max_pixels: int = Field(default=25_000_000, ge=1_000_000, le=50_000_000)
+    mcp_media_max_dimension: int = Field(default=1920, ge=512, le=4096)
 
     # Exposure Lens is deterministic by default. The optional classifier only
     # receives bounded, attributed public text after local redaction.

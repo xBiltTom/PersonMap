@@ -394,7 +394,7 @@ def _safe_content(value, account: Entity) -> list[dict]:
         return []
     allowed = {"id", "url", "text", "caption", "title", "description", "posted_at", "published_at",
                "timestamp", "media_type", "content_type", "likes", "comments", "views", "platform",
-               "origin", "author_username", "authorship_role", "collection_source"}
+               "origin", "author_username", "authorship_role", "collection_source", "media"}
     result = []
     for item in value[:100]:
         if not isinstance(item, dict):
@@ -402,7 +402,10 @@ def _safe_content(value, account: Entity) -> list[dict]:
         clean = {}
         for key in allowed.intersection(item):
             raw = item[key]
-            if key == "url":
+            if key == "media":
+                from app.social.media import sanitize_media
+                clean[key] = sanitize_media(raw, account.platform)
+            elif key == "url":
                 clean[key] = safe_public_url(raw) if isinstance(raw, str) else None
             elif key in {"likes", "comments", "views"}:
                 if isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0:

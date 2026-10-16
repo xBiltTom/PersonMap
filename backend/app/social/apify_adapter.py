@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.social.capabilities import INSTAGRAM_POSTS
 from app.schemas.footprint import discovered_provenance
 from app.social.safety import public_url, text
+from app.social.media import actor_media
 from app.tools.base import ToolFinding
 from app.tools.social_profiles import parse_social_profile, social_host
 
@@ -136,6 +137,7 @@ def _content(platform, row, handle):
         **({"authorship_role": role} if platform == "instagram" and role else {}), "url": url,
         "kind": "video" if platform in {"youtube", "tiktok"} else "post",
         "text": text(caption), "title": text(row.get("title"), 255),
+        "media": actor_media(platform, row),
         "published_at": text(published, 100) if isinstance(published, str) else published if isinstance(published, int) else None,
         **{field: row[key] for field, key in (("likes", "likesCount"), ("comments", "commentsCount"), ("views", "videoViewCount"))
            if type(row.get(key)) is int and row[key] >= 0},

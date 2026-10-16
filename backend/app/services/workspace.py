@@ -328,7 +328,9 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
                                           .order_by(AnalysisNote.created_at.desc()).limit(20))).all())
             sessions = list((await db.scalars(select(InvestigationSession).where(InvestigationSession.investigation_id == investigation_id)
                                              .order_by(InvestigationSession.started_at.desc()).limit(20))).all())
+            from app.services.post_media import consent_context
             return {"investigation": InvestigationRead.model_validate(inv).model_dump(mode="json"),
+                    "authorization": consent_context(inv),
                     "social_sources": {"capabilities": social_capabilities(),
                         "routing": SocialSourceRouter().explain(context), "apify": apify_summary(context)},
                     "pivot_frontier": PivotFrontier(context).snapshot(),

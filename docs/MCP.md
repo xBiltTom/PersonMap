@@ -249,3 +249,52 @@ Revisa `scopes` antes de gastar consultas adicionales. Los ámbitos incluyen per
 `SEARCH_MAX_QUERIES` controla el presupuesto común a los proveedores. Si no se define, se conserva `TAVILY_MAX_QUERIES` por compatibilidad. El respaldo opcional es Tavily → TinyFish → Brave → DuckDuckGo. `BRAVE_API_KEY` habilita Brave; sin clave se omite. Una consulta puede consumir solicitudes en varios proveedores.
 
 El lector público admite HTML, texto y PDFs con texto nativo. Un PDF de imagen, un parser ausente o un límite de extracción dejan un estado explícito. Revisa ese estado antes de interpretar una búsqueda vacía. Consulta la [auditoría OSINT](AUDITORIA_OSINT_2026-10-12.md) para límites, configuración y pruebas.
+
+## Inspección visual de publicaciones
+
+El MCP entrega imágenes al modelo con visión del cliente. No usa el LLM del backend
+ni inicia un Actor de Apify al abrir una imagen. El adaptador conserva referencias a
+fotos, diapositivas de carruseles y miniaturas de video; las pasa por Verification Gate.
+Los campos de Instagram (`displayUrl`, `images`, `childPosts`) están descritos en la
+[guía de descarga de imágenes de Apify](https://blog.apify.com/how-to-download-instagram-images/).
+
+1. Lee `get_investigation_context`: `authorization.subject_consent` indica si el
+   consentimiento del sujeto está registrado. Las instrucciones del servidor explican
+   el rol de analista de privacidad, la misión educativa y el alcance de esa autorización.
+   El agente puede continuar sin solicitar de nuevo un consentimiento ya registrado.
+2. Usa `list_public_posts(investigation_id, limit=20, offset=0)` y sigue `next_offset`.
+   Incluye posts sin texto, contexto de la descripción, coautoría, estado de atribución
+   y los IDs de medios. Hasta 100 posts por página; no descarga imágenes al listar.
+3. Si una adquisición antigua no conservó medios, `refresh_post_media` recibe el
+   expediente y `account_entity_id`. Lee hasta `max_rows` filas del dataset original
+   registrado en Apify (100 por defecto, máximo 500); no inicia un scrape. Requiere
+   credencial Apify y consentimiento; para expedientes externos exige `session_id` activo.
+   Solo actualiza referencias de publicaciones ya conocidas. Si enriquece un dataset Fair,
+   Exposure Lens y la reconstrucción quedan desactualizados y deben regenerarse.
+4. `read_post_images(investigation_id, post_id, media_ids, expected_dataset_hash)`
+   devuelve bloques MCP de imagen junto con el ID del medio, URL canónica del post,
+   posición, hashes de origen/imagen entregada, dimensiones y fecha de lectura.
+   El cliente necesita soporte para contenido de imagen en respuestas MCP.
+5. Para texto pequeño, repite la lectura con `crop=[left, top, right, bottom]`, valores
+   normalizados entre 0 y 1 sobre la imagen original orientada. Por ejemplo,
+   `[0, 0.5, 1, 1]` entrega la mitad inferior. El recorte ocurre antes de redimensionar.
+6. Guarda `save_post_visual_analysis`: resumen y riesgo, observaciones con `media_id`,
+   zona y texto legible, impacto, recomendación, inferencias condicionales y límites.
+   Valida que la versión del dataset y los medios pertenezcan al expediente. Las notas
+   son interpretaciones del cliente, no confirmaciones automáticas de identidad. Los
+   expedientes externos requieren sesión activa; un Fair finalizado admite la nota sin sesión.
+
+La visión debe aportar evidencia adicional a la descripción: texto de afiches, logos,
+credenciales, documentos o pantallas visibles, contrastando coincidencias y contradicciones.
+Una miniatura no acredita haber analizado un video o audio. Un logotipo o una publicación
+colaborativa no acreditan matrícula, empleo o asistencia; no se identifica a personas
+por sus caras. El agente debe indicar incertidumbre y medios pendientes de inspección.
+Las URLs caducadas o denegadas aparecen como huecos de cobertura, sin intentar eludir el acceso.
+
+Configuración opcional: `MCP_MEDIA_MAX_IMAGES=4` (hasta 8 por llamada),
+`MCP_MEDIA_MAX_DOWNLOAD_BYTES=10000000`, `MCP_MEDIA_MAX_OUTPUT_BYTES=1500000`,
+`MCP_MEDIA_MAX_PIXELS=25000000` y `MCP_MEDIA_MAX_DIMENSION=1920`. Se permiten únicamente
+CDNs públicos conocidos, con HTTPS y validación de DNS y redirecciones. Las firmas
+transitorias de CDN quedan en la referencia almacenada; las citas y el inventario MCP
+usan el enlace del post y un ID de medio, sin exponer la consulta firmada. Las imágenes
+entregadas se convierten a JPEG sin metadatos EXIF.
