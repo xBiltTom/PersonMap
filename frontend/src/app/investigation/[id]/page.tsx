@@ -10,6 +10,7 @@ import { DigitalMapGraph } from "@/components/graph/DigitalMapGraph";
 import { FindingsTable } from "@/components/findings/FindingsTable";
 import { DiscoveryTimeline } from "@/components/timeline/DiscoveryTimeline";
 import { LiveConsole } from "@/components/console/LiveConsole";
+import { FairCoverage } from "@/components/investigation/FairCoverage";
 import { InvestigationProgress } from "@/components/console/InvestigationProgress";
 import { useInvestigationStream } from "@/lib/useInvestigationStream";
 import { ReportView } from "@/components/report/ReportView";
@@ -84,11 +85,13 @@ export default function InvestigationDetailPage({
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const mapSectionRef = useRef<HTMLDivElement>(null);
+  const loadMaigretExports = Boolean(investigation && investigation.metrics.acquisition_mode !== "fair");
   useEffect(() => {
+    if (!loadMaigretExports) return;
     let cancelled = false;
     getMaigretCapabilities().then((capabilities) => { if (!cancelled) setMaigretFormats(capabilities.report_formats); }).catch(() => {});
     return () => { cancelled = true; };
-  }, []);
+  }, [loadMaigretExports]);
 
   const loadData = useCallback(async () => {
     try {
@@ -568,6 +571,8 @@ export default function InvestigationDetailPage({
       </div>
 
       {/* Real-time progress tracker when investigation is active */}
+      {investigation.metrics.acquisition_mode === "fair" && <FairCoverage metrics={investigation.metrics} />}
+
       {isRunning && (
         <InvestigationProgress
           stream={stream}

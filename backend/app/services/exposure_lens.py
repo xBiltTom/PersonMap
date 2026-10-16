@@ -71,6 +71,7 @@ CATEGORY_LABELS = {
     "biographical_identifiers": "identificadores biográficos",
     "public_documents": "documentos públicos",
     "breach_exposure": "exposición en brechas",
+    "infostealer_exposure": "registros de infostealer",
     "content_disclosure": "contenido público",
 }
 RECOMMENDATIONS = {
@@ -104,6 +105,11 @@ RECOMMENDATIONS = {
         "Usa contraseñas únicas.",
         "Cambia credenciales reutilizadas y activa MFA.",
         "Revisa los métodos de recuperación de tus cuentas.",
+    ],
+    "infostealer_exposure": [
+        "Revisa tus equipos con herramientas de seguridad actualizadas.",
+        "Desde un equipo seguro, revoca sesiones y cambia credenciales comprometidas.",
+        "Activa MFA; un registro histórico no demuestra una infección actual.",
     ],
     "content_disclosure": [
         "Revisa el texto y los metadatos de publicaciones públicas antes de compartirlos.",
@@ -927,6 +933,25 @@ def _content_and_document_signals(
     return sorted(top, key=lambda item: (-SEVERITY_ORDER[item.severity], item.platform or "", item.id))[:20]
 
 
+def _infostealer_findings(collector: _Collector, dataset: ReviewedFootprintDataset):
+    allowed = {("email", item.value.casefold()) for item in dataset.emails if _is_attributed(item)}
+    allowed.update(("username", a.username.casefold()) for a in dataset.accounts if _is_attributed(a) and a.username)
+    allowed.update((seed.kind, seed.value.casefold()) for seed in dataset.subject.get("declared", [])
+                   if seed.kind in {"email", "username"} and seed.provenance.origin == "subject" and seed.provenance.status == "declared")
+    for item in sorted(dataset.infostealers, key=lambda item: str(item.entity_id)):
+        if ((item.identifier_kind, item.identifier.casefold()) not in allowed
+                or item.provenance.status in {"rejected", "uncertain"}):
+            continue
+        collector.add("infostealer_exposure", str(item.entity_id), "medium",
+            "Identificador presente en un registro de infostealer",
+            "Un identificador atribuido aparece asociado a un registro de malware que roba credenciales.",
+            "Es un registro de exposición; no prueba ownership ni una infección actual del equipo.",
+            [{"source_type": "infostealer", "source_id": str(item.entity_id), "platform": "hudson_rock",
+              "account": None, "url": "https://www.hudsonrock.com/free-tools", "occurred_at": None,
+              "excerpt": "Registro de exposición por infostealer asociado a un identificador atribuido. No prueba identidad ni infección actual."}],
+            entity_ids=[str(item.entity_id)], signals=["infostealer_registry_observation", "exposure_not_identity_proof"])
+
+
 def _breach_findings(
     collector: _Collector,
     dataset: ReviewedFootprintDataset,
@@ -1129,6 +1154,7 @@ async def _build_analysis(
     emails, _phones, _domains = _profile_contact_sources(selected, collector)
     _email_cross_account(collector, emails)
     _breach_findings(collector, dataset, emails)
+    _infostealer_findings(collector, dataset)
     _combined_alias_email_link(collector, accounts, emails, cross_links)
     top = _content_and_document_signals(collector, selected, unit_signals)
     top.sort(key=lambda item: (

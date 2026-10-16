@@ -3,7 +3,7 @@ import type { ReconstructionBasis, ReconstructionGraph, ReconstructionGroup, Rec
 
 export const GRAPH_GROUPS: Record<ReconstructionGroup, string> = {
   identity: "Identidad", accounts: "Cuentas", content: "Contenido",
-  documents: "Documentos", breaches: "Brechas", exposure: "Exposición",
+  documents: "Documentos", breaches: "Brechas e infostealers", exposure: "Exposición",
 };
 export const GROUP_COLOR: Record<ReconstructionGroup, string> = {
   identity: "#8dbbc5", accounts: "#a7c8bc", content: "#93a4b8",

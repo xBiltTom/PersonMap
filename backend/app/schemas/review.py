@@ -132,6 +132,16 @@ class BreachExposure(BaseModel):
     semantics: Literal["exposure_observed_not_identity_proof"] = "exposure_observed_not_identity_proof"
 
 
+class InfostealerExposure(BaseModel):
+    """Minimal exposure association, never machine data or proof of ownership."""
+    entity_id: UUID
+    identifier_kind: Literal["email", "username"]
+    identifier: str
+    provenance: DataProvenance
+    evidence_urls: list[str] = Field(default_factory=list)
+    semantics: Literal["exposure_observed_not_identity_proof"] = "exposure_observed_not_identity_proof"
+
+
 class ReviewedFootprintDataset(BaseModel):
     version: Literal[1] = 1
     subject: dict[str, list[ReviewedDeclaredSeed]]
@@ -141,6 +151,7 @@ class ReviewedFootprintDataset(BaseModel):
     academic_profiles: list[ReviewedEntity] = Field(default_factory=list)
     documents: list[ReviewedEntity] = Field(default_factory=list)
     breaches: list[BreachExposure] = Field(default_factory=list)
+    infostealers: list[InfostealerExposure] = Field(default_factory=list)
     social_content: list[dict[str, Any]] = Field(default_factory=list)
     review: dict[str, list[ReviewedDecisionRecord]]
     evidence: list[dict[str, Any]] = Field(default_factory=list)

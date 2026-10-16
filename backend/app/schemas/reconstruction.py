@@ -8,12 +8,12 @@ from app.schemas.exposure import ExposureSeverity, ExposureStatus, ExposureSumma
 
 Basis = Literal['DECLARED', 'OBSERVED', 'CORRELATED', 'INFERRED']
 FactKind = Literal['subject', 'name', 'email', 'phone', 'alias', 'domain', 'url', 'account',
-                   'academic_profile', 'document', 'publication', 'repository', 'post', 'breach', 'exposure', 'context']
+                   'academic_profile', 'document', 'publication', 'repository', 'post', 'breach', 'infostealer', 'exposure', 'context']
 Group = Literal['identity', 'accounts', 'content', 'documents', 'breaches', 'exposure']
 RelationType = Literal['DECLARES', 'ATTRIBUTED_ACCOUNT', 'ATTRIBUTED_PROFILE', 'USES_ALIAS',
                        'USES_EMAIL', 'USES_PHONE', 'PUBLIC_EMAIL_ON', 'PUBLIC_PHONE_ON',
                        'LINKS_TO', 'SAME_ALIAS', 'SAME_EMAIL', 'PUBLISHED', 'AUTHORED',
-                       'ASSOCIATED_WITH', 'MENTIONED_IN', 'EXPOSED_IN_BREACH', 'HAS_EXPOSURE_SIGNAL']
+                       'ASSOCIATED_WITH', 'MENTIONED_IN', 'EXPOSED_IN_BREACH', 'EXPOSED_IN_INFOSTEALER', 'HAS_EXPOSURE_SIGNAL']
 
 
 class EvidenceRef(BaseModel):

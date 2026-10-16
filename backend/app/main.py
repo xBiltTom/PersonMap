@@ -71,7 +71,16 @@ app.include_router(api_v1_router)
 
 @app.get("/health", tags=["Health"])
 async def health_check():
+    from app.engine.fair_plan import FairPlan
+    from app.engine.lite_policy import COMMON_PLATFORMS
+    from app.social.capabilities import availability
+    lite = settings.personmap_env == "lite"
     return {
+        "personmap_env": settings.personmap_env,
+        "default_acquisition_mode": "fair" if lite else "normal",
+        "lite_plan": {"platforms": list(COMMON_PLATFORMS),
+                      "deadline_seconds": FairPlan.configured().deadline_seconds,
+                      "apify_status": availability()} if lite else None,
         "status": "healthy",
         "service": "person-map-backend",
         "ai_enabled": settings.ai_enabled,

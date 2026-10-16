@@ -258,7 +258,9 @@ def test_mode_is_explicit_and_normal_schema_preserves_strategies():
         InvestigationCreate(target=TargetCreate(username="fixture"), acquisition_mode="fair", execution_mode="external")
 
 
-def test_plan_has_critical_breach_and_excludes_unvalidated_social_by_default():
+def test_plan_has_critical_breach_and_excludes_unvalidated_social_by_default(monkeypatch):
+    monkeypatch.setattr(settings, "personmap_env", "normal")
+    monkeypatch.setattr(settings, "fair_apify_platforms", ["instagram", "tiktok", "youtube"])
     plan = FairPlan.configured()
     breach = next(s for s in plan.sources if s.tool == "breach_checker")
     assert breach.priority == 0 and breach.first_wave == 1 and breach.critical

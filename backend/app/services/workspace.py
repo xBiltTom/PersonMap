@@ -171,6 +171,8 @@ class WorkspaceService(WorkspaceUpdates, ExternalEvidenceImport):
         return inv
 
     async def create(self, payload: InvestigationCreate, db):
+        from app.engine.lite_policy import creation_policy
+        payload = creation_policy(payload)
         values = payload.target.persistence_values()
         extra_data = values.pop("extra_data")
         extra_data["pivot_frontier_mode"] = payload.pivot_mode

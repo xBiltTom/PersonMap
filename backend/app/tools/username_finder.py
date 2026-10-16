@@ -134,6 +134,9 @@ class UsernameFinderTool(BaseTool):
         if filters:
             full_catalog = build_catalog(include_variants=True, **filters)
             sites = full_catalog[:settings.username_scan_max_sites] if settings.username_scan_max_sites > 0 else full_catalog
+        priority = {name.casefold(): index for index, name in enumerate(context.extra.get("username_platform_priority", []))}
+        if priority:
+            sites = sorted(sites, key=lambda site: priority.get(site.name.casefold(), len(priority)))
         if context.extra.get("username_scan_mode") == "all":
             sites = full_catalog
         if not sites:

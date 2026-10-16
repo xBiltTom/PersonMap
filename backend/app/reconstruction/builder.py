@@ -209,6 +209,30 @@ def build_snapshot(dataset: ReviewedFootprintDataset, exposure: ExposureReport, 
         registry.relate(email_id, key, 'EXPOSED_IN_BREACH', 'OBSERVED',
                         'El correo atribuido figura en un registro de exposición; esto no prueba identidad ni ownership.', [ref])
 
+    attributed_aliases = {safe_identifier('alias', a.username or '') for a in accounts}
+    attributed_aliases.update(safe_identifier('alias', seed.value) for seed in dataset.subject.get('declared', [])
+                             if seed.kind == 'username' and seed.provenance.origin == 'subject' and seed.provenance.status == 'declared')
+    attributed_aliases = {value.casefold() for value in attributed_aliases if value}
+    for record in sorted(dataset.infostealers, key=lambda item: str(item.entity_id)):
+        kind = 'email' if record.identifier_kind == 'email' else 'alias'
+        value = safe_identifier(kind, record.identifier)
+        allowed = attributed_emails if kind == 'email' else attributed_aliases
+        if not value or value not in allowed or record.provenance.status in {'rejected', 'uncertain'}:
+            continue
+        ref = registry.evidence_ref(source_type='infostealer_record',
+            excerpt='Exposición registrada; no prueba identidad, ownership ni infección actual.',
+            entity_ids=[str(record.entity_id)], url='https://www.hudsonrock.com/free-tools')
+        anchor = identifier(kind, value, 'OBSERVED', [ref])
+        key = 'entity:' + str(record.entity_id)
+        registry.fact(id=key, kind='infostealer', label='Registro de exposición por infostealer',
+            basis='OBSERVED', group='breaches', ring=3, refs=[ref],
+            safe_summary='Un identificador atribuido figura en un registro de malware que roba credenciales. '
+                         'No demuestra infección actual ni prueba identidad.')
+        sources[str(record.entity_id)] = key
+        identity.breach_exposure.append(key)
+        registry.relate(anchor, key, 'EXPOSED_IN_INFOSTEALER', 'OBSERVED',
+            'Asociación exacta del identificador consultado; independiente de la atribución de cuentas.', [ref])
+
     public_email_sources = defaultdict(set)
     finding_refs = {}
     finding_sources = {}

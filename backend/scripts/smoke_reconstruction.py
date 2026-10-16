@@ -85,7 +85,11 @@ async def run_smoke(output: str | None = None):
             paper = entity('research_paper', 'academic', value='Documento académico Universidad X', bio=f'Contacto {email}')
             breach = Entity(investigation_id=investigation_id, entity_type='breach', platform='data_leak',
                 value=email, source_tool='controlled_fixture', metadata_info={'email': email, 'breaches': ['Fixture Leak']})
-            db.add_all([instagram, tiktok, rejected, uncertain, academic, paper, breach])
+            stealer = Entity(investigation_id=investigation_id, entity_type='infostealer', platform='hudson_rock',
+                value='fixture-infostealer:' + tag, source_tool='controlled_fixture', metadata_info={
+                    'queried_by': 'email', 'email': email, 'computer_name': 'PRIVATE_MACHINE',
+                    'malware_path': 'PRIVATE_PATH', 'ip': '192.0.2.15'})
+            db.add_all([instagram, tiktok, rejected, uncertain, academic, paper, breach, stealer])
             await db.flush()
             db.add(Relationship(investigation_id=investigation_id, source_entity_id=academic.id,
                 target_entity_id=paper.id, relation_type='authored_work', supports_group=False,
@@ -119,10 +123,11 @@ async def run_smoke(output: str | None = None):
             assert any(e['type'] == 'SAME_EMAIL' for e in edges)
             assert any(e['type'] == 'AUTHORED' and nodes[e['source']]['kind'] == 'academic_profile' for e in edges)
             assert any(e['type'] == 'EXPOSED_IN_BREACH' and nodes[e['source']]['kind'] == 'email' for e in edges)
+            assert any(e['type'] == 'EXPOSED_IN_INFOSTEALER' and nodes[e['source']]['kind'] == 'email' for e in edges)
             assert any(e['type'] == 'HAS_EXPOSURE_SIGNAL' and e['evidence_refs'] for e in edges)
             assert all(e['source'] in nodes and e['target'] in nodes for e in edges)
             serialized = json.dumps(result)
-            for forbidden in ('lupus', 'adventista', 'Olivos 123', '08:10', 'martes', str(rejected.id), str(uncertain.id), 'Coauthor excluded'):
+            for forbidden in ('lupus', 'adventista', 'Olivos 123', '08:10', 'martes', str(rejected.id), str(uncertain.id), 'Coauthor excluded', 'PRIVATE_MACHINE', 'PRIVATE_PATH', '192.0.2.15'):
                 assert forbidden not in serialized, forbidden
             assert 'Universidad X' in serialized and 'Empresa Y' in serialized
             async with factory() as db:

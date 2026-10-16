@@ -314,3 +314,15 @@ Remaining work for Phase 7: visual polish, browser interaction/performance QA,
 optional collapsed-group expansion, guided demonstration and final branding.
 Historical snapshot/cache retention and completion of the general source suite
 remain separate technical debt. None is implemented as part of this phase.
+
+## Lite integration: infostealer exposure
+
+The reviewed contract now has a minimal `infostealers` collection. A record can
+enter the fact registry only through an attributed email/alias. Graph V2 retains
+a distinct `infostealer` artifact under the exposure-record group, connected by
+`EXPOSED_IN_INFOSTEALER` from that identifier, never directly from the subject.
+The identity snapshot's `breach_exposure` list groups exposure record IDs; node
+kinds/edge types distinguish ordinary breaches from malware records. No machine
+metadata enters facts, narrative or graph. The evidence policy hash advances to
+`reviewed-typed-fields-and-minimized-exposure-v2`. Existing input hashes enforce
+reanalysis/rebuild when the reviewed projection or exposure configuration changes.

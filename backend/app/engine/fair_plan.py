@@ -78,7 +78,7 @@ class FairPlan:
     @classmethod
     def configured(cls):
         from dataclasses import replace
-        return cls(deadline_seconds=settings.fair_total_deadline_seconds,
+        plan = cls(deadline_seconds=settings.fair_total_deadline_seconds,
             finalization_seconds=settings.fair_finalization_seconds,
             cancellation_seconds=settings.fair_cancellation_seconds,
             checkpoint_seconds=settings.fair_checkpoint_seconds,
@@ -87,6 +87,26 @@ class FairPlan:
             apify_platforms=tuple(settings.fair_apify_platforms),
             sources=tuple(replace(source, enabled=source.enabled and source.tool not in settings.fair_disabled_sources)
                           for source in SOURCES))
+        if settings.personmap_env == "lite":
+            from app.engine.lite_policy import COMMON_PLATFORMS, LITE_DEADLINE_SECONDS, LITE_USERNAME_RECIPES
+            plan = replace(plan,
+                deadline_seconds=min(plan.deadline_seconds, LITE_DEADLINE_SECONDS),
+                username_sites=min(plan.username_sites, LITE_USERNAME_RECIPES),
+                maigret_options={"names": list(COMMON_PLATFORMS), "tags": [], "excluded": [],
+                    "keywords": [], "parse": False, "enrich": False, "retries": 0, "permutation_parts": []},
+                sources=tuple(replace(source,
+                    enabled=source.tool not in settings.fair_disabled_sources if source.tool == "infostealer_checker" else source.enabled,
+                    critical=True if source.tool in {"email_enumerator", "google_account_osint", "infostealer_checker"} else source.critical,
+                    priority=2 if source.tool == "infostealer_checker" else 4 if source.tool == "email_enumerator" else source.priority,
+                    scope="identifier" if source.tool == "infostealer_checker" else source.scope,
+                    max_invocations=6 if source.tool in {"infostealer_checker", "username_finder", "github_deep_scanner"}
+                        else min(source.max_invocations, 3),
+                    reason="operator_disabled" if source.tool in settings.fair_disabled_sources else
+                        None if source.tool == "infostealer_checker" else source.reason,
+                    timeout_seconds=22 if source.tool == "infostealer_checker" else min(source.timeout_seconds, 50)
+                        if source.tool == "username_finder" else source.timeout_seconds)
+                    for source in plan.sources))
+        return plan
 
     def inspect(self, registry):
         return {**asdict(self), "sources": [{**asdict(source),

@@ -14,6 +14,7 @@ import pytest_asyncio
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import select, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -41,6 +42,8 @@ async def fair_review_workspace(monkeypatch):
     database_url = os.getenv("VERIFICATION_GATE_TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("Configura VERIFICATION_GATE_TEST_DATABASE_URL con una base PostgreSQL descartable.")
+    if make_url(database_url).database != "personmap_lite":
+        raise RuntimeError("Verification Gate DB tests require personmap_lite.")
     bootstrap = create_async_engine(database_url, poolclass=NullPool)
     async with bootstrap.begin() as connection:
         await connection.execute(text(f'CREATE SCHEMA "{schema}"'))

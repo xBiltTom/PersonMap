@@ -19,6 +19,7 @@ ExposureCategory = Literal[
     "biographical_identifiers",
     "public_documents",
     "breach_exposure",
+    "infostealer_exposure",
     "content_disclosure",
 ]
 
@@ -26,7 +27,7 @@ ExposureCategory = Literal[
 class ExposureEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source_type: Literal["entity", "content", "breach", "document"]
+    source_type: Literal["entity", "content", "breach", "infostealer", "document"]
     source_id: str | None = None
     platform: str | None = None
     account: str | None = None

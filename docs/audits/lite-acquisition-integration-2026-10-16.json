@@ -1,0 +1,63 @@
+{
+  "date": "2026-10-16",
+  "branch": "feat/footprint-lite-fair-demo",
+  "database": "personmap_lite",
+  "alembic_head": "c62d914ae306",
+  "new_migration": false,
+  "legacy_database_accessed": false,
+  "native_platforms_prioritized": 39,
+  "search_deadline_seconds": 225,
+  "maximum_waves": 3,
+  "local_apify": {
+    "platforms": [
+      "instagram",
+      "tiktok",
+      "threads",
+      "youtube"
+    ],
+    "parallelism": 2,
+    "max_runs": 4,
+    "max_actors": 4,
+    "max_reservation_per_run_usd": 0.025,
+    "max_reservation_per_investigation_usd": 0.1,
+    "live_paid_runs_performed": 0
+  },
+  "validation": {
+    "targeted_backend_offline_passed": 378,
+    "lite_review_exposure_reconstruction_db_passed": 35,
+    "frontend_test_files_passed": 5,
+    "typescript": "passed",
+    "eslint": "passed",
+    "webpack_production_build": "passed_outside_sandbox",
+    "exposure_lite_smoke": "passed_with_cleanup",
+    "reconstruction_lite_smoke": {
+      "status": "passed_with_cleanup",
+      "nodes": 32,
+      "explained_edges": 54
+    },
+    "live_academic_public_fixture": {
+      "name": "Alan Turing",
+      "requests": 3,
+      "http_statuses": [
+        200,
+        200,
+        200
+      ],
+      "providers": [
+        "crossref",
+        "openalex",
+        "openalex"
+      ],
+      "normalized_findings": 6
+    },
+    "ghunt": "runtime_and_session_configured; full_directed_suite_waited_in_existing_worker_tests",
+    "exposure_ai": "enabled_locally; classifier_and_fallback_validated_synthetically; no_live_model_call",
+    "general_offline_suite": {
+      "time_limit_seconds": 120,
+      "exit_code": 124,
+      "passed_before_timeout": 613,
+      "blocked_test": "tests/test_ghunt.py::test_http_capabilities_and_mcp_contract_do_not_expose_session",
+      "module_modified": false
+    }
+  }
+}

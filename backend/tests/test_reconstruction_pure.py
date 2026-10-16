@@ -229,3 +229,20 @@ def test_raw_post_and_bio_changes_cannot_change_reconstructed_graph():
         post['text'] = 'Una nueva rutina a las 09:15 y una dirección distinta'
         post['caption'] = 'Otro párrafo sin valor para la reconstrucción'
     assert snapshot(dataset).graph == first.graph
+
+
+def test_infostealer_alias_association_is_case_insensitive_and_does_not_add_ownership():
+    from uuid import uuid4
+    from app.schemas.review import InfostealerExposure
+    dataset = fixture_dataset()
+    seed = next(s for s in dataset.subject['declared'] if s.kind == 'username')
+    seed.value = 'MiAlias'
+    dataset.infostealers = [InfostealerExposure(entity_id=uuid4(), identifier_kind='username',
+        identifier='mialias', provenance={'origin': 'automatic', 'status': 'discovered'})]
+    result = snapshot(dataset)
+    nodes = {node.id: node for node in result.graph.nodes}
+    edges = [e for e in result.graph.edges if e.type == 'EXPOSED_IN_INFOSTEALER']
+    assert len(edges) == 1
+    assert nodes[edges[0].source].kind == 'alias'
+    assert nodes[edges[0].target].kind == 'infostealer'
+    assert nodes[edges[0].target].ownership_basis is None

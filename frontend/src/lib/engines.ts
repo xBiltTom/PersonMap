@@ -19,6 +19,11 @@ export interface EngineMeta {
 }
 
 export const ENGINE_META: Record<EngineId, EngineMeta> = {
+  fair: {
+    label: "Lite · Fair",
+    description: "Fuentes en paralelo y descubrimientos encadenados con presupuesto global de tiempo.",
+    badge: "bg-sky-500/10 text-sky-300 border-sky-500/30",
+  },
   external: {
     label: "Agente externo · MCP",
     description: "Herramientas dirigidas por un agente externo sobre este mismo expediente.",

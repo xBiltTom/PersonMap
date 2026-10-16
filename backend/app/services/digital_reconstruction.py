@@ -21,7 +21,7 @@ def reconstruction_config():
     return {key: getattr(settings, key) for key in (
         'reconstruction_max_timeline_items', 'graph_max_total_nodes', 'graph_max_post_nodes',
         'graph_max_document_nodes', 'graph_max_exposure_nodes',
-    )} | {'evidence_policy': 'reviewed-typed-fields-and-minimized-exposure-v1'}
+    )} | {'evidence_policy': 'reviewed-typed-fields-and-minimized-exposure-v2'}
 
 
 def exposure_fingerprint(report):

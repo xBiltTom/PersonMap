@@ -296,3 +296,16 @@ as pseudonymous data. Historical reports need a separate retention policy.
   `git diff --check`: passed.
 - General suite is subject to the existing GHunt/Maigret runtime limitations;
   see the Mini Fase 5.1 validation notes in FAIR_V2_PLAN.md for the bounded run.
+
+## Lite acquisition integration
+
+Lite now starts Fair automatically; declared platform accounts can obtain public
+content through Apify concurrently with native discovery, before final review.
+Exposure analysis itself still requires the finalized reviewed dataset.
+`infostealer_exposure` adds a deterministic medium finding from the minimal
+`ReviewedFootprintDataset.infostealers` projection. Its evidence source type is
+`infostealer`, separate from `breach`; machine details and credentials are never
+copied to this projection. It asserts a record association, not current infection
+or ownership. Local env files enable the existing optional Exposure AI; the
+application default remains disabled and failure retains deterministic findings.
+See [LITE_ACQUISITION.md](LITE_ACQUISITION.md).

@@ -19,7 +19,7 @@ from app.models.review_decision import ReviewDecision
 from app.models.target import Target
 from app.schemas.footprint import DataProvenance, account_ownership, footprint_input
 from app.schemas.review import (
-    BreachExposure, FairReviewState, FairSourceState, InvestigationReviewResponse,
+    BreachExposure, InfostealerExposure, FairReviewState, FairSourceState, InvestigationReviewResponse,
     ReviewCandidate, ReviewCounts, ReviewSource, ReviewedDecisionRecord,
     ReviewedDeclaredSeed, ReviewedEntity, ReviewedFootprintDataset,
 )
@@ -511,6 +511,21 @@ async def build_dataset(db: AsyncSession, investigation: Investigation, target: 
                 if isinstance(_metadata(entity).get("breaches"), list) else [],
             provenance=_provenance(entity), evidence_urls=_urls(_metadata(entity).get("evidence_urls", []))))
 
+    # Query association only: expose neither machine metadata nor credentials.
+    attributed_aliases = {a.username.casefold() for a in accounts if a.username}
+    attributed_aliases.update(seed.value.casefold() for seed in seeds if seed.kind == "username")
+    infostealers = []
+    for entity in entities:
+        if entity.entity_type != "infostealer" or _provenance(entity).status in {"rejected", "uncertain"}:
+            continue
+        meta = _metadata(entity)
+        kind = meta.get("queried_by")
+        value = str(meta.get(kind) or "").strip().casefold() if kind in {"email", "username"} else ""
+        allowed = attributed_emails if kind == "email" else attributed_aliases
+        if value and value in allowed:
+            infostealers.append(InfostealerExposure(entity_id=entity.id, identifier_kind=kind, identifier=value,
+                provenance=_provenance(entity), evidence_urls=["https://www.hudsonrock.com/free-tools"]))
+
     social_content = []
     for account in entities:
         if account.id not in included_account_ids:
@@ -535,7 +550,7 @@ async def build_dataset(db: AsyncSession, investigation: Investigation, target: 
         subject={"declared": [ReviewedDeclaredSeed(seed_id=_seed_id(seed), kind=seed.kind, value=seed.value,
             platform=seed.platform, provenance=seed.provenance) for seed in seeds]},
         accounts=accounts, emails=emails, phones=phones,
-        academic_profiles=academic_profiles, documents=documents, breaches=breaches,
+        academic_profiles=academic_profiles, documents=documents, breaches=breaches, infostealers=infostealers,
         social_content=social_content, review=decision_projection, evidence=evidence,
         execution={"source_investigation_id": str(investigation.id), "reviewed_at": datetime.now(timezone.utc).isoformat(),
             "source_mode": "fair", "acquisition_partial": bool((snapshot.get("execution") or {}).get("partial")),

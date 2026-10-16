@@ -20,7 +20,7 @@ def build_graph(registry: FactRegistry, config: dict) -> GraphV2:
     relations = sorted(registry.relations.values(), key=lambda e: e.id)
     parents = {}
     for e in relations:
-        if e.type in {'PUBLISHED', 'AUTHORED', 'EXPOSED_IN_BREACH', 'ASSOCIATED_WITH'}:
+        if e.type in {'PUBLISHED', 'AUTHORED', 'EXPOSED_IN_BREACH', 'EXPOSED_IN_INFOSTEALER', 'ASSOCIATED_WITH'}:
             parents[e.target] = e.source
     limits = {'post': config['graph_max_post_nodes'], 'repository': config['graph_max_post_nodes'],
               'document': config['graph_max_document_nodes'], 'publication': config['graph_max_document_nodes'],

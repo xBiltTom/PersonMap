@@ -5,7 +5,7 @@ export function ReconstructionSections({ snapshot }: { snapshot: DigitalFootprin
   const sections = [
     ["declared", "Datos declarados"], ["accounts", "Cuentas atribuidas"],
     ["public_identifiers", "Identificadores públicos"], ["academic_presence", "Presencia académica y profesional"],
-    ["documents", "Documentos y publicaciones"], ["breach_exposure", "Exposición en brechas"],
+    ["documents", "Documentos y publicaciones"], ["breach_exposure", "Brechas e infostealers"],
   ] as const;
   return <>
     {snapshot.coverage === "partial" && <aside role="status" className="reconstruction-notice">

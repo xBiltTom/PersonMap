@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:lite": "node --experimental-strip-types --test tests/liteAcquisition.test.mts",
     "test:graph": "node --experimental-strip-types tests/graphLayout.test.mts",
     "test:footprint": "node --experimental-strip-types tests/footprintInput.test.mts",
     "test:review": "node --experimental-strip-types tests/reviewState.test.mts",

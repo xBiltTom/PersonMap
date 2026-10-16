@@ -234,6 +234,7 @@ export interface ReviewedFootprintDataset {
   academic_profiles: Array<Record<string, unknown>>;
   documents: Array<Record<string, unknown>>;
   breaches: Array<Record<string, unknown>>;
+  infostealers: Array<Record<string, unknown>>;
   social_content: Array<Record<string, unknown>>;
   review: Record<ReviewDecisionValue, Array<Record<string, unknown>>>;
   evidence: Array<Record<string, unknown>>;
@@ -253,9 +254,10 @@ export type ExposureCategory =
   | "biographical_identifiers"
   | "public_documents"
   | "breach_exposure"
+  | "infostealer_exposure"
   | "content_disclosure";
 export interface ExposureEvidence {
-  source_type: "entity" | "content" | "breach" | "document";
+  source_type: "entity" | "content" | "breach" | "infostealer" | "document";
   source_id?: string | null;
   platform?: string | null;
   account?: string | null;
@@ -505,7 +507,7 @@ export interface InvestigationLogHistory {
 // ---------------------------------------------------------------------
 
 /** Los tres motores que puede reportar el backend en `engine_used`. */
-export type EngineId = "rules" | "agentic" | "hybrid" | "external";
+export type EngineId = "rules" | "agentic" | "hybrid" | "external" | "fair";
 
 export interface EngineMetrics {
   count: number;
@@ -552,6 +554,9 @@ export interface MetricsComparison {
 }
 
 export interface HealthStatus {
+  personmap_env: "normal" | "lite";
+  default_acquisition_mode: "normal" | "fair";
+  lite_plan: { platforms: string[]; deadline_seconds: number; apify_status: string } | null;
   status: string;
   service: string;
   ai_enabled: boolean;
@@ -633,6 +638,7 @@ export interface MaigretCapabilities {
 export type Strategy = "auto" | "rule_based" | "agentic" | "hybrid";
 
 export interface CreateInvestigationPayload {
+  acquisition_mode?: "normal" | "fair";
   target: TargetInput;
   strategy: Strategy;
   /**
@@ -649,7 +655,7 @@ export interface CreateInvestigationPayload {
 export type ReconstructionBasis = "DECLARED" | "OBSERVED" | "CORRELATED" | "INFERRED";
 export type ReconstructionGroup = "identity" | "accounts" | "content" | "documents" | "breaches" | "exposure";
 export type ReconstructionKind = "subject" | "name" | "email" | "phone" | "alias" | "domain" | "url" |
-  "account" | "academic_profile" | "document" | "publication" | "repository" | "post" | "breach" | "exposure" | "context";
+  "account" | "academic_profile" | "document" | "publication" | "repository" | "post" | "breach" | "infostealer" | "exposure" | "context";
 export interface ReconstructionEvidence {
   id: string;
   source_type: string;

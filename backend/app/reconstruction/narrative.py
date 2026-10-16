@@ -24,9 +24,9 @@ def build_narrative(registry: FactRegistry):
         claims.append(NarrativeClaim(text=f'Exposure Lens identificó {len(exposures)} señales representadas; '
                                      f'{impact} tienen impacto potencial medio o alto. '
                                      'La severidad describe el hallazgo.', fact_ids=[f.id for f in exposures]))
-    breaches = [f for f in facts if f.kind == 'breach']
+    breaches = [f for f in facts if f.kind in {'breach', 'infostealer'}]
     if breaches:
-        claims.append(NarrativeClaim(text=f'Hay {len(breaches)} registros de exposición asociados a correos atribuidos. '
+        claims.append(NarrativeClaim(text=f'Hay {len(breaches)} registros de exposición en brechas o infostealers asociados a identificadores atribuidos. '
                                      'Una brecha no es prueba de identidad.', fact_ids=[f.id for f in breaches]))
     return claims
 

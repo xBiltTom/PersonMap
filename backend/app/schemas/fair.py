@@ -33,6 +33,7 @@ class FairSnapshot(BaseModel):
     pivots: dict
     social_content: list[dict]
     breaches: list[dict]
+    infostealers: list[dict] = Field(default_factory=list)
     academic: list[dict]
     documents: list[dict]
     execution: dict

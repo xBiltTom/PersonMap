@@ -64,6 +64,7 @@ def diagnostic_statuses(value):
 def classify(tool, view, findings, health):
     codes, errors = health["statuses"], health["errors"]
     fields = {"apify_social": ("apify_runtime",), "ghunt": ("ghunt_diagnostics",),
+        "academic_finder": ("academic_diagnostics",), "email_enumerator": ("email_enum_diagnostics",),
         "google_account_osint": ("google_public_diagnostics",),
         "search_dorker": ("search_diagnostics", "search_last_status")}.get(tool.name, (tool.name + "_diagnostics",))
     diagnostics = {key: view.extra[key] for key in fields if key in view.extra}
@@ -146,6 +147,7 @@ class FairRun:
             findings=items, sources=self.sources, pivots=PivotFrontier(self.context).snapshot(),
             social_content=[dict(item, content_path="metadata_info.public_content") for item in items if item["content_count"]],
             breaches=[item for item in items if item["entity_type"] == "breach"],
+            infostealers=[item for item in items if item["entity_type"] == "infostealer"],
             academic=[item for item in items if item["entity_type"] in {"paper", "academic", "academic_profile"}],
             documents=[item for item in items if item["entity_type"] in {"document", "search_mention"}],
             execution={"elapsed_seconds": self.elapsed_seconds, "deadline_seconds": self.plan.deadline_seconds,
@@ -164,6 +166,19 @@ class FairEngine:
 
     def _views(self, source, frontier):
         view = frontier.execution_view()
+        if source.scope == "identifier":
+            # One external lookup per task: completed records survive a later
+            # timeout, and already queried identifiers are never replayed.
+            for kind, values in (("email", view.all_emails()), ("username", view.all_usernames())):
+                for value in values:
+                    child = view.model_copy(deep=True)
+                    for identifier_kind in ("email", "username"):
+                        setattr(child, PRIMARY[identifier_kind], value if kind == identifier_kind else None)
+                        setattr(child, DISCOVERED[identifier_kind], [])
+                    child.declared_seeds = [seed for seed in child.declared_seeds
+                        if seed.kind not in {"email", "username"} or (seed.kind == kind and seed.value == value)]
+                    yield child
+            return
         if source.scope == "context":
             yield view
             return
@@ -183,6 +198,8 @@ class FairEngine:
         return self.keys._get_tool_run_key(tool, view)
 
     def _not_ready(self, tool, view):
+        if tool.name == "infostealer_checker" and not view.extra.get("self_consent"):
+            return "skipped", "subject_consent_required"
         if tool.name == "apify_social" and (view.all_usernames() or view.extra.get("candidate_urls")):
             from app.social.capabilities import availability
             state = availability()
@@ -208,6 +225,7 @@ class FairEngine:
         context.extra.update(investigation_id=investigation_id, username_scan_mode="fast",
             username_site_limit=plan.username_sites, search_query_limit=plan.search_queries,
             apify_platform_allowlist=list(plan.apify_platforms), preserve_partial_on_cancel=True)
+        context.extra["username_platform_priority"] = plan.maigret_options.get("names", [])
         context.extra["maigret_options"] = {**context.extra.get("maigret_options", {}), **plan.maigret_options}
         context.extra.setdefault("apify_runtime", {"version": 1, "runs": {}, "diagnostics": []})
         from app.tools.maigret_ids import add_identifiers

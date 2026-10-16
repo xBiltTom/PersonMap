@@ -34,6 +34,7 @@ const CATEGORY_LABEL: Record<ExposureCategory, string> = {
   biographical_identifiers: "Biografía",
   public_documents: "Documentos",
   breach_exposure: "Brechas",
+  infostealer_exposure: "Infostealers",
   content_disclosure: "Contenido público",
 };
 

@@ -571,3 +571,14 @@ No se afirma que esa prueba falle ni que la suite completa esté verde.
 Maigret/GHunt no se modificaron. Deuda para Fase 7: polish visual, QA de
 interacciones en navegador, grupos expandibles opcionales y flujo guiado;
 retención/GC de snapshots y completar la suite general quedan pendientes.
+
+## Integración Lite automática — ajuste posterior a Fase 6
+
+Se conecta la creación interna Lite al motor Fair, se elimina la configuración
+Maigret del formulario Lite y se priorizan 39 plataformas con presupuesto global
+de 225 segundos. Apify recibe las cuentas declaradas con plataforma desde el
+inicio, en paralelo con el descubrimiento tradicional; los nuevos perfiles
+admitidos pueden consumir cuotas restantes. GHunt, brechas y enumeración se
+mantienen, e infostealers queda habilitado con autorización específica y con
+proyección minimizada hasta Exposure y Graph V2. Ver [LITE_ACQUISITION.md](LITE_ACQUISITION.md)
+para límites, estados, costes y validación. No se implementa Fase 7.
