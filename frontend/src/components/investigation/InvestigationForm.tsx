@@ -7,6 +7,7 @@ import type { HealthStatus, MaigretScanMode, Strategy, UsernameSeed } from "@/li
 import { ArrowRight, ChevronDown, LoaderCircle, Plus, ShieldAlert, ShieldCheck, X } from "lucide-react";
 import { buildFootprintTarget } from "@/lib/footprintInput";
 import { investigationExecution } from "@/lib/investigationPolicy";
+import { unlockDiscoverySound } from "@/lib/discoverySound";
 
 const STRATEGY_OPTIONS: { id: Strategy; label: string; needsLlm: boolean }[] = [
   { id: "auto", label: "Automático", needsLlm: false },
@@ -91,6 +92,7 @@ export function InvestigationForm() {
     if (!hasSearchData) { setError("Ingresa al menos un nombre, apellido, correo, alias o teléfono."); return; }
     if (!subjectConsent) { setError("Confirma que analizas tus propios datos o que tienes autorización explícita."); return; }
     setLoading(true);
+    void unlockDiscoverySound();
     try {
       const investigation = await createInvestigation({
         target,

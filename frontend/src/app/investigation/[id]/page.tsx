@@ -17,6 +17,7 @@ import { AnalysisNotebook } from "@/components/investigation/AnalysisNotebook";
 import { EntityInspector, RelationshipInspector } from "@/components/graph/EntityInspector";
 import { entityToGraphNode } from "@/lib/entityInspector";
 import { getFriendlyRelationLabel, isProvenanceEdge } from "@/lib/graphSemantics";
+import { isDiscoverySoundUnlocked, playDiscoverySound, unlockDiscoverySound } from "@/lib/discoverySound";
 import { useWorkstation } from "@/context/WorkstationContext";
 import {
   ArrowLeft,
@@ -42,6 +43,8 @@ import {
   Fingerprint,
   CalendarDays,
   MoreHorizontal,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
 type WorkspaceSelection =
@@ -87,10 +90,13 @@ export default function InvestigationDetailPage({
   const [copiedId, setCopiedId] = useState(false);
   const [isMapCollapsed, setIsMapCollapsed] = useState(false);
   const [workspaceSelection, setWorkspaceSelection] = useState<WorkspaceSelection | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundReady, setSoundReady] = useState(false);
 
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const mapSectionRef = useRef<HTMLDivElement>(null);
+  const soundFindingCursor = useRef<{ investigationId: string; count: number } | null>(null);
   const loadMaigretExports = SHOW_EXPORT_ACTIONS && Boolean(investigation && investigation.metrics.acquisition_mode !== "fair");
   useEffect(() => {
     if (!loadMaigretExports) return;
@@ -243,6 +249,67 @@ export default function InvestigationDetailPage({
     if (wasRunning) loadData();
   }, [wasRunning, loadData]);
   const stream = useInvestigationStream(id, handleStreamFinished, loadData);
+  const findingsCount = investigation?.entities?.length ?? 0;
+
+  useEffect(() => {
+    try {
+      setSoundEnabled(window.localStorage.getItem("personmap.discovery-sound") !== "off");
+    } catch {
+      // El sonido sigue disponible aunque el navegador no permita guardar preferencias.
+    }
+    setSoundReady(isDiscoverySoundUnlocked());
+  }, []);
+
+  // Navegadores con autoplay restringido desbloquean el contexto de audio en
+  // la primera interacción real. El control del mapa también permite activarlo.
+  useEffect(() => {
+    if (!soundEnabled || soundReady) return;
+
+    const unlockAfterInteraction = () => {
+      void unlockDiscoverySound().then((ready) => {
+        if (ready) setSoundReady(true);
+      });
+    };
+    window.addEventListener("pointerdown", unlockAfterInteraction);
+    window.addEventListener("keydown", unlockAfterInteraction);
+    return () => {
+      window.removeEventListener("pointerdown", unlockAfterInteraction);
+      window.removeEventListener("keydown", unlockAfterInteraction);
+    };
+  }, [soundEnabled, soundReady]);
+
+  useEffect(() => {
+    if (!investigation || investigation.id !== id) return;
+
+    const previous = soundFindingCursor.current;
+    soundFindingCursor.current = { investigationId: investigation.id, count: findingsCount };
+    if (!previous || previous.investigationId !== investigation.id) return;
+
+    const investigationIsRunning = investigation.status === "running" || investigation.status === "pending";
+    if (investigationIsRunning && findingsCount > previous.count && soundEnabled) {
+      if (!playDiscoverySound()) setSoundReady(isDiscoverySoundUnlocked());
+    }
+  }, [findingsCount, id, investigation, soundEnabled]);
+
+  const handleDiscoverySoundClick = useCallback(() => {
+    if (soundEnabled && soundReady) {
+      setSoundEnabled(false);
+      try {
+        window.localStorage.setItem("personmap.discovery-sound", "off");
+      } catch {
+        // La preferencia solo se conserva en este estado mientras dure la página.
+      }
+      return;
+    }
+
+    setSoundEnabled(true);
+    try {
+      window.localStorage.setItem("personmap.discovery-sound", "on");
+    } catch {
+      // La preferencia solo se conserva en este estado mientras dure la página.
+    }
+    void unlockDiscoverySound().then(setSoundReady);
+  }, [soundEnabled, soundReady]);
 
   const handleExportJson = () => {
     if (!investigation) return;
@@ -288,8 +355,6 @@ export default function InvestigationDetailPage({
   };
 
   // Metric computations (Factual and semantically distinct)
-  const findingsCount = investigation?.entities?.length ?? 0;
-
   // Documented evidence relationships (excluding provenance helper links)
   const relationsCount = useMemo(() => {
     if (graph?.edges?.length) {
@@ -578,6 +643,25 @@ export default function InvestigationDetailPage({
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDiscoverySoundClick}
+                  aria-label={soundEnabled && soundReady ? "Silenciar alertas de hallazgos" : "Activar sonido para nuevos hallazgos"}
+                  aria-pressed={soundEnabled && soundReady}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded border text-[10px] font-mono transition-colors cursor-pointer ${
+                    soundEnabled && soundReady
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15"
+                      : "border-[#1d2c42] bg-[#101928] text-slate-400 hover:border-sky-500/40 hover:text-sky-200"
+                  }`}
+                  title={soundEnabled && soundReady
+                    ? "Silenciar alertas sonoras de nuevos hallazgos"
+                    : "Activar alertas sonoras; el navegador requiere una interacción"}
+                >
+                  {soundEnabled && soundReady ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                  <span className="hidden sm:inline">
+                    {soundEnabled && soundReady ? "Sonido activo" : soundEnabled ? "Activar sonido" : "Sonido apagado"}
+                  </span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setIsMapCollapsed((prev) => !prev)}
