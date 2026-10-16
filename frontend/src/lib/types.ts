@@ -288,6 +288,7 @@ export interface ExposureTopItem {
   published_at?: string | null;
   excerpt: string;
   severity: ExposureSeverity;
+  analysis_method: "deterministic" | "ai";
   reveals: string[];
   why_it_matters: string;
   evidence: ExposureEvidence[];

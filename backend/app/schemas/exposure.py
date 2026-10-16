@@ -68,6 +68,7 @@ class ExposureTopItem(BaseModel):
     published_at: str | None = None
     excerpt: str = Field(max_length=280)
     severity: ExposureSeverity
+    analysis_method: ExposureMethod = "deterministic"
     reveals: list[str] = Field(default_factory=list, max_length=8)
     why_it_matters: str
     evidence: list[ExposureEvidence] = Field(default_factory=list, max_length=10)
@@ -79,7 +80,7 @@ class ExposureReport(BaseModel):
     investigation_id: str
     dataset_hash: str | None = None
     current_dataset_hash: str | None = None
-    analysis_version: str = "exposure-v1"
+    analysis_version: str = "exposure-v2"
     status: ExposureStatus = "pending"
     partial_reasons: list[ExposurePartialReason] = Field(default_factory=list, max_length=3)
     stale: bool = False

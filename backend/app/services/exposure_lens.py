@@ -27,7 +27,6 @@ from app.exposure.detectors import (
     EMAIL_RE,
     FAMILY_REFERENCE_RE,
     SENSITIVE_SUBJECT_RE,
-    TIME_RE,
     URL_RE,
     domain_from_url,
     exact_emails,
@@ -59,7 +58,8 @@ from app.services import verification_gate
 from app.tools.social_profiles import parse_social_profile
 
 
-ANALYSIS_VERSION = "exposure-v1"
+ANALYSIS_VERSION = "exposure-v2"
+CONTENT_ANALYSIS_VERSION = "exposure-v1"
 SEVERITY_ORDER = {"informational": 0, "low": 1, "medium": 2, "high": 3}
 CATEGORY_LABELS = {
     "contact_exposure": "contacto",
@@ -140,8 +140,8 @@ def dataset_hash(dataset: ReviewedFootprintDataset | dict[str, Any]) -> str:
     return hashlib.sha256(_canonical_json(_drop_volatile(value)).encode("utf-8")).hexdigest()
 
 
-def _analysis_config() -> tuple[dict[str, Any], str | None, str]:
-    ai_enabled = bool(settings.exposure_ai_enabled)
+def _analysis_config(*, ai_enabled: bool | None = None) -> tuple[dict[str, Any], str | None, str]:
+    ai_enabled = bool(settings.exposure_ai_enabled if ai_enabled is None else ai_enabled)
     model = (settings.exposure_ai_model or settings.llm_model) if ai_enabled else None
     config = {
         "ai_enabled": ai_enabled,
@@ -159,6 +159,14 @@ def _analysis_config() -> tuple[dict[str, Any], str | None, str]:
     }
     digest = hashlib.sha256(_canonical_json({"analysis_version": ANALYSIS_VERSION, **config}).encode()).hexdigest()
     return config, model, digest
+
+
+def _content_config_hash(config: dict[str, Any]) -> str:
+    """Keep classification cache entries across presentation-only report changes."""
+    return hashlib.sha256(_canonical_json({
+        "analysis_version": CONTENT_ANALYSIS_VERSION,
+        **config,
+    }).encode()).hexdigest()
 
 
 async def _current_dataset(
@@ -222,15 +230,9 @@ def _date_only(value: Any) -> str | None:
 def _safe_report_text(value: Any, limit: int = 500) -> str:
     if not isinstance(value, str):
         return ""
-    clean = normalize_text(value)
-    if has_precise_address(clean):
-        return "La fuente contiene una referencia de ubicación específica [redactada]."
-    if has_operational_routine(clean):
-        return "La fuente contiene referencias temporales repetidas [generalizadas]."
-    clean = FAMILY_REFERENCE_RE.sub("[referencia familiar omitida]", clean)
-    clean = SENSITIVE_SUBJECT_RE.sub("[tema sensible omitido]", clean)
-    clean = TIME_RE.sub("[hora omitida]", clean)
-    return clean[:limit]
+    # Keep selected post excerpts legible while applying the same minimization
+    # policy used before any AI request.
+    return exposure_ai.ai_safe_text(value, limit)
 
 
 def _safe_label(value: Any, limit: int = 120) -> str | None:
@@ -467,7 +469,7 @@ def _local_signals(unit: dict[str, Any]) -> list[dict[str, str]]:
 
 def _unit_hash(unit: dict[str, Any]) -> str:
     source = _canonical_json({
-        "analysis_version": ANALYSIS_VERSION,
+        "analysis_version": CONTENT_ANALYSIS_VERSION,
         "content_type": unit["content_type"],
         "text": _drop_volatile(unit["text"]),
     })
@@ -479,11 +481,13 @@ async def _cached_content_signals(
     units: list[dict[str, Any]],
     config_hash: str,
     model: str | None,
+    *,
+    ai_enabled: bool,
 ) -> tuple[dict[str, list[dict[str, str]]], int, bool, dict]:
     hashes_by_unit = {unit["content_id"]: _unit_hash(unit) for unit in units}
     unique_hashes = list(dict.fromkeys(hashes_by_unit.values()))
     cached_rows = (await db.scalars(select(ExposureContentCache).where(
-        ExposureContentCache.analysis_version == ANALYSIS_VERSION,
+        ExposureContentCache.analysis_version == CONTENT_ANALYSIS_VERSION,
         ExposureContentCache.config_hash == config_hash,
         ExposureContentCache.content_hash.in_(unique_hashes),
     ))).all() if unique_hashes else []
@@ -500,9 +504,9 @@ async def _cached_content_signals(
 
     ai_failed = False
     failed_unit_ids: set[str] = set()
-    ai_processing = {"enabled": settings.exposure_ai_enabled, "processed": 0, "cached": len(cached), "failed_batches": 0}
+    ai_processing = {"enabled": ai_enabled, "processed": 0, "cached": len(cached), "failed_batches": 0}
     ai_results: dict[str, list[dict[str, Any]]] = {}
-    if settings.exposure_ai_enabled and misses:
+    if ai_enabled and misses:
         if not model:
             ai_failed = True
             failed_unit_ids.update(unit["content_id"] for unit in misses)
@@ -555,7 +559,7 @@ async def _cached_content_signals(
                     f"{hashes_by_unit[unit['content_id']]}:{config_hash}".encode(), usedforsecurity=False
                 ).digest()),
                 "content_hash": hashes_by_unit[unit["content_id"]],
-                "analysis_version": ANALYSIS_VERSION,
+                "analysis_version": CONTENT_ANALYSIS_VERSION,
                 "config_hash": config_hash,
                 "model": model,
                 "result": decoded,
@@ -884,16 +888,16 @@ def _content_and_document_signals(
             severity = max((item["severity"] for item in signals), key=lambda value: SEVERITY_ORDER[value])
             labels = [CATEGORY_LABELS.get(category, category) for category in categories]
             content_id = unit.get("source_content_id")
-            excerpt = next((item["excerpt"] for item in signals if item["category"] != "content_disclosure"),
-                           safe_category_evidence("content_disclosure", "", settings.exposure_max_text_excerpt))
+            excerpt = _safe_report_text(str(unit.get("text") or ""), settings.exposure_max_text_excerpt)
             evidence = _evidence(unit, excerpt)
+            analysis_method = "deterministic" if any(item["method"] == "deterministic" for item in signals) else "ai"
             collector.add(
                 "content_disclosure", unit["content_id"], severity, "Publicación con señales de exposición",
                 f"La publicación reúne señales visibles de {', '.join(labels)}.",
                 "La combinación de datos publicados puede facilitar la correlación de perfiles o revelar contexto personal.",
                 [evidence], entity_ids=[unit.get("source_id")], content_ids=[content_id],
                 signals=categories,
-                method="deterministic" if any(item["method"] == "deterministic" for item in signals) else "ai",
+                method=analysis_method,
             )
             top.append(ExposureTopItem(
                 id=f"top_{hashlib.sha256(unit['content_id'].encode()).hexdigest()[:20]}",
@@ -902,6 +906,7 @@ def _content_and_document_signals(
                 published_at=unit.get("occurred_at"),
                 excerpt=excerpt[:280],
                 severity=severity,
+                analysis_method=analysis_method,
                 reveals=labels,
                 why_it_matters="La publicación deja señales públicas que pueden correlacionarse con otras fuentes.",
                 evidence=[ExposureEvidence.model_validate(evidence)],
@@ -1134,13 +1139,13 @@ async def _build_analysis(
     data_hash: str,
     config: dict[str, Any],
     model: str | None,
-    config_hash: str,
 ) -> ExposureReport:
     accounts = [item for item in dataset.accounts if _is_attributed(item)]
     units = _units(dataset, accounts)
     selected, skipped = _select_units(units)
+    content_config_hash = _content_config_hash(config)
     unit_signals, cache_hits, ai_failed, ai_processing = await _cached_content_signals(
-        db, selected, config_hash, model
+        db, selected, content_config_hash, model, ai_enabled=bool(config["ai_enabled"])
     )
     collector = _Collector()
 
@@ -1243,9 +1248,14 @@ def _running_abandoned(run: ExposureRun) -> bool:
             > settings.exposure_run_lease_seconds)
 
 
-async def analyze(db: AsyncSession, investigation_id: UUID) -> ExposureReport:
+async def analyze(
+    db: AsyncSession,
+    investigation_id: UUID,
+    *,
+    use_ai: bool | None = None,
+) -> ExposureReport:
     _, dataset, data_hash = await _current_dataset(db, investigation_id, lock=True)
-    config, model, config_hash = _analysis_config()
+    config, model, config_hash = _analysis_config(ai_enabled=use_ai)
     # The unique constraint arbitrates creation even if another caller does not
     # hold the investigation lock. Lock the winning row before claiming retries.
     await db.execute(pg_insert(ExposureRun).values(
@@ -1285,7 +1295,7 @@ async def analyze(db: AsyncSession, investigation_id: UUID) -> ExposureReport:
              ExposureRun.started_at == attempt_started)
     try:
         async with asyncio.timeout(settings.exposure_run_lease_seconds):
-            report = await _build_analysis(db, investigation_id, dataset, data_hash, config, model, config_hash)
+            report = await _build_analysis(db, investigation_id, dataset, data_hash, config, model)
         saved = await db.execute(update(ExposureRun).where(*owned).values(
             status=report.status, completed_at=report.generated_at, model=model,
             summary=report.summary.model_dump(mode="json"),
@@ -1308,3 +1318,44 @@ async def analyze(db: AsyncSession, investigation_id: UUID) -> ExposureReport:
         ).execution_options(synchronize_session=False))
         await db.commit()
         raise
+
+
+async def prepare_agent_packet(
+    db: AsyncSession,
+    investigation_id: UUID,
+    *,
+    candidate_limit: int = 24,
+) -> dict[str, Any]:
+    """Build a minimized local prefilter and candidate posts for a terminal agent."""
+    if not 1 <= candidate_limit <= 40:
+        raise ValueError("candidate_limit must be between 1 and 40")
+    _, dataset, data_hash = await _current_dataset(db, investigation_id)
+    config, model, _ = _analysis_config(ai_enabled=False)
+    report = await _build_analysis(db, investigation_id, dataset, data_hash, config, model)
+    accounts = [item for item in dataset.accounts if _is_attributed(item)]
+    post_units = [unit for unit in _units(dataset, accounts) if unit["content_type"] == "social_post"]
+    eligible, skipped = _select_units(post_units)
+    candidates = []
+    for unit in eligible[:candidate_limit]:
+        excerpt = _safe_report_text(unit.get("text"), settings.exposure_max_text_excerpt)
+        if not excerpt:
+            continue
+        candidates.append({
+            "source_id": unit.get("source_content_id"),
+            "platform": unit.get("platform"),
+            "account": unit.get("account"),
+            "published_at": unit.get("occurred_at"),
+            "url": unit.get("url"),
+            "excerpt": excerpt,
+            "local_signals": [CATEGORY_LABELS.get(signal["category"], signal["category"])
+                              for signal in _local_signals(unit)],
+        })
+    # _build_analysis may stage deterministic cache rows; the MCP packet is
+    # ephemeral and must not replace or stale the report shown in the web UI.
+    await db.rollback()
+    return {
+        "report": report,
+        "candidate_posts": candidates,
+        "candidate_posts_omitted": max(0, len(post_units) - len(candidates)),
+        "content_limit_skipped": skipped,
+    }
