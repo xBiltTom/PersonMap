@@ -9,7 +9,7 @@ export function WorkstationShell({ children }: { children: React.ReactNode }) {
   const { isSidebarOpen, setIsSidebarOpen } = useWorkstation();
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#080c14] text-slate-100 antialiased selection:bg-sky-500 selection:text-white font-sans">
+    <div className="min-h-screen flex flex-col bg-background text-ink antialiased selection:bg-sky-500 selection:text-white font-sans">
       <TopBar />
       <div className="flex-1 flex w-full relative">
         {/* Mobile backdrop for sidebar */}

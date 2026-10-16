@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Oxanium, JetBrains_Mono } from "next/font/google";
 import { WorkstationProvider } from "@/context/WorkstationContext";
 import { WorkstationShell } from "@/components/layout/WorkstationShell";
@@ -28,8 +29,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es" className={`dark ${sansFont.variable} ${monoFont.variable}`}>
-      <body className="min-h-screen bg-[#080c14] text-slate-100 antialiased selection:bg-sky-500 selection:text-white font-sans">
+    <html
+      lang="es"
+      data-theme="dark"
+      suppressHydrationWarning
+      className={`${sansFont.variable} ${monoFont.variable}`}
+    >
+      <body className="min-h-screen bg-background text-ink antialiased selection:bg-sky-500 selection:text-white font-sans">
+        <Script id="personmap-theme-init" strategy="beforeInteractive">
+          {`try { const theme = localStorage.getItem("personmap-theme"); if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme; } catch {}`}
+        </Script>
         <WorkstationProvider>
           <WorkstationShell>{children}</WorkstationShell>
         </WorkstationProvider>

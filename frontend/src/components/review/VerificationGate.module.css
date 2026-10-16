@@ -239,3 +239,127 @@
   .loader { animation: none; }
   .decisionButton { transition: none; }
 }
+
+:global(:root[data-theme="light"]) .page {
+  --gate-paper: #0369a1;
+  --gate-ink: #172b42;
+  --gate-muted: #52657b;
+  --gate-edge: #cbd6e2;
+  color: var(--gate-ink);
+}
+
+:global(:root[data-theme="light"]) .page :is(.hero, .countRail, .declaredPanel, .sourceHealth, .candidate, .evidenceBody, .decisionButton, .emptyState, .reviewSection, .finalizePanel, .errorPanel) {
+  border-color: var(--gate-edge);
+  color: var(--gate-ink);
+  background: #ffffff;
+  box-shadow: none;
+}
+
+:global(:root[data-theme="light"]) .page :is(.sidebar, .seedList li, .sectionCount, .evidenceBody, .downloadButton) {
+  border-color: var(--gate-edge);
+  color: var(--gate-muted);
+  background: #f3f7fb;
+}
+
+:global(:root[data-theme="light"]) .page :is(.avatarFallback, .declaredGlyph, .emptyState > span) {
+  border-color: #a7d8c2;
+  color: #047857;
+  background: #ecfdf5;
+}
+
+:global(:root[data-theme="light"]) .page .sourceHealth li {
+  border-color: var(--gate-edge);
+}
+
+:global(:root[data-theme="light"]) .page .countRail > div {
+  border-color: var(--gate-edge);
+}
+
+:global(:root[data-theme="light"]) .page .candidate:focus-within {
+  border-color: var(--gate-paper);
+}
+
+:global(:root[data-theme="light"]) .page :is(h1, h2, h3, strong, .sourceBlock, .profileLink, .platform, .declaredHeading, .sourceStatus) {
+  color: var(--gate-ink);
+}
+
+:global(:root[data-theme="light"]) .page :is(p, span, small, li, summary, time, label, code, .username, .rawValue, .bio, .affiliations, .waitNote, .loading, .readOnlyNote, .observationTag, .evidenceDetails, .sourceBlock ul) {
+  color: var(--gate-muted);
+}
+
+:global(:root[data-theme="light"]) .page :is(a, .backLink, .eyebrow, .gateMark, .sectionKicker, .sourceBlock strong) {
+  color: var(--gate-paper);
+}
+
+:global(:root[data-theme="light"]) .page :is(.statusComplete, .sourceComplete, .decision_confirmed.selected, .decision_confirmed:hover:not(:disabled), .declaredGlyph) {
+  color: #047857;
+}
+
+:global(:root[data-theme="light"]) .page :is(.statusPill, .sourceIncomplete) {
+  color: #a16207;
+}
+
+:global(:root[data-theme="light"]) .page .partialNotice {
+  border-color: #e7c878;
+  color: #7c4a03;
+  background: #fff8e7;
+}
+
+:global(:root[data-theme="light"]) .page .errorBanner,
+:global(:root[data-theme="light"]) .page .decision_rejected.selected,
+:global(:root[data-theme="light"]) .page .decision_rejected:hover:not(:disabled) {
+  border-color: #fecaca;
+  color: #b42318;
+  background: #fff1f0;
+}
+
+:global(:root[data-theme="light"]) .page .decision_uncertain.selected,
+:global(:root[data-theme="light"]) .page .decision_uncertain:hover:not(:disabled) {
+  border-color: #bae6fd;
+  color: #075985;
+  background: #eff8ff;
+}
+
+:global(:root[data-theme="light"]) .page .reason {
+  border-left-color: #7aa9c7;
+  color: #334155;
+}
+
+:global(:root[data-theme="light"]) .page :is(.ruleNote, .reason, .pendingLabel, .gateMark, .finalizePanel) {
+  border-color: #bfdbfe;
+  background: #eff8ff;
+}
+
+:global(:root[data-theme="light"]) .page :is(.finalizeButton, .downloadButton) {
+  border-color: var(--gate-paper);
+  color: #ffffff;
+  background: var(--gate-paper);
+}
+
+:global(:root[data-theme="light"]) .page .downloadButton {
+  border-color: var(--gate-edge);
+  color: var(--gate-ink);
+  background: #f3f7fb;
+}
+
+:global(:root[data-theme="light"]) .page .finalizeButton:hover:not(:disabled) {
+  background: #075985;
+}
+
+:global(:root[data-theme="light"]) .page .finalizeButton:disabled {
+  border-color: var(--gate-edge);
+  color: #62768b;
+  background: #e7eef5;
+}
+
+:global(:root[data-theme="light"]) .page .downloadButton:hover {
+  border-color: var(--gate-edge);
+  color: var(--gate-ink);
+  background: #e7eef5;
+}
+
+:global(:root[data-theme="light"]) .page .errorPanel {
+  border-color: #fecaca;
+  color: #b42318;
+  background: #fff1f0;
+}

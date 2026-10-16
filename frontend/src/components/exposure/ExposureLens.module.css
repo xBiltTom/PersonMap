@@ -264,3 +264,98 @@
 @media (prefers-reduced-motion: reduce) {
   .spin, .loading svg { animation-duration: 1ms; animation-iteration-count: 1; }
 }
+
+:global(:root[data-theme="light"]) .page {
+  --lens-ink: #172b42;
+  --lens-muted: #52657b;
+  --lens-faint: #62768b;
+  --lens-edge: #cbd6e2;
+  --lens-panel: #ffffff;
+  --lens-panel-light: #f3f7fb;
+  --lens-mint: #047857;
+  --lens-copper: #0369a1;
+  --lens-blue: #0369a1;
+  color: var(--lens-ink);
+}
+
+:global(:root[data-theme="light"]) .page :is(.hero, .scopeCard, .controlRow, .summaryCard, .categoryGrid, .categoryTile, .topCard, .finding, .explanation, .evidenceItem, .emptyState, .reveals span, .signalList span) {
+  border-color: var(--lens-edge);
+  background: var(--lens-panel);
+  box-shadow: none;
+}
+
+:global(:root[data-theme="light"]) .page :is(.categoryGrid, .categoryTile, .controlRow, .explanation, .evidenceItem, .reveals span, .signalList span) {
+  background: var(--lens-panel-light);
+}
+
+:global(:root[data-theme="light"]) .page :is(.evidence, .topAdvice, .scopeCard > p) {
+  border-color: var(--lens-edge);
+}
+
+:global(:root[data-theme="light"]) .page :is(h1, h2, h3, strong, blockquote) {
+  color: var(--lens-ink);
+}
+
+:global(:root[data-theme="light"]) .page :is(p, span, small, code, li, summary, time, label, .category, .method, .controlNote, .topAdvice, .findingSummary, .evidenceMeta, .basis, .loading) {
+  color: var(--lens-muted);
+}
+
+:global(:root[data-theme="light"]) .page :is(a, .eyebrow, .sectionKicker, .heroMeta > span, .categoryTile strong, .explanation span, .emptyGlyph) {
+  color: var(--lens-copper);
+}
+
+:global(:root[data-theme="light"]) .page .scopeFlow i {
+  border-color: #9bb0c4;
+  background: #9bb0c4;
+}
+
+:global(:root[data-theme="light"]) .page .scopeFlow i::after {
+  border-color: #9bb0c4;
+}
+
+:global(:root[data-theme="light"]) .page :is(.notice, .staleNotice, .partialNotice) {
+  border-color: #e7c878;
+  color: #7c4a03;
+  background: #fff8e7;
+}
+
+:global(:root[data-theme="light"]) .page :is(.notice p, .staleNotice p) {
+  color: #785b28;
+}
+
+:global(:root[data-theme="light"]) .page :is(.notice button, .staleNotice button) {
+  border-color: #a8cbe0;
+  color: #075985;
+  background: #eff8ff;
+}
+
+:global(:root[data-theme="light"]) .page .analyzeButton {
+  border-color: #6ee7b7;
+  color: #065f46;
+  background: #d1fae5;
+}
+
+:global(:root[data-theme="light"]) .page .analyzeButton:hover:not(:disabled) {
+  background: #a7f3d0;
+}
+
+:global(:root[data-theme="light"]) .page .analyzeButton:disabled {
+  border-color: #cbd6e2;
+  color: #62768b;
+  background: #e7eef5;
+}
+
+:global(:root[data-theme="light"]) .page .emptyGlyph {
+  border-color: #a7d8c2;
+  color: #047857;
+  background: #ecfdf5;
+}
+
+:global(:root[data-theme="light"]) .page .summaryCard[data-severity="high"] { --severity-color: #b42318; }
+:global(:root[data-theme="light"]) .page .summaryCard[data-severity="medium"] { --severity-color: #a16207; }
+:global(:root[data-theme="light"]) .page .summaryCard[data-severity="low"] { --severity-color: #047857; }
+:global(:root[data-theme="light"]) .page .summaryCard[data-severity="informational"] { --severity-color: #0369a1; }
+:global(:root[data-theme="light"]) .page .severity_high .severity { color: #b42318; background: #fff1f0; }
+:global(:root[data-theme="light"]) .page .severity_medium .severity { color: #92400e; background: #fffbeb; }
+:global(:root[data-theme="light"]) .page .severity_low .severity { color: #047857; background: #ecfdf5; }
+:global(:root[data-theme="light"]) .page .severity_informational .severity { color: #0369a1; background: #eff8ff; }

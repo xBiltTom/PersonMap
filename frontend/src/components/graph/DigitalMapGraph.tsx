@@ -51,6 +51,7 @@ import { getInspectorEvidenceFilters, getInspectorSearchText, type InspectorEvid
 import type { GraphEdge, GraphNode, GraphNodeData, GraphResponse } from "@/lib/types";
 import { PlatformIcon } from "./PlatformIcon";
 import { EntityInspector, RelationshipInspector } from "./EntityInspector";
+import { useWorkstation } from "@/context/WorkstationContext";
 
 // ---------------------------------------------------------------------
 // Entity Theme Configuration (Matching img-referencia-mapa.png)
@@ -589,12 +590,12 @@ const PersonRootNode = React.memo(function PersonRootNode({ data, selected }: No
             ? "0 0 50px rgba(6, 182, 212, 0.75), inset 0 0 30px rgba(6, 182, 212, 0.4)"
             : "0 0 35px rgba(6, 182, 212, 0.55), inset 0 0 22px rgba(6, 182, 212, 0.25)",
         }}
-        className={`relative flex h-[124px] w-[124px] cursor-pointer flex-col items-center justify-center rounded-full border-2 bg-[#06121f] p-2 text-center transition-colors duration-150 ${
+        className={`person-root-orb relative flex h-[124px] w-[124px] cursor-pointer flex-col items-center justify-center rounded-full border-2 bg-cyan-950/80 p-2 text-center transition-colors duration-150 ${
           selected ? "border-cyan-200" : "border-cyan-400 hover:border-cyan-300"
         }`}
       >
         <User className="mb-1 h-7 w-7 shrink-0 text-cyan-400" strokeWidth={1.8} aria-hidden="true" />
-        <p className="line-clamp-2 max-w-[102px] font-mono text-[11px] font-bold leading-tight tracking-tight text-white">
+        <p className="line-clamp-2 max-w-[102px] font-mono text-[11px] font-bold leading-tight tracking-tight text-ink">
           {fullName}
         </p>
         <span className="mt-1 inline-flex items-center rounded-full border border-cyan-400/60 bg-cyan-950/80 px-2 py-0.5 font-mono text-[8px] font-semibold uppercase tracking-widest text-cyan-300 shadow-sm">
@@ -622,7 +623,7 @@ const CustomEntityNode = React.memo(function CustomEntityNode({ data, selected }
             ? `${theme.glowShadow}, 0 0 28px rgba(255, 255, 255, 0.25)`
             : theme.glowShadow,
         }}
-        className={`relative flex h-[52px] w-[52px] cursor-pointer items-center justify-center overflow-hidden rounded-full border-2 bg-[#090e18] transition-transform duration-150 ${
+        className={`map-entity-orb relative flex h-[52px] w-[52px] cursor-pointer items-center justify-center overflow-hidden rounded-full border-2 bg-[#090e18] transition-transform duration-150 ${
           theme.borderClass
         } ${isFocused ? "scale-105 border-white/90" : "hover:scale-105"}`}
       >
@@ -914,6 +915,7 @@ function DigitalMapGraphInner({
   onEdgeInspect?: (edgeId: string) => void;
   onInspectionClear?: () => void;
 }) {
+  const { theme } = useWorkstation();
   const [allNodes, setAllNodes] = useState<GraphNode[]>([]);
   const [allEdges, setAllEdges] = useState<GraphEdge[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1450,7 +1452,7 @@ function DigitalMapGraphInner({
       }`}
     >
       {/* Top Floating Filter & Actions Bar */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-[#030712] via-[#030712]/90 to-transparent px-3 pb-8 pt-3 sm:px-4">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-background via-background/90 to-transparent px-3 pb-8 pt-3 sm:px-4">
         <div className="pointer-events-auto flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
             <label className="flex h-7 min-w-[190px] flex-1 items-center gap-1.5 rounded-md border border-slate-800 bg-[#070e1a]/90 px-2 text-slate-500 focus-within:border-cyan-400/60 focus-within:text-cyan-300 sm:max-w-[270px]">
@@ -1620,7 +1622,12 @@ function DigitalMapGraphInner({
           onInspectionClear?.();
         }}
       >
-        <Background variant={BackgroundVariant.Dots} color="#152438" gap={34} size={1} />
+        <Background
+          variant={BackgroundVariant.Dots}
+          color={theme === "light" ? "#cbd6e2" : "#152438"}
+          gap={34}
+          size={1}
+        />
         <ViewportPortal>
           <RadarBackgroundNode />
         </ViewportPortal>
@@ -1634,16 +1641,16 @@ function DigitalMapGraphInner({
               <MiniMap
                 pannable
                 zoomable
-                maskColor="rgba(3, 7, 13, 0.82)"
+                maskColor={theme === "light" ? "rgba(23, 43, 66, 0.12)" : "rgba(3, 7, 13, 0.82)"}
                 nodeStrokeWidth={2}
                 nodeColor={(node) => {
-                  if (node.type === "personRoot") return "#22d3ee";
-                  const theme = getEntityTheme(
+                  if (node.type === "personRoot") return theme === "light" ? "#0369a1" : "#22d3ee";
+                  const entityTheme = getEntityTheme(
                     node.data?.platform as string | undefined,
                     node.data?.entity_type as string | undefined,
                     node.data?.value as string | undefined
                   );
-                  return theme.dotColor;
+                  return entityTheme.dotColor;
                 }}
                 className="!relative !inset-auto !m-0 !h-full !w-full !border-0 !bg-transparent"
               />

@@ -8,13 +8,15 @@ import { useWorkstation } from "@/context/WorkstationContext";
 import {
   Cpu,
   Menu,
+  Moon,
+  Sun,
   X,
 } from "lucide-react";
 
 const HEALTH_POLL_MS = 15000;
 
 export function TopBar() {
-  const { toggleSidebar, isSidebarOpen } = useWorkstation();
+  const { toggleSidebar, isSidebarOpen, theme, toggleTheme } = useWorkstation();
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [aiEnabled, setAiEnabled] = useState<boolean | null>(null);
   // Nota: profileRef e isProfileOpen se declaran aquí cuando se reactive el menú de analista.
@@ -46,7 +48,7 @@ export function TopBar() {
   }, []);
 
   return (
-    <header className="h-14 border-b border-[#162234] bg-[#090e17] px-3 sm:px-5 flex items-center justify-between gap-3 sticky top-0 z-40 select-none">
+    <header className="h-14 border-b border-edge bg-sidebar px-3 sm:px-5 flex items-center justify-between gap-3 sticky top-0 z-40 select-none">
       {/* Marca y navegación móvil */}
       <div className="flex items-center gap-3 shrink-0 min-w-0">
         <button
@@ -59,7 +61,7 @@ export function TopBar() {
         </button>
 
         <Link href="/" aria-label="PersonMap, inicio" className="flex items-center gap-1.5 group">
-          <span className="relative h-8 w-8 shrink-0 overflow-hidden" aria-hidden="true">
+          <span className="personmap-logo-frame relative h-8 w-8 shrink-0 overflow-hidden" aria-hidden="true">
             <Image
               src="/personmap-logo.png"
               alt=""
@@ -79,6 +81,17 @@ export function TopBar() {
 
       {/* Right: Telemetry + Analyst profile */}
       <div className="flex items-center gap-2.5 shrink-0">
+        <button
+          type="button"
+          onClick={toggleTheme}
+          aria-label={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+          aria-pressed={theme === "light"}
+          title={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+          className="grid h-8 w-8 shrink-0 place-items-center border border-edge bg-panel text-ink-muted transition-colors hover:border-edge-strong hover:bg-panel-elevated hover:text-accent"
+        >
+          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </button>
+
         {/* Backend OSINT Engine status */}
         <div
           title={

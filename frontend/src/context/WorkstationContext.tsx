@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { usePathname } from "next/navigation";
 
 export interface ActiveInvestigationSummary {
@@ -14,6 +14,8 @@ export interface ActiveInvestigationSummary {
 }
 
 interface WorkstationContextType {
+  theme: "dark" | "light";
+  toggleTheme: () => void;
   activeInvestigation: ActiveInvestigationSummary | null;
   setActiveInvestigation: (inv: ActiveInvestigationSummary | null) => void;
   activeTab: string;
@@ -27,13 +29,44 @@ interface WorkstationContextType {
 }
 
 const WorkstationContext = createContext<WorkstationContextType | null>(null);
+const THEME_STORAGE_KEY = "personmap-theme";
 
 export function WorkstationProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [themeLoaded, setThemeLoaded] = useState(false);
   const [activeInvestigation, setActiveInvestigation] = useState<ActiveInvestigationSummary | null>(null);
   const [activeTab, setActiveTab] = useState<string>("graph");
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+      if (savedTheme === "light" || savedTheme === "dark") {
+        setTheme(savedTheme);
+        document.documentElement.dataset.theme = savedTheme;
+      }
+    } catch {
+      // La preferencia visual sigue disponible durante la sesión aunque el
+      // navegador bloquee el almacenamiento local.
+    }
+    setThemeLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!themeLoaded) return;
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // El tema activo permanece aplicado al documento durante esta sesión.
+    }
+  }, [theme, themeLoaded]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => current === "dark" ? "light" : "dark");
+  }, []);
 
   // Cerrar command palette y sidebar móvil al cambiar de ruta
   const [prevPathname, setPrevPathname] = useState(pathname);
@@ -54,6 +87,8 @@ export function WorkstationProvider({ children }: { children: React.ReactNode })
   return (
     <WorkstationContext.Provider
       value={{
+        theme,
+        toggleTheme,
         activeInvestigation,
         setActiveInvestigation,
         activeTab,
