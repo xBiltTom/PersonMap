@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import React, { createContext, useContext, useState, useCallback } from "react";
 import { usePathname } from "next/navigation";
 
 export interface ActiveInvestigationSummary {
@@ -50,21 +50,6 @@ export function WorkstationProvider({ children }: { children: React.ReactNode })
   const toggleSidebar = useCallback(() => {
     setIsSidebarOpen((prev) => !prev);
   }, []);
-
-  // Global keyboard shortcut for ⌘K / Ctrl+K
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        toggleCommandPalette();
-      } else if (e.key === "Escape" && isCommandPaletteOpen) {
-        setIsCommandPaletteOpen(false);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isCommandPaletteOpen, toggleCommandPalette]);
 
   return (
     <WorkstationContext.Provider

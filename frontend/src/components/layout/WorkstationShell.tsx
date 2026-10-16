@@ -3,7 +3,6 @@
 import React from "react";
 import { TopBar } from "./TopBar";
 import { Sidebar } from "./Sidebar";
-import { CommandPalette } from "./CommandPalette";
 import { useWorkstation } from "@/context/WorkstationContext";
 
 export function WorkstationShell({ children }: { children: React.ReactNode }) {
@@ -25,7 +24,6 @@ export function WorkstationShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
-      <CommandPalette />
     </div>
   );
 }

@@ -6,8 +6,6 @@ import Image from "next/image";
 import { checkHealth } from "@/lib/api";
 import { useWorkstation } from "@/context/WorkstationContext";
 import {
-  Search,
-  Command,
   Cpu,
   Menu,
   X,
@@ -16,7 +14,7 @@ import {
 const HEALTH_POLL_MS = 15000;
 
 export function TopBar() {
-  const { toggleCommandPalette, toggleSidebar, isSidebarOpen, activeInvestigation } = useWorkstation();
+  const { toggleSidebar, isSidebarOpen } = useWorkstation();
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [aiEnabled, setAiEnabled] = useState<boolean | null>(null);
   // Nota: profileRef e isProfileOpen se declaran aquí cuando se reactive el menú de analista.
@@ -77,27 +75,6 @@ export function TopBar() {
           </span>
         </Link>
 
-      </div>
-
-      {/* Center: Search trigger (⌘K) */}
-      <div className="flex-1 max-w-md mx-auto hidden sm:block">
-        <button
-          type="button"
-          onClick={toggleCommandPalette}
-          className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-[#0d1420] border border-[#1a2636] hover:border-[#22344d] text-slate-400 text-xs font-mono transition-colors group cursor-pointer shadow-inner"
-        >
-          <span className="flex items-center gap-2 truncate">
-            <Search className="w-3.5 h-3.5 text-slate-500 group-hover:text-sky-400 transition-colors" />
-            <span className="text-slate-400 truncate">
-              {activeInvestigation
-                ? `Buscar en ${activeInvestigation.targetName}...`
-                : "Buscar en este expediente o saltar a..."}
-            </span>
-          </span>
-          <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-[#131d2b] border border-[#202f45] text-[10px] text-slate-400 font-mono shrink-0">
-            <Command className="w-2.5 h-2.5" /> K
-          </kbd>
-        </button>
       </div>
 
       {/* Right: Telemetry + Analyst profile */}
