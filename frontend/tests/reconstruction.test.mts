@@ -124,3 +124,27 @@ test("build uses explicit POST; GET only observes; stale errors preserve the bac
     ["/api/v1/investigations/fixture/reconstruction/build", "POST"],
   ]);
 });
+
+test("AI highlights remain factual and its fallback is explicit", async () => {
+  const Sections = await component("ReconstructionSections");
+  const html = renderToStaticMarkup(createElement(Sections, { snapshot: {
+    ...snapshot, narrative_method: "ai_assisted", narrative_status: "completed",
+    narrative_highlights: [{ text: "Publicación colaborativa observada.", fact_ids: ["post:1"] }],
+  } }));
+  assert.match(html, /organizada con IA/);
+  assert.match(html, /Publicación colaborativa observada/);
+  const fallback = renderToStaticMarkup(createElement(Sections, { snapshot: {
+    ...snapshot, narrative_status: "fallback",
+  } }));
+  assert.match(fallback, /La IA no respondió/);
+});
+
+test("review, Exposure and reconstruction share the workstation type and panel palette", async () => {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  for (const file of ["review/VerificationGate.module.css", "exposure/ExposureLens.module.css", "reconstruction/ReconstructionView.module.css"]) {
+    const css = await readFile(join(root, "src/components", file), "utf8");
+    assert.doesNotMatch(css, /Georgia|Times New Roman/);
+    assert.match(css, /#0d1420|var\(--panel/);
+    assert.match(css, /#38bdf8/);
+  }
+});

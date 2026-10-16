@@ -2,6 +2,8 @@
 import asyncio
 from copy import deepcopy
 import json
+import re
+import respx
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -41,6 +43,7 @@ URLS = {"instagram": "https://instagram.com/fixture.person", "tiktok": "https://
 
 @pytest.fixture(autouse=True)
 def config(monkeypatch):
+    monkeypatch.setattr(settings, "apify_instagram_posts_enabled", False)
     for key, value in {"apify_enabled": True, "apify_token": SecretStr("apify_api_TEST_SECRET"),
         "apify_platforms": list(ACTORS), "apify_actor_builds": {}, "apify_max_runs": 2, "apify_max_actors": 2,
         "apify_max_profiles_per_actor": 3, "apify_max_content_items_per_profile": 10, "apify_max_items_per_actor": 5, "apify_dataset_page_size": 2, "apify_run_timeout": 60,
@@ -690,3 +693,69 @@ async def test_legacy_reservations_count_toward_new_profile_budget(monkeypatch):
     assert execution_summary(ctx)["runs_reserved"] == 1
     assert execution_summary(ctx)["reserved_charge_usd"] == .05
     assert execution_summary(ctx)["diagnostics"][-1]["status"] == "profile_budget_exhausted"
+
+
+@pytest.mark.asyncio
+async def test_instagram_profile_without_nested_posts_gets_explicit_public_posts(monkeypatch):
+    from app.social.capabilities import INSTAGRAM_POSTS
+    monkeypatch.setattr(settings, 'apify_instagram_posts_enabled', True)
+    calls = []
+    class Client:
+        async def run(self, spec, submitted, item_limit, charge_limit, on_update):
+            calls.append((spec.actor, submitted))
+            if spec.actor == INSTAGRAM_POSTS.actor:
+                assert submitted['resultsLimit'] == 10 and submitted['resultsType'] == 'posts'
+                rows = [{'id': 'post-1', 'ownerUsername': HANDLES['instagram'], 'ownerId': '12345',
+                    'caption': 'Estudio en Universidad Ejemplo.', 'url': 'https://www.instagram.com/p/SAFE123/',
+                    'timestamp': '2026-10-16T08:10:00Z', 'likesCount': 12}]
+            else:
+                rows = [{'id': '12345', 'username': HANDLES['instagram'], 'fullName': 'Fixture'}]
+            return result(items=rows, actor=spec.actor)
+    ctx = context(observed=False)
+    findings = await ApifySocialTool(client_factory=Client).execute(ctx)
+    posts = [post for f in findings for post in f.metadata_info.get('public_content', [])]
+    assert len(calls) == 2 and len(posts) == 1 and posts[0]['likes'] == 12
+    assert not ApifySocialTool().pending(ctx)
+
+
+def test_instagram_post_row_requires_explicit_matching_author():
+    from app.social.capabilities import INSTAGRAM_POSTS
+    wrong = {'id': 'post-1', 'ownerUsername': 'different_person', 'ownerId': '12345',
+             'caption': 'Do not attribute', 'url': 'https://www.instagram.com/p/SAFE123/'}
+    assert ApifyAdapter().normalize(INSTAGRAM_POSTS, request(), result(items=[wrong]), {}) == []
+    wrong.pop('ownerUsername')
+    assert ApifyAdapter().normalize(INSTAGRAM_POSTS, request(), result(items=[wrong]), {}) == []
+
+
+def test_profile_build_pin_is_not_reused_for_a_different_content_actor(monkeypatch):
+    from app.social.capabilities import actor_build, INSTAGRAM_POSTS
+    monkeypatch.setattr(settings, 'apify_actor_builds', {'instagram': '0.0.643'})
+    assert actor_build(ACTORS['instagram']) == '0.0.643'
+    assert actor_build(INSTAGRAM_POSTS) == 'latest'
+    monkeypatch.setattr(settings, 'apify_actor_builds', {INSTAGRAM_POSTS.actor: '1.2.3'})
+    assert actor_build(INSTAGRAM_POSTS) == '1.2.3'
+
+
+def test_instagram_collaboration_is_attributed_only_with_explicit_coauthor():
+    from app.social.capabilities import INSTAGRAM_POSTS
+    row = {'id': 'post-collab', 'ownerUsername': 'other_author', 'ownerId': '987',
+           'caption': 'Estudio en Universidad Ejemplo.', 'url': 'https://www.instagram.com/p/COLLAB123/',
+           'coauthorProducers': [{'id': '123', 'username': HANDLES['instagram'], 'full_name': 'Fixture'}]}
+    findings = ApifyAdapter().normalize(INSTAGRAM_POSTS, request(), result(items=[row]), {})
+    assert len(findings) == 1
+    content = findings[0].metadata_info['public_content']
+    assert len(content) == 1 and content[0]['authorship_role'] == 'coauthor'
+    assert 'other_author' not in json.dumps(content)
+    row['coauthorProducers'] = []
+    row['mentions'] = [HANDLES['instagram']]
+    assert not ApifyAdapter().normalize(INSTAGRAM_POSTS, request(), result(items=[row]), {})
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_missing_actor_build_is_not_reported_as_account_denial():
+    respx.post(re.compile(r'https://api\.apify\.com/v2/actors/.*/runs.*')).respond(
+        403, json={'error': {'type': 'build-not-found', 'message': 'Do not log this body'}})
+    returned = await ApifyClient().run(ACTORS['instagram'], {'usernames':['fixture.person']}, 1, .025)
+    assert returned.error == 'actor_build_not_found'
+    assert returned.status == 'rejected_before_start' and returned.run_id is None

@@ -582,3 +582,13 @@ admitidos pueden consumir cuotas restantes. GHunt, brechas y enumeración se
 mantienen, e infostealers queda habilitado con autorización específica y con
 proyección minimizada hasta Exposure y Graph V2. Ver [LITE_ACQUISITION.md](LITE_ACQUISITION.md)
 para límites, estados, costes y validación. No se implementa Fase 7.
+
+### Corrección web, posts e integración visual
+
+SearchDorker conserva el presupuesto nativo y continúa sus lotes; el preset local
+permite 60 consultas con consultas específicas a Scribd y StuDocu. Instagram
+adquiere posts explícitamente, con builds independientes y relaciones
+`COAUTHORED` cuando la autoría colaborativa es explícita. Exposure valida JSON
+con lotes pequeños y reintenta solo lotes IA fallidos. La reconstrucción permite
+selección de evidencia con IA sobre IDs existentes. Las vistas reutilizan el
+diseño base del workstation. Ver `LITE_ACQUISITION.md`; no se implementa Fase 7.

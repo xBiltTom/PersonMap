@@ -309,3 +309,14 @@ copied to this projection. It asserts a record association, not current infectio
 or ownership. Local env files enable the existing optional Exposure AI; the
 application default remains disabled and failure retains deterministic findings.
 See [LITE_ACQUISITION.md](LITE_ACQUISITION.md).
+
+## Classification reliability and content coverage
+
+The classifier forwards `LLM_API_KEY`, requests simple JSON and validates the
+full output server-side; this avoids provider schema state explosions. The
+Gemini 2.5 Flash route disables hidden thinking for bounded classification.
+`config.public_post_count` distinguishes posts from bios, while
+`config.ai_processing` records successful/cached units and failed batches without
+prompts or raw error bodies. Failed batches stay uncached; successful batches
+are reused on retry. A partial run containing `ai_failure` is retryable with the
+same lease/locking policy. Other partial results remain cached.

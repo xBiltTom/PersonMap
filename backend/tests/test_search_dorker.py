@@ -67,6 +67,12 @@ DDG_HTML = """
 """
 
 
+@pytest.fixture(autouse=True)
+def serp_contract_only(monkeypatch):
+    # Public-page reading has separate transport fixtures in test_search_reader.
+    monkeypatch.setattr(settings, "search_read_pages", False)
+
+
 @pytest.fixture
 def context() -> TargetContext:
     return TargetContext(

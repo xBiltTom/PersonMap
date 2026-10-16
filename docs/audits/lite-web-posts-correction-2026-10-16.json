@@ -1,0 +1,79 @@
+{
+  "date": "2026-10-16",
+  "branch": "feat/footprint-lite-fair-demo",
+  "database": "personmap_lite",
+  "legacy_database_accessed": false,
+  "new_migration": false,
+  "original_local_run": {
+    "elapsed_seconds": 30.3146,
+    "global_deadline_seconds": 225,
+    "search_invocations": 1,
+    "effective_web_query_budget": 5,
+    "web_findings": 6,
+    "instagram_public_posts": 0,
+    "exposure_ai_status": "ai_failure"
+  },
+  "corrections": {
+    "web_uses_native_operator_budget": true,
+    "web_continues_without_new_identifiers": true,
+    "local_web_queries": 60,
+    "local_web_batch_queries": 10,
+    "local_web_invocation_timeout_seconds": 120,
+    "global_deadline_seconds": 225,
+    "separate_document_indexes": [
+      "scribd.com",
+      "studocu.com"
+    ],
+    "local_public_page_read_limit": 4,
+    "instagram_content_actor": "apify/instagram-scraper",
+    "instagram_content_mode": "posts",
+    "actor_builds_are_independent": true,
+    "explicit_social_collaboration_relation": "COAUTHORED",
+    "ai_output": "simple_json_validated_server_side",
+    "local_ai_batch_size": 6,
+    "partial_ai_failure_retry": "failed_batches_only",
+    "reconstruction_ai_output": "existing_fact_ids_only",
+    "frontend": "workstation_base_typography_palette_and_panels"
+  },
+  "live_repaired_run": {
+    "review_decisions_preserved": true,
+    "public_posts": 4,
+    "public_posts_were_explicit_collaborations": true,
+    "other_coauthors_promoted_to_subject": false,
+    "ai_unique_units_processed": 19,
+    "ai_failed_batches": 0,
+    "ai_findings": 16,
+    "remaining_partial_reasons": [
+      "acquisition_partial"
+    ],
+    "reconstruction_narrative_method": "ai_assisted",
+    "reconstruction_narrative_status": "completed",
+    "reconstruction_highlights": 8,
+    "graph_posts": 4,
+    "apify_total_reserved_charge_usd": 0.1,
+    "repair_used_existing_dataset_after_parser_correction": true,
+    "new_web_discovery_not_automatically_added_to_finalized_review": true
+  },
+  "validation": {
+    "targeted_backend_passed": 277,
+    "lite_db_integration_passed": 37,
+    "frontend_test_files_passed": 5,
+    "typescript": "passed",
+    "eslint": "passed",
+    "production_build": "passed_outside_sandbox",
+    "general_offline_suite": {
+      "time_limit_seconds": 120,
+      "exit_code": 124,
+      "passed_before_timeout": 617,
+      "blocked_test": "tests/test_ghunt.py::test_http_capabilities_and_mcp_contract_do_not_expose_session",
+      "ghunt_module_modified": false
+    },
+    "exposure_lite_smoke": "passed_with_cleanup",
+    "reconstruction_lite_smoke": {
+      "status": "passed_with_cleanup",
+      "nodes": 32,
+      "explained_edges": 54,
+      "collaboration_edge_checked": true
+    }
+  }
+}

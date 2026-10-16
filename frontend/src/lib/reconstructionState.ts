@@ -6,10 +6,10 @@ export const GRAPH_GROUPS: Record<ReconstructionGroup, string> = {
   documents: "Documentos", breaches: "Brechas e infostealers", exposure: "Exposición",
 };
 export const GROUP_COLOR: Record<ReconstructionGroup, string> = {
-  identity: "#8dbbc5", accounts: "#a7c8bc", content: "#93a4b8",
-  documents: "#93a4b8", breaches: "#b7a5c8", exposure: "#e2a27d",
+  identity: "#38bdf8", accounts: "#34d399", content: "#94a3b8",
+  documents: "#94a3b8", breaches: "#a855f7", exposure: "#fbbf24",
 };
-export const SEVERITY_COLOR = { high: "#ee997e", medium: "#d8b878", low: "#a7c8bc", informational: "#8dbbc5" };
+export const SEVERITY_COLOR = { high: "#f87171", medium: "#fbbf24", low: "#34d399", informational: "#38bdf8" };
 
 export function filterReconstructionGraph(graph: ReconstructionGraph, groups: ReconstructionGroup[], basis?: ReconstructionBasis) {
   const nodes = graph.nodes.filter(n => n.kind === "subject" || (groups.includes(n.group) && (!basis || n.basis === basis)));

@@ -163,10 +163,15 @@ def build_snapshot(dataset: ReviewedFootprintDataset, exposure: ExposureReport, 
             content_ids=[key], platform=registry.facts[parent].platform, url=url)
         registry.fact(id=key, kind=kind, label='Repositorio público' if kind == 'repository' else 'Publicación pública',
                       basis='OBSERVED', group='content', ring=3, refs=[ref], platform=registry.facts[parent].platform,
-                      url=url, safe_summary='Contenido público atribuido; texto original omitido.',
+                      url=url, safe_summary='Contenido público atribuido; texto original omitido. ' + ' '.join(
+                          f'{post[field]} {label} observados.' for field, label in (('likes', 'me gusta recibidos'), ('comments', 'comentarios recibidos'), ('views', 'vistas'))
+                          if type(post.get(field)) is int and post[field] >= 0),
                       date=safe_day(post.get('posted_at') or post.get('published_at') or post.get('timestamp')))
         identity.public_content.append(key)
-        registry.relate(parent, key, 'PUBLISHED', 'OBSERVED', 'La publicación pertenece a esta cuenta según la huella revisada.', [ref])
+        collaborative = post.get('authorship_role') == 'coauthor'
+        registry.relate(parent, key, 'COAUTHORED' if collaborative else 'PUBLISHED', 'OBSERVED',
+                        'La cuenta figura explícitamente como colaboradora de esta publicación.' if collaborative else
+                        'La publicación pertenece a esta cuenta según la huella revisada.', [ref])
         if external_id:
             # Same external ID across platforms is ambiguous: URL is still precise.
             old = sources.get(str(external_id))
@@ -245,6 +250,10 @@ def build_snapshot(dataset: ReviewedFootprintDataset, exposure: ExposureReport, 
             if source not in registry.facts:
                 continue
             origin = registry.facts[source]
+            if origin.kind == 'post':
+                signal = minimized_evidence(finding.category, evidence.excerpt or '')
+                if signal not in origin.safe_summary:
+                    origin.safe_summary = (origin.safe_summary + ' ' + signal)[:500]
             ref = registry.evidence_ref(source_type='exposure_evidence',
                 excerpt=minimized_evidence(finding.category, evidence.excerpt or ''),
                 entity_ids=origin.source_entity_ids, content_ids=origin.source_content_ids,

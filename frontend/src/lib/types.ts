@@ -720,6 +720,10 @@ export interface DigitalFootprintReconstruction {
   evidence: Record<string, ReconstructionEvidence>;
   correlations: ReconstructionRelation[];
   summary: Array<{ text: string; fact_ids: string[] }>;
+  narrative_highlights?: Array<{ text: string; fact_ids: string[] }>;
+  narrative_method?: "deterministic" | "ai_assisted";
+  narrative_status?: "deterministic" | "completed" | "fallback";
+  narrative_model?: string | null;
   counts: Record<string, number>;
   content_by_platform: Record<string, number>;
   exposure_summary: Record<ExposureSeverity, number>;

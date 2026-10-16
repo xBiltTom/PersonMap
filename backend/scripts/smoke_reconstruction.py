@@ -40,6 +40,7 @@ async def run_smoke(output: str | None = None):
 
     require_lite(settings.database_url, settings.personmap_env)
     settings.exposure_ai_enabled = False
+    settings.reconstruction_ai_enabled = False
     async with engine.connect() as connection:
         assert (await connection.execute(text('SELECT current_database()'))).scalar_one() == 'personmap_lite'
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -74,7 +75,7 @@ async def run_smoke(output: str | None = None):
                         'evidence_urls': [f'https://example.org/{platform}/{tag}']})
             instagram = entity('instagram', value=f'https://www.instagram.com/{tag}/', bio=f'Contacto {email}')
             tiktok = entity('tiktok', value=f'https://www.tiktok.com/@{tag}', bio=f'Contacto {email}', content=[
-                {'id': tag + '-post-1', 'url': f'https://example.org/{tag}/post/1', 'text':
+                {'id': tag + '-post-1', 'authorship_role': 'coauthor', 'url': f'https://example.org/{tag}/post/1', 'text':
                     f'Tengo lupus y estudio en Universidad X. Contacto {email}.', 'posted_at': '2026-10-01T08:10:00Z'},
                 {'id': tag + '-post-2', 'url': f'https://example.org/{tag}/post/2', 'text':
                     'Nos vemos en Calle Olivos 123. Todos los martes a las 08:10. Soy adventista y trabajo en Empresa Y.',
@@ -120,6 +121,7 @@ async def run_smoke(output: str | None = None):
             assert sum(n['kind'] == 'account' for n in nodes.values()) == 2
             assert sum(n['kind'] == 'post' for n in nodes.values()) == 2
             assert any(e['type'] == 'SAME_ALIAS' for e in edges)
+            assert any(e['type'] == 'COAUTHORED' and nodes[e['source']]['kind'] == 'account' for e in edges)
             assert any(e['type'] == 'SAME_EMAIL' for e in edges)
             assert any(e['type'] == 'AUTHORED' and nodes[e['source']]['kind'] == 'academic_profile' for e in edges)
             assert any(e['type'] == 'EXPOSED_IN_BREACH' and nodes[e['source']]['kind'] == 'email' for e in edges)

@@ -152,6 +152,7 @@ def _analysis_config() -> tuple[dict[str, Any], str | None, str]:
         "max_findings": settings.exposure_max_findings,
         "max_text_excerpt": settings.exposure_max_text_excerpt,
         "evidence_policy": "category-minimization-v2",
+        "ai_output_policy": "validated-json-fast-v3",
         "address_policy": "redact-specific-generalize-v1",
         "routine_policy": "do-not-synthesize-or-quote-v1",
         "sensitive_policy": "no-sensitive-traits-v1",
@@ -478,7 +479,7 @@ async def _cached_content_signals(
     units: list[dict[str, Any]],
     config_hash: str,
     model: str | None,
-) -> tuple[dict[str, list[dict[str, str]]], int, bool]:
+) -> tuple[dict[str, list[dict[str, str]]], int, bool, dict]:
     hashes_by_unit = {unit["content_id"]: _unit_hash(unit) for unit in units}
     unique_hashes = list(dict.fromkeys(hashes_by_unit.values()))
     cached_rows = (await db.scalars(select(ExposureContentCache).where(
@@ -498,10 +499,13 @@ async def _cached_content_signals(
     misses = list(misses_by_hash.values())
 
     ai_failed = False
+    failed_unit_ids: set[str] = set()
+    ai_processing = {"enabled": settings.exposure_ai_enabled, "processed": 0, "cached": len(cached), "failed_batches": 0}
     ai_results: dict[str, list[dict[str, Any]]] = {}
     if settings.exposure_ai_enabled and misses:
         if not model:
             ai_failed = True
+            failed_unit_ids.update(unit["content_id"] for unit in misses)
         else:
             for start in range(0, len(misses), settings.exposure_batch_size):
                 batch = misses[start : start + settings.exposure_batch_size]
@@ -511,14 +515,15 @@ async def _cached_content_signals(
                         batch,
                         max_chars_per_item=min(6000, settings.exposure_max_text_chars),
                     ))
-                except Exception:
+                    ai_processing["processed"] += len(batch)
+                except Exception as error:
                     ai_failed = True
+                    failed_unit_ids.update(unit["content_id"] for unit in batch)
+                    ai_processing["failed_batches"] += 1
+                    ai_processing.setdefault("errors", []).append({"type": type(error).__name__, "status": getattr(error, "status_code", None)})
 
     cache_rows: list[dict[str, Any]] = []
-    failed_unit_ids: set[str] = set()
-    # A batch failure means its units must remain uncached so a later run can retry AI.
-    if ai_failed:
-        failed_unit_ids = {unit["content_id"] for unit in misses}
+    # Cache successful batches; failed batches remain retryable without replaying successes.
     for unit in misses:
         signals = _local_signals(unit)
         for raw in ai_results.get(unit["content_id"], []):
@@ -567,7 +572,7 @@ async def _cached_content_signals(
             constraint="uq_exposure_content_cache_key"
         )
         await db.execute(statement)
-    return result, len(cached), ai_failed
+    return result, len(cached), ai_failed, ai_processing
 
 
 def _evidence(
@@ -1134,7 +1139,7 @@ async def _build_analysis(
     accounts = [item for item in dataset.accounts if _is_attributed(item)]
     units = _units(dataset, accounts)
     selected, skipped = _select_units(units)
-    unit_signals, cache_hits, ai_failed = await _cached_content_signals(
+    unit_signals, cache_hits, ai_failed, ai_processing = await _cached_content_signals(
         db, selected, config_hash, model
     )
     collector = _Collector()
@@ -1173,7 +1178,8 @@ async def _build_analysis(
     status = "partial" if partial_reasons else "completed"
     return _report_data(
         investigation_id, data_hash, status, findings, top,
-        analyzed=len(selected), skipped=skipped, model=model, config=config,
+        analyzed=len(selected), skipped=skipped, model=model,
+        config={**config, 'ai_processing': ai_processing, 'public_post_count': sum(u.get('source_type') == 'content' for u in selected)},
         partial_reasons=partial_reasons,
         cache_hit=bool(cache_hits),
         generated_at=datetime.now(timezone.utc),
@@ -1226,7 +1232,8 @@ async def get_report(db: AsyncSession, investigation_id: UUID) -> ExposureReport
         # Read-only projection: persisted state is recovered only by POST.
         report.status = "failed"
     report.current_dataset_hash = current_hash
-    report.stale = latest.dataset_hash != current_hash
+    _, _, current_config_hash = _analysis_config()
+    report.stale = latest.dataset_hash != current_hash or latest.config_hash != current_config_hash
     return report
 
 
@@ -1252,7 +1259,8 @@ async def analyze(db: AsyncSession, investigation_id: UUID) -> ExposureReport:
         ExposureRun.analysis_version == ANALYSIS_VERSION,
         ExposureRun.config_hash == config_hash,
     ).with_for_update())).one()
-    if run.status in {"completed", "partial"}:
+    retry_ai = run.status == "partial" and "ai_failure" in (run.config or {}).get("partial_reasons", [])
+    if run.status in {"completed", "partial"} and not retry_ai:
         report = _report_from_run(run, cache_hit=True)
         await db.commit()
         return report
@@ -1285,7 +1293,7 @@ async def analyze(db: AsyncSession, investigation_id: UUID) -> ExposureReport:
             top_exposures=[item.model_dump(mode="json") for item in report.top_exposures],
             analyzed_content_count=report.analyzed_content_count,
             skipped_content_count=report.skipped_content_count,
-            config={**config, "category_counts": report.categories, "partial_reasons": report.partial_reasons},
+            config={**report.config, "category_counts": report.categories, "partial_reasons": report.partial_reasons},
         ).execution_options(synchronize_session=False))
         if saved.rowcount == 0:
             await db.rollback()

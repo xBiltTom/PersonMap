@@ -96,7 +96,7 @@ direct declared Apify, new-input pivots, deadline cancellation, infostealer inpu
 isolation and review → Exposure → graph projection without machine data.
 DB integration tests use disposable schemas exclusively inside `personmap_lite`.
 `backend/scripts/smoke_reconstruction.py` additionally checks infostealer edges
-and safety, then cleans up its fixtures. These checks are synthetic; they do not
+and safety, then cleans up its fixtures. The initial integration checks were synthetic; they did not
 prove current live provider quality, latency or costs.
 
 ### Public provider probe (2026-10-16)
@@ -106,9 +106,9 @@ three requests: Crossref works, OpenAlex authors and OpenAlex works all returned
 HTTP 200; six findings were normalized. This validates connectivity and the
 current adapter path, not coverage for any particular student or author. GHunt
 runtime/session files report `configured`; no Google subject query was run.
-Apify and Exposure AI were validated synthetically without spending live credits.
+At the initial integration checkpoint, Apify and Exposure AI were validated synthetically without spending live credits; live post/AI validation is recorded in the correction below.
 
-### Regression results
+### Initial integration regression results
 
 378 targeted offline backend tests and 35 Lite DB integration tests passed.
 All five frontend test files, TypeScript, ESLint and the webpack production build
@@ -117,3 +117,70 @@ was timeboxed to 120 seconds and blocked at the existing
 `test_ghunt.py::test_http_capabilities_and_mcp_contract_do_not_expose_session`
 (after 613 passing tests).
 GHunt's worker module was not changed to bypass this failure.
+
+## Web and post acquisition correction (2026-10-16)
+
+The first local run completed in 30.3146 seconds, below its 225-second deadline.
+SearchDorker ran one batch with the local legacy five-query provider budget;
+Fair erased the `used` component of its continuation key. Pending web scopes
+therefore never got another batch. Lite now uses the native operator web budget,
+retains that continuation key, and allocates enough source invocations for its
+batches. The local/example preset is 60 queries, ten per batch, up to 120 seconds
+per invocation inside the unchanged global deadline. Public page reading is
+explicitly enabled locally (four pages total). Scribd and StuDocu each get a
+separate domain query. Literal matching, attribution checks and provider budgets
+remain enforced; empty indexes are not represented as verified documents.
+
+Instagram acquisition explicitly runs `apify/instagram-scraper` in `posts` mode
+alongside its profile Actor. A profile response with no nested feed is not treated
+as content coverage. Result limits and the existing total charge reservation cap
+still apply. Platform build pins apply only to the primary profile Actor; a
+content Actor uses its own full Actor-ID build pin or `latest`. A missing build
+has a specific safe diagnostic instead of looking like account access denial.
+Actor-specific rejections do not globally disable other Apify platforms, and
+ambiguous starts are never retried.
+
+For collaborative Instagram posts, the declared/attributed username must be
+explicitly present in `coauthorProducers`; a mention, tag, query URL or another
+owner is insufficient. The reviewed projection preserves `authorship_role` and
+Graph V2 uses `Account → COAUTHORED → Post`, with no nodes for other coauthors.
+This does not change academic coauthor attribution rules.
+
+The live local repair read the already generated dataset, retained all review
+decisions and incorporated four explicitly collaborative posts. Exposure then
+processed 19 unique text units with zero failed batches; its remaining partial
+reason was acquisition coverage. Reconstruction stored four post nodes and eight
+AI-selected highlights, with `narrative_status=completed`. No raw subject text,
+identifiers, prompts or actor rows are included in this audit documentation.
+
+Exposure now explicitly forwards the configured model credential, requests simple
+JSON and validates it server-side. Gemini 2.5 Flash uses a disabled thinking budget
+for bounded classification/selection; the local batch size is six. Reports expose
+public post counts and safe processing counts. Successful batches remain cached;
+failed batches alone are retried on a subsequent POST for the same run/config.
+A partial acquisition report without AI failure remains reusable.
+
+Optional reconstruction AI receives only minimized fact registry entries and
+returns up to eight existing fact IDs. Unknown IDs or extra generated prose fail
+closed to the factual fallback. It cannot add facts, edges, severity, sensitive
+traits or behavioral patterns. The activity narrative and graph still derive from
+the same registry. Its enabled flag, model and presentation policy partition the
+snapshot hash. The ignored local env files enable this option; defaults stay off.
+
+The review, Exposure and reconstruction screens now reuse the workstation's
+Inter/JetBrains typography, navy panels and sky/slate palette. This restores the
+base design without adding Phase 7 navigation, branding or animations.
+
+Official Actor input contract:
+https://apify.com/apify/instagram-scraper/input-schema
+
+### Correction validation
+
+277 focused backend tests, 37 Lite DB integration tests, all five frontend test
+files, TypeScript, ESLint and the production build passed. Both smoke scripts
+passed with fixture cleanup; the reconstruction smoke also checks `COAUTHORED`.
+The general offline suite passed 617 tests before the 120-second limit at the
+unchanged GHunt HTTP/MCP capability contract test. The new web budget applies to
+new acquisition runs; the finalized local run was repaired for declared social
+content and AI analysis without adding unreviewed new web discoveries. See
+`audits/lite-web-posts-correction-2026-10-16.json` for the safe audit.

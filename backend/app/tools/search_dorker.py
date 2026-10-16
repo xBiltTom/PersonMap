@@ -429,6 +429,14 @@ class SearchDorkerTool(BaseTool):
                 dorks.append(Dork(" OR ".join(f'"{variant}"' for variant in variants),
                     "Documentos y padrones; variantes de orden del nombre sin exigir afiliación literal",
                     include_domains=DOCUMENT_DOMAINS, name_variants=variants, scope="documents"))
+        # Separate document indexes: a broad mixed-domain query is not coverage
+        # of each repository. Keep literal attribution checks unchanged.
+        for name in names[:1]:
+            variants = name_search_variants(name)
+            for domain in ("scribd.com", "studocu.com"):
+                dorks.append(Dork(" OR ".join(f'"{variant}"' for variant in variants),
+                    "Documentos del nombre en " + domain, include_domains=[domain],
+                    name_variants=variants, scope="documents"))
         dorks.extend(group[i] for i in range(1, max(map(len, groups), default=0)) for group in groups if i < len(group))
         if context.university:
             for name in names:

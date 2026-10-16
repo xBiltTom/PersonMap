@@ -55,6 +55,7 @@ async def nothing(context):
 
 @pytest.fixture(autouse=True)
 def no_paid_calls(monkeypatch):
+    monkeypatch.setattr(settings, "apify_instagram_posts_enabled", False)
     monkeypatch.setattr(settings, "apify_enabled", False)
     monkeypatch.setattr(settings, "pivot_frontier_enabled", True)
 

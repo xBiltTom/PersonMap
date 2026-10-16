@@ -46,6 +46,7 @@ async def run_smoke() -> None:
 
     # This smoke is provider-free even when the local demo enables Exposure AI.
     settings.exposure_ai_enabled = False
+    settings.reconstruction_ai_enabled = False
     factory = async_sessionmaker(engine, expire_on_commit=False)
     now = datetime.now(timezone.utc)
     payload = TargetCreate(

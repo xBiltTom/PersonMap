@@ -121,6 +121,7 @@ export function ExposureLens({ investigationId }: { investigationId: string }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reviewRequired, setReviewRequired] = useState(false);
+  const aiProcessing = report?.config.ai_processing as { enabled?: boolean; processed?: number; cached?: number; failed_batches?: number } | undefined;
 
   useEffect(() => {
     let cancelled = false;
@@ -172,7 +173,7 @@ export function ExposureLens({ investigationId }: { investigationId: string }) {
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
           <div className={styles.eyebrow}><span /> FAIR MODE <i>·</i> EXPOSURE LENS</div>
-          <h1>Esto es lo que tu<br />huella pública revela.</h1>
+          <h1>Análisis de exposición pública</h1>
           <p>Una lectura explicable de datos que tú declaraste o confirmaste. Cada señal enlaza con su fuente y termina en una acción defensiva.</p>
           <div className={styles.heroMeta}>
             <span><ShieldCheck size={13} /> Huella revisada</span>
@@ -230,6 +231,11 @@ export function ExposureLens({ investigationId }: { investigationId: string }) {
             </button>
           </section>
 
+          {current && report && <p className={styles.controlNote} role="status">
+            {Number(report.config.public_post_count || 0)} publicaciones públicas analizadas.
+            {aiProcessing?.enabled && ` IA: ${aiProcessing.processed || 0} elementos procesados, ${aiProcessing.cached || 0} resultados de caché.`}
+            {Number(report.config.public_post_count || 0) === 0 && " No se recuperaron posts en esta cobertura; el informe no describe su actividad publicada."}
+          </p>}
           {current && report && ["completed", "partial"].includes(report.status) && (
             <Link href={`/investigation/${investigationId}/reconstruction`} className={styles.sourceLink}>
               Reconstruir mi huella pública <ArrowUpRight size={14} />
@@ -292,7 +298,7 @@ export function ExposureLens({ investigationId }: { investigationId: string }) {
                 <section className={styles.topSection} aria-labelledby="top-title">
                   <div className={styles.sectionHeading}>
                     <div><span className={styles.sectionKicker}>CONTENIDO ATRIBUIDO</span><h2 id="top-title">Publicaciones con mayor exposición</h2></div>
-                    <span>{report.analyzed_content_count} elementos analizados</span>
+                    <span>{Number(report.config.public_post_count || 0)} publicaciones públicas · {report.analyzed_content_count} elementos analizados</span>
                   </div>
                   <div className={styles.topGrid}>
                     {report.top_exposures.map((item) => (

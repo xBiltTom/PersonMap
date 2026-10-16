@@ -12,6 +12,8 @@ class FairSourceProgress(BaseModel):
     reason: str | None = None
     findings_count: int = 0
     attempts: list[dict] = Field(default_factory=list)
+    queries_used: int | None = None
+    query_budget: int | None = None
 
 
 class FairProgress(BaseModel):

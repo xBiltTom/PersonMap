@@ -134,3 +134,34 @@ async def test_provider_errors_are_not_reported_as_empty_success(monkeypatch, na
     run = await engine(monkeypatch, [Stub(name, unavailable)]).collect_findings(str(uuid4()), target())
     assert run.sources[name]['status'] == 'provider_unavailable'
     assert run.snapshot()['execution']['partial'] is True
+
+
+@pytest.mark.asyncio
+async def test_search_continues_batches_without_new_identifiers(monkeypatch):
+    from app.engine.fair_plan import SourcePlan
+    calls = []
+    async def batch(context):
+        used = context.extra.get('search_queries_used', 0)
+        calls.append(used)
+        context.extra['search_queries_used'] = used + 2
+        return []
+    source = Stub('search_dorker', batch, ready=lambda c: c.extra.get('search_queries_used', 0) < 8)
+    runner = engine(monkeypatch, [source], sources=[SourcePlan('search_dorker', 0, 1, max_invocations=8)])
+    run = await runner.collect_findings(str(uuid4()), target())
+    assert calls == [0, 2, 4, 6]
+    assert run.context.extra['search_queries_used'] == 8
+
+
+def test_web_uses_native_operator_budget_and_scribd_studocu_have_own_queries(monkeypatch):
+    from app.tools.search_dorker import SearchDorkerTool
+    from app.tools.base import TargetContext
+    monkeypatch.setattr(settings, 'personmap_env', 'lite')
+    monkeypatch.setattr(settings, 'search_max_queries', 60)
+    monkeypatch.setattr(settings, 'fair_search_queries', 8)
+    monkeypatch.setattr(settings, 'search_timeout_seconds', 120)
+    plan = FairPlan.configured()
+    assert plan.search_queries == 60
+    assert next(s for s in plan.sources if s.tool == 'search_dorker').timeout_seconds == 120
+    queries = SearchDorkerTool()._generate_dorks(TargetContext(full_name='Fixture Persona'))
+    assert any(q.include_domains == ['scribd.com'] for q in queries)
+    assert any(q.include_domains == ['studocu.com'] for q in queries)

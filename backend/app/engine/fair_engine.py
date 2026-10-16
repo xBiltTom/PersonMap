@@ -10,7 +10,8 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 from app.core.events import event_bus
-from app.core.runtime import durable_runtime
+from app.core.config import settings
+from app.core.runtime import durable_runtime, search_limit
 from app.engine.fair_plan import FairPlan
 from app.engine.persistence import finding_dedupe_key, entity_dedupe_key, persist_findings
 from app.engine.pivot_frontier import PivotFrontier, pivot_id, context_inputs, tool_accepts, PRIMARY, DISCOVERED
@@ -24,7 +25,7 @@ from app.tools.registry import tool_registry
 
 
 FAILURE_STATES = {"partial", "timeout", "failed", "budget_exhausted", "provider_unavailable"}
-PROVIDER_ERRORS = {"disabled", "token_missing", "session_missing", "session_expired", "invalid_session",
+PROVIDER_ERRORS = {"actor_build_not_found", "actor_access_denied", "disabled", "token_missing", "session_missing", "session_expired", "invalid_session",
     "runtime_missing", "session_not_configured", "dependency_missing", "authentication_failed", "access_denied", "quota_exhausted", "rate_limited", "blocked", "blocked_response", "http_401", "http_402", "http_403", "http_429", "http_432", "http_433"}
 BUDGET_ERRORS = {"run_budget_exhausted", "actor_budget_exhausted", "charge_budget_exhausted",
     "profile_budget_exhausted", "budget_exhausted", "request_budget_exhausted", "time_budget_exhausted"}
@@ -128,6 +129,9 @@ class FairRun:
                      else "partial" if raw == "partial" else "timeout" if "timeout" in str(raw).lower()
                      else "failed")
             social[record["platform"]] = {"status": state, "reason": raw}
+        if "search_dorker" in self.sources:
+            self.sources["search_dorker"].update(queries_used=self.context.extra.get("search_queries_used", 0),
+                query_budget=search_limit(self.context, settings.search_query_budget))
         return FairProgress(phase=self.phase, elapsed_seconds=self.elapsed_seconds,
             deadline_seconds=self.plan.deadline_seconds, sources=self.sources, social_sources=social).model_dump(mode="json")
 
@@ -192,9 +196,6 @@ class FairEngine:
             yield child
 
     def _key(self, tool, view):
-        if tool.name == "search_dorker":
-            view = view.model_copy(deep=False)
-            view.extra = {**view.extra, "search_queries_used": 0}
         return self.keys._get_tool_run_key(tool, view)
 
     def _not_ready(self, tool, view):
@@ -205,7 +206,10 @@ class FairEngine:
             state = availability()
             if state != "configured_not_live_validated":
                 return "provider_unavailable", state
-            if hasattr(tool, "pending") and tool.pending(view):
+            if hasattr(tool, "pending") and (pending := tool.pending(view)):
+                rejected = view.extra.get("apify_runtime", {}).get("unavailable_actors", {})
+                if all(request.actor in rejected for request in pending):
+                    return "provider_unavailable", "actor_access_denied"
                 return "budget_exhausted", "apify_reservation_limit"
         coverage = {"email_checker": "email_checker_checked", "email_enumerator": "email_enum_checked"}.get(tool.name)
         if coverage and view.extra.get(coverage) and any(email not in view.extra[coverage] for email in view.all_emails()):

@@ -246,3 +246,42 @@ def test_infostealer_alias_association_is_case_insensitive_and_does_not_add_owne
     assert nodes[edges[0].source].kind == 'alias'
     assert nodes[edges[0].target].kind == 'infostealer'
     assert nodes[edges[0].target].ownership_basis is None
+
+
+@pytest.mark.asyncio
+async def test_ai_presentation_only_accepts_existing_safe_fact_ids(monkeypatch):
+    import litellm
+    from types import SimpleNamespace
+    from app.core.config import settings
+    from app.reconstruction.presentation import present_snapshot
+    monkeypatch.setattr(settings, 'reconstruction_ai_enabled', True)
+    monkeypatch.setattr(settings, 'llm_model', 'fixture/model')
+    monkeypatch.setattr(settings, 'llm_api_key', 'synthetic-private-key')
+    current = snapshot()
+    key = next(f.id for f in current.facts if f.kind == 'post')
+    async def complete(**kwargs):
+        assert kwargs['api_key'] == 'synthetic-private-key'
+        serialized = json.dumps(kwargs['messages'])
+        for forbidden in ('lupus', 'adventista', 'Calle Olivos', '08:10', 'Coauthor Secret'):
+            assert forbidden not in serialized
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({'fact_ids':[key]})))])
+    monkeypatch.setattr(litellm, 'acompletion', complete)
+    result = await present_snapshot(current)
+    assert result.narrative_method == 'ai_assisted' and result.narrative_highlights[0].fact_ids == [key]
+    async def invented(**kwargs):
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"fact_ids":["invented:fact"]}'))])
+    monkeypatch.setattr(litellm, 'acompletion', invented)
+    result = await present_snapshot(snapshot())
+    assert result.narrative_status == 'fallback' and not result.narrative_highlights
+
+
+def test_collaborative_post_links_only_the_attributed_account():
+    dataset = fixture_dataset()
+    dataset.social_content[0]['authorship_role'] = 'coauthor'
+    result = snapshot(dataset)
+    edges = [e for e in result.graph.edges if e.type == 'COAUTHORED']
+    assert len(edges) == 1
+    nodes = {n.id: n for n in result.graph.nodes}
+    assert nodes[edges[0].source].kind == 'account' and nodes[edges[0].target].kind == 'post'
+    assert edges[0].basis == 'OBSERVED' and edges[0].evidence_refs
+    assert 'other_author' not in result.model_dump_json()

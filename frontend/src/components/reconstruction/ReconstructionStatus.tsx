@@ -12,7 +12,7 @@ export function ReconstructionStatus({ report, error, building, investigationId,
       {next && <a href={`/investigation/${investigationId}/${next.path}`}>{next.label} →</a>}
     </aside>}
     {!next && <section className="reconstruction-actions" aria-label="Estado de reconstrucción">
-      <p>{report?.stale ? "La evidencia cambió. Reconstruye la huella actual." : !snapshot ? "La huella está lista para reconstruir." : "Snapshot actual de las fuentes observadas."}</p>
+      <p>{report?.stale ? "La evidencia cambió. Reconstruye la huella actual." : !snapshot ? "La huella está lista para reconstruir." : "Huella actual de las fuentes observadas."}</p>
       <button type="button" onClick={onBuild} disabled={building}>
         {building ? "Construyendo…" : snapshot ? "Actualizar reconstrucción" : "Construir reconstrucción"}</button>
     </section>}

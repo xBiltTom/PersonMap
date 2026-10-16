@@ -2,7 +2,7 @@
 
 Phase 6 organizes the public footprint that can be reconstructed from the
 subject's declared or confirmed data. It does not claim completeness of a
-person's digital identity. It is deterministic, provider-free, and has no LLM.
+person's digital identity. Its fact registry and graph are deterministic. An optional, bounded AI presentation layer can select highlights from existing facts.
 
 ## Sources of truth and preconditions
 
@@ -168,8 +168,8 @@ omitted data is not proof that no other public information exists.
 Templates reference fact IDs from the same registry used by the graph. They
 report account/document counts, representative shared aliases/emails, observed
 Exposure signals and breach records, with no global risk score or identity
-claims. There are at most four factual paragraphs. No AI is enabled or called;
-Phase 6 introduces no LLM dependency, setting or credential requirement.
+claims. The factual paragraphs include observed activity counts. By default no AI is called;
+The default reconstruction remains available without model credentials; the optional presentation setting is documented below.
 
 If Fair acquisition or Exposure is partial, the snapshot has `coverage=partial`,
 partial reasons, and terminal status partial. UI states:
@@ -326,3 +326,18 @@ kinds/edge types distinguish ordinary breaches from malware records. No machine
 metadata enters facts, narrative or graph. The evidence policy hash advances to
 `reviewed-typed-fields-and-minimized-exposure-v2`. Existing input hashes enforce
 reanalysis/rebuild when the reviewed projection or exposure configuration changes.
+
+## Optional AI presentation and observed activity
+
+`RECONSTRUCTION_AI_ENABLED=false` remains the application default. Local demo env
+files enable it. The model receives minimized registry facts and can return only
+up to eight existing IDs; local safe summaries become `narrative_highlights`.
+The snapshot exposes `narrative_method`, `narrative_status` and `narrative_model`.
+Failure retains the factual reconstruction, and an explicit build can retry a
+fallback. The flag/model/policy enter the input hash. AI cannot create facts or
+free prose, reinterpret severity or infer traits. Activity counts and engagement
+counters describe public posts, not private activity or habits.
+
+Instagram collaborative posts carry an explicit reviewed `authorship_role`;
+`COAUTHORED` links the attributed account to its post and participates in graph
+parent/cap handling. Other coauthors never become subject nodes.

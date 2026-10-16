@@ -340,7 +340,7 @@ def _safe_content(value, account: Entity) -> list[dict]:
         return []
     allowed = {"id", "url", "text", "caption", "title", "description", "posted_at", "published_at",
                "timestamp", "media_type", "content_type", "likes", "comments", "views", "platform",
-               "origin", "author_username", "collection_source"}
+               "origin", "author_username", "authorship_role", "collection_source"}
     result = []
     for item in value[:100]:
         if not isinstance(item, dict):

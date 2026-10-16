@@ -6,7 +6,7 @@ import re
 
 from app.core.config import settings
 
-VERSION = 2
+VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -41,6 +41,16 @@ ACTORS = {
         ("profile_url",), ("channel", "videos"), supports_comments=False, supports_followers_following=False,
         notes="maxResults bounded; shorts/streams disabled. No email CAPTCHA, login, media or transcript download."),
 }
+
+# A profile response is not a guarantee that recent posts are included.
+INSTAGRAM_POSTS = ApifyActorSpec("instagram", "apify/instagram-scraper",
+    ("username",), ("posts",), supports_profile=False, supports_comments=False,
+    notes="Explicit bounded public posts; resultsType=posts with per-profile result limits; no comments or audience collection.")
+
+
+def actor_spec(request):
+    return INSTAGRAM_POSTS if request.actor == INSTAGRAM_POSTS.actor else ACTORS[request.platform]
+
 
 EVALUATED = {
     "reddit": {"actor": "apify/reddit-scraper", "input_types": ["username", "profile_url"],
@@ -84,7 +94,11 @@ def canonical_platform(value: str | None) -> str:
 
 
 def actor_build(spec: ApifyActorSpec) -> str:
-    value = settings.apify_actor_builds.get(spec.platform, "latest")
+    # A platform pin belongs to its primary profile Actor, not every Actor on
+    # that platform. Post Actors have independent build numbers.
+    primary = ACTORS.get(spec.platform)
+    fallback = settings.apify_actor_builds.get(spec.platform, "latest") if primary and primary.actor == spec.actor else "latest"
+    value = settings.apify_actor_builds.get(spec.actor, fallback)
     token = settings.apify_token.get_secret_value() if settings.apify_token else None
     if (not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", value)
             or value.startswith("apify_api_") or value == token):
@@ -128,6 +142,9 @@ def capabilities() -> dict:
                 "notes": notes + " Evaluated, not integrated; enabling the platform cannot launch this Actor.",
                 "validation": {"input_schema": "validated", "dataset": "not fixture-tested", "live_run": "not_live_validated"}})
     return {"version": VERSION, "availability": availability(), "matrix": rows,
+        "content_actors": [{**asdict(INSTAGRAM_POSTS), "input_types": list(INSTAGRAM_POSTS.input_types),
+            "output_types": list(INSTAGRAM_POSTS.output_types), "enabled": settings.apify_instagram_posts_enabled and "instagram" in allowed
+            and availability() == "configured_not_live_validated"}],
         "budget": {"max_actors": settings.apify_max_actors, "max_runs": settings.apify_max_runs,
             "max_items_per_actor": settings.apify_max_items_per_actor,
             "max_profiles_per_actor": settings.apify_max_profiles_per_actor,
@@ -141,5 +158,5 @@ def capabilities() -> dict:
 
 def config_id() -> str:
     # No token, credential hash, paths or authentication headers in observability.
-    return hashlib.sha256(json.dumps({"capabilities": capabilities(), "builds": settings.apify_actor_builds},
+    return hashlib.sha256(json.dumps({"capabilities": capabilities(), "instagram_posts": {**asdict(INSTAGRAM_POSTS), "enabled": settings.apify_instagram_posts_enabled}, "builds": settings.apify_actor_builds},
                                      sort_keys=True).encode()).hexdigest()

@@ -75,3 +75,11 @@ test("Lite keeps infostealers and email enumeration visible with explicit covera
   assert.match(html, /infostealers/); assert.match(html, /Enumeración de correo/);
   assert.match(html, /Fuentes públicas de Google/); assert.match(html, /3 hallazgos/);
 });
+
+test("web progress distinguishes query count from finding count", () => {
+  const rows = fairCoverage({ fair_progress: { sources: {
+    search_dorker: { status: "running", findings_count: 6, queries_used: 20, query_budget: 60 },
+  } } });
+  assert.equal(rows.find(r => r.key === "search_dorker")?.queryProgress, "20/60 consultas web");
+  assert.equal(rows.find(r => r.key === "search_dorker")?.count, 6);
+});

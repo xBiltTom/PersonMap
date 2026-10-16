@@ -76,9 +76,22 @@ class ApifyClient:
                     if response.status_code >= 500 and attempt + 1 < attempts:
                         continue
                     if not 200 <= response.status_code < 300:
-                        raise ApifyError({401: "authentication_failed", 403: "access_denied", 402: "quota_exhausted",
+                        code = {401: "authentication_failed", 403: "access_denied", 402: "quota_exhausted",
                             429: "rate_limited"}.get(response.status_code,
-                            "upstream_error" if response.status_code >= 500 else "unexpected_http_status"))
+                            "upstream_error" if response.status_code >= 500 else "unexpected_http_status")
+                        if response.status_code == 403:
+                            rejected = bytearray()
+                            async for chunk in response.aiter_bytes():
+                                rejected.extend(chunk)
+                                if len(rejected) > 8192:
+                                    break
+                            if len(rejected) <= 8192:
+                                try:
+                                    if (json.loads(rejected).get("error") or {}).get("type") == "build-not-found":
+                                        code = "actor_build_not_found"
+                                except (ValueError, TypeError, AttributeError):
+                                    pass
+                        raise ApifyError(code)
                     body = bytearray()
                     async for chunk in response.aiter_bytes():
                         body.extend(chunk)
@@ -147,7 +160,9 @@ class ApifyClient:
                     aborted = await self._abort(client, result.run_id)
                     result.status = "abort_requested" if aborted else "abort_failed"
                 elif not result.run_id:
-                    result.status = "start_uncertain"  # Do not resubmit a possibly billed POST.
+                    result.status = ("rejected_before_start" if result.error in {
+                        "authentication_failed", "access_denied", "actor_build_not_found", "quota_exhausted", "rate_limited"}
+                        else "start_uncertain")  # Ambiguous starts are never resubmitted.
             except asyncio.CancelledError:
                 result.error = "cancelled"
                 if result.run_id and result.status not in TERMINAL:

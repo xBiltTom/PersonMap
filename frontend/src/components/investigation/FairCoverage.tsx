@@ -8,6 +8,7 @@ export function FairCoverage({ metrics }: { metrics: Record<string, unknown> }) 
       {fairCoverage(metrics).map(source => <article key={source.key} className="rounded border border-slate-700/50 p-3">
         <h3 className="text-xs font-semibold text-slate-200">{source.label}</h3>
         <p className="text-xs mt-2 text-sky-300">{source.statusLabel} · {source.count} hallazgos</p>
+        {source.queryProgress && <p className="text-xs mt-1 text-slate-300">{source.queryProgress}</p>}
         {source.note && <p className="text-xs mt-1 text-slate-400">{source.note}</p>}
       </article>)}
     </div>

@@ -21,7 +21,10 @@ def reconstruction_config():
     return {key: getattr(settings, key) for key in (
         'reconstruction_max_timeline_items', 'graph_max_total_nodes', 'graph_max_post_nodes',
         'graph_max_document_nodes', 'graph_max_exposure_nodes',
-    )} | {'evidence_policy': 'reviewed-typed-fields-and-minimized-exposure-v2'}
+    )} | {'evidence_policy': 'reviewed-typed-fields-and-minimized-exposure-v2',
+         'ai_presentation': settings.reconstruction_ai_enabled,
+         'presentation_model': settings.llm_model if settings.reconstruction_ai_enabled else None,
+         'presentation_policy': 'existing-fact-ids-only-v1'}
 
 
 def exposure_fingerprint(report):
@@ -93,14 +96,23 @@ async def build_reconstruction(db: AsyncSession, investigation_id: UUID):
         dataset, exposure, data_hash, exposure_hash, input_hash, config = await _inputs(db, investigation_id, lock=True)
         existing = (await db.scalars(select(ReconstructionRun).where(
             ReconstructionRun.investigation_id == investigation_id, ReconstructionRun.input_hash == input_hash))).first()
-        if existing:
+        retry_presentation = existing and settings.reconstruction_ai_enabled and (existing.snapshot or {}).get("narrative_status") == "fallback"
+        if existing and not retry_presentation:
             response = _response(existing, input_hash, cache_hit=True)
             await db.commit()
             return response
         started_at = datetime.now(timezone.utc)
         snapshot = build_snapshot(dataset, exposure, investigation_id=str(investigation_id),
             data_hash=data_hash, exposure_hash=exposure_hash, input_hash=input_hash, config=config)
-        # Build is deterministic/local and completed before INSERT. The terminal
+        from app.reconstruction.presentation import present_snapshot
+        snapshot = await present_snapshot(snapshot)
+        snapshot.generated_at = datetime.now(timezone.utc)
+        if existing:
+            existing.snapshot = snapshot.model_dump(mode='json')
+            existing.completed_at = snapshot.generated_at
+            await db.commit()
+            return _response(existing, input_hash)
+        # Facts/graph are local; optional presentation finishes before INSERT. The terminal
         # snapshot commits atomically; interruption leaves no persistent run.
         await db.execute(pg_insert(ReconstructionRun).values(
             investigation_id=investigation_id, dataset_hash=data_hash, exposure_hash=exposure_hash,

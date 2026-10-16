@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.core.config import settings
 from app.exposure.detectors import ai_safe_text, has_operational_routine, has_precise_address, normalize_text
 
 
@@ -66,7 +67,7 @@ Do not produce schedules or actionable routine predictions.
 Do not identify relatives.
 Do not perform social engineering.
 Only use supplied evidence; excerpts must be verbatim substrings.
-Return only structured signals with basis observed. Allowed categories are location_disclosure,
+Return JSON only with shape {"signals": [{"content_id": "supplied ID", "signals": [{"category": "allowed category", "severity": "medium", "basis": "observed", "evidence_excerpt": "verbatim safe substring"}]}]}. Return at most two strongest signals per item; use an empty signals list when there is no explicit exposure. Return only structured signals with basis observed. Allowed categories are location_disclosure,
 temporal_exposure, education_work_context, biographical_identifiers, and content_disclosure.
 Never return sensitive categories such as political_belief, health, religion, sexual_orientation,
 or ethnicity. Never include a precise address, a time, a route, or a routine in an excerpt.
@@ -91,6 +92,12 @@ def _message_text(response) -> str:
     raise ValueError("Exposure AI response has no structured JSON content.")
 
 
+def structured_ai_options(model: str) -> dict:
+    # Gemini 2.5 Flash shares output tokens with dynamic thinking. These bounded
+    # classification/ID-selection calls need no hidden reasoning budget.
+    return {"reasoning_effort": "disable"} if model.startswith(("gemini/", "vertex_ai/")) and "gemini-2.5-flash" in model else {}
+
+
 async def classify_batch(model: str, items: list[dict], max_chars_per_item: int = 6000) -> dict[str, list[dict]]:
     """Classify a bounded batch. Ownership and subject attribution are never model decisions."""
     import litellm
@@ -105,14 +112,16 @@ async def classify_batch(model: str, items: list[dict], max_chars_per_item: int 
     ]
     response = await litellm.acompletion(
         model=model,
+        api_key=settings.llm_api_key,
+        **structured_ai_options(model),
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": json.dumps({"items": bounded}, ensure_ascii=False)},
         ],
-        response_format=ContentBatchOutput,
+        response_format={"type": "json_object"},
         temperature=0,
         timeout=25,
-        max_tokens=2500,
+        max_tokens=4000,
     )
     raw = _RawContentBatchOutput.model_validate(json.loads(_message_text(response)))
 

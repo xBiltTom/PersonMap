@@ -12,7 +12,7 @@ FactKind = Literal['subject', 'name', 'email', 'phone', 'alias', 'domain', 'url'
 Group = Literal['identity', 'accounts', 'content', 'documents', 'breaches', 'exposure']
 RelationType = Literal['DECLARES', 'ATTRIBUTED_ACCOUNT', 'ATTRIBUTED_PROFILE', 'USES_ALIAS',
                        'USES_EMAIL', 'USES_PHONE', 'PUBLIC_EMAIL_ON', 'PUBLIC_PHONE_ON',
-                       'LINKS_TO', 'SAME_ALIAS', 'SAME_EMAIL', 'PUBLISHED', 'AUTHORED',
+                       'LINKS_TO', 'SAME_ALIAS', 'SAME_EMAIL', 'PUBLISHED', 'COAUTHORED', 'AUTHORED',
                        'ASSOCIATED_WITH', 'MENTIONED_IN', 'EXPOSED_IN_BREACH', 'EXPOSED_IN_INFOSTEALER', 'HAS_EXPOSURE_SIGNAL']
 
 
@@ -113,6 +113,10 @@ class DigitalFootprintReconstruction(BaseModel):
     evidence: dict[str, EvidenceRef]
     correlations: list[ReconstructionRelation]
     summary: list[NarrativeClaim]
+    narrative_highlights: list[NarrativeClaim] = Field(default_factory=list)
+    narrative_method: Literal["deterministic", "ai_assisted"] = "deterministic"
+    narrative_status: Literal["deterministic", "completed", "fallback"] = "deterministic"
+    narrative_model: str | None = None
     counts: dict[str, int]
     content_by_platform: dict[str, int]
     exposure_summary: ExposureSummary

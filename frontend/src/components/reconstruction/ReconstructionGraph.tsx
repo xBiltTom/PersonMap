@@ -39,8 +39,8 @@ export default function ReconstructionGraph({ snapshot }: { snapshot: DigitalFoo
     selected: selection?.kind === "edge" && selection.id === relation.id,
     label: selection?.id === relation.id ? relation.type.replaceAll("_", " ") : undefined,
     ariaLabel: relation.type + ", " + relation.basis,
-    style: { stroke: relation.type === "HAS_EXPOSURE_SIGNAL" ? "#c7997d" : "#637e8a", strokeWidth: selection?.id === relation.id ? 3 : 1.3 },
-    markerEnd: { type: MarkerType.ArrowClosed, color: relation.type === "HAS_EXPOSURE_SIGNAL" ? "#c7997d" : "#637e8a" },
+    style: { stroke: relation.type === "HAS_EXPOSURE_SIGNAL" ? "#fbbf24" : "#64748b", strokeWidth: selection?.id === relation.id ? 3 : 1.3 },
+    markerEnd: { type: MarkerType.ArrowClosed, color: relation.type === "HAS_EXPOSURE_SIGNAL" ? "#fbbf24" : "#64748b" },
     interactionWidth: 24,
   })), [visible.edges, selection]);
   function toggle(group: ReconstructionGroup) {
@@ -62,7 +62,7 @@ export default function ReconstructionGraph({ snapshot }: { snapshot: DigitalFoo
           onEdgeClick={(_, edge) => setSelection({ kind: "edge", id: edge.id })}
           onPaneClick={() => setSelection(null)} onlyRenderVisibleElements colorMode="dark"
           proOptions={{ hideAttribution: true }}>
-          <Background color="#29404b" gap={32} /><Controls showInteractive={false} />
+          <Background color="#162234" gap={32} /><Controls showInteractive={false} />
         </ReactFlow>
       </div>
       <ReconstructionDetails snapshot={snapshot} selection={selection} />

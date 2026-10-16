@@ -572,3 +572,53 @@ async def test_expired_worker_cannot_overwrite_replacement(exposure_workspace, m
             assert (await first).json()['status'] == 'completed'
     async with ws['factory']() as db:
         assert (await db.scalars(select(ExposureRun))).one().status == 'completed'
+
+
+@pytest.mark.asyncio
+async def test_partial_ai_failure_is_retryable_on_the_same_run(exposure_workspace, monkeypatch):
+    from app.exposure import ai as exposure_ai
+    ws = exposure_workspace
+    await _finalize(ws)
+    monkeypatch.setattr(settings, 'exposure_ai_enabled', True)
+    monkeypatch.setattr(settings, 'exposure_ai_model', 'fixture/model')
+    attempts = []
+    async def classify(model, items, **kwargs):
+        attempts.append(len(items))
+        if len(attempts) == 1:
+            raise ValueError('synthetic failure')
+        return {item['content_id']: [] for item in items}
+    monkeypatch.setattr(exposure_ai, 'classify_batch', classify)
+    path = f"/api/v1/investigations/{ws['investigation_id']}/exposure/analyze"
+    first = (await ws['client'].post(path)).json()
+    assert 'ai_failure' in first['partial_reasons']
+    second = (await ws['client'].post(path)).json()
+    assert 'ai_failure' not in second['partial_reasons']
+    assert second['config']['ai_processing']['processed'] > 0
+    async with ws['factory']() as db:
+        rows = (await db.scalars(select(ExposureRun).where(ExposureRun.investigation_id == ws['investigation_id']))).all()
+        assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_ai_retry_reuses_successful_batches(exposure_workspace, monkeypatch):
+    from app.exposure import ai as exposure_ai
+    ws = exposure_workspace
+    await _finalize(ws)
+    monkeypatch.setattr(settings, 'exposure_ai_enabled', True)
+    monkeypatch.setattr(settings, 'exposure_ai_model', 'fixture/model')
+    monkeypatch.setattr(settings, 'exposure_batch_size', 1)
+    calls = []
+    async def classify(model, items, **kwargs):
+        calls.append(items[0]['content_id'])
+        if len(calls) == 1:
+            raise ValueError('synthetic one-batch failure')
+        return {item['content_id']: [] for item in items}
+    monkeypatch.setattr(exposure_ai, 'classify_batch', classify)
+    path = f"/api/v1/investigations/{ws['investigation_id']}/exposure/analyze"
+    first = (await ws['client'].post(path)).json()
+    count = len(calls)
+    assert first['config']['ai_processing']['failed_batches'] == 1
+    second = (await ws['client'].post(path)).json()
+    assert len(calls) == count + 1
+    assert 'ai_failure' not in second['partial_reasons']
+    assert second['config']['ai_processing']['cached'] > 0

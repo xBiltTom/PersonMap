@@ -1,6 +1,7 @@
 """Registered optional social source family using the ordinary PersonMap pipeline."""
 import asyncio
 from decimal import Decimal
+from dataclasses import replace
 import hashlib
 import json
 from weakref import WeakKeyDictionary
@@ -8,7 +9,7 @@ from weakref import WeakKeyDictionary
 from app.core.config import settings
 from app.social.apify_adapter import ApifyAdapter, actor_input
 from app.social.apify_client import ApifyClient
-from app.social.capabilities import ACTORS, actor_build, availability, config_id
+from app.social.capabilities import ACTORS, actor_build, availability, config_id, actor_spec, INSTAGRAM_POSTS
 from app.social.router import SocialSourceRouter
 from app.tools.base import BaseTool, ToolCategory
 from app.tools.social_profiles import parse_social_profile
@@ -57,16 +58,41 @@ class ApifySocialTool(BaseTool):
         self.adapter = ApifyAdapter()
 
     def pending(self, context):
-        runs = context.extra.get("apify_runtime", {}).get("runs", {})
-        seen = {(run["actor"], key) for run in runs.values() for key in run.get("profile_keys", [])}
+        state = context.extra.get("apify_runtime", {})
+        runs = state.get("runs", {})
+        # An Actor-specific 403 must not disable unrelated public sources.
+        if state.get("unavailable") == "access_denied":
+            for run in runs.values():
+                if run.get("error") == "access_denied":
+                    state.setdefault("unavailable_actors", {})[run["actor"]] = "access_denied"
+            state.pop("unavailable", None)
+        seen = set()
+        for run in runs.values():
+            # Explicit pre-start rejections can be retried after a build fix.
+            # A started/ambiguous run is never resubmitted by this exception.
+            fixed_build = (run.get("actor") == INSTAGRAM_POSTS.actor and not run.get("run_id")
+                and run.get("error") in {"access_denied", "actor_build_not_found"}
+                and run.get("requested_build") != actor_build(INSTAGRAM_POSTS))
+            if fixed_build:
+                state.get("unavailable_actors", {}).pop(run["actor"], None)
+                continue
+            seen.update((run["actor"], key) for key in run.get("profile_keys", []))
         result = []
+        requests = []
         for request in self.router.enrichment_requests(context):
+            requests.append(request)
+            if request.platform == "instagram" and settings.apify_instagram_posts_enabled:
+                requests.append(replace(request, actor=INSTAGRAM_POSTS.actor, reason="explicit_public_posts_ready"))
+        for request in requests:
             if (request.actor, profile_key(request.url)) not in seen:
                 result.append(request)
                 seen.add((request.actor, profile_key(request.url)))
         return result
 
     def _allocation(self, context, request):
+        rejection = context.extra.get("apify_runtime", {}).get("unavailable_actors", {}).get(request.actor)
+        if rejection:
+            return 0, "actor_build_not_found" if rejection == "actor_build_not_found" else "actor_access_denied"
         runs = context.extra.get("apify_runtime", {}).get("runs", {})
         if len(runs) >= settings.apify_max_runs:
             return 0, "run_budget_exhausted"
@@ -91,7 +117,7 @@ class ApifySocialTool(BaseTool):
         # Actual admitted inputs, not mutable pending/coverage: repeated workspace
         # requests can reuse their persisted ToolExecution without another run.
         return hashlib.sha256(json.dumps({"config": config_id(),
-            "requests": [(request.platform, profile_key(request.url)) for request in self.router.enrichment_requests(context)]}, sort_keys=True).encode()).hexdigest()
+            "requests": [(request.platform, request.actor, profile_key(request.url)) for request in self.router.enrichment_requests(context)]}, sort_keys=True).encode()).hexdigest()
 
     async def execute(self, context):
         state = context.extra.setdefault("apify_runtime", {"version": 1, "runs": {}, "diagnostics": []})
@@ -114,7 +140,7 @@ class ApifySocialTool(BaseTool):
             if reason:
                 diagnostics.append({"platform": request.platform, "status": reason})
                 continue
-            spec = ACTORS[request.platform]
+            spec = actor_spec(request)
             try:
                 build = actor_build(spec)
             except ValueError:
@@ -146,7 +172,9 @@ class ApifySocialTool(BaseTool):
                     result = await self.client_factory().run(spec, submitted_input, record["item_allowance"],
                         record["reserved_charge_usd"], on_update=record.update)
                     record.update(result.summary())
-                    if result.error in {"authentication_failed", "access_denied", "quota_exhausted", "rate_limited"}:
+                    if result.error in {"access_denied", "actor_build_not_found"}:
+                        state.setdefault("unavailable_actors", {})[spec.actor] = result.error
+                    if result.error in {"authentication_failed", "quota_exhausted", "rate_limited"}:
                         state["unavailable"] = result.error
                     normalized = []
                     record["profiles"] = []

@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     fair_apify_platforms: list[str] = Field(default_factory=lambda: ["instagram", "tiktok", "youtube"])
     fair_disabled_sources: list[str] = Field(default_factory=list)
 
+    reconstruction_ai_enabled: bool = False
+
     # Exposure Lens is deterministic by default. The optional classifier only
     # receives bounded, attributed public text after local redaction.
     exposure_run_lease_seconds: int = Field(default=120, ge=30, le=900)
@@ -262,6 +264,7 @@ class Settings(BaseSettings):
     # Optional public social enrichment. No Actor runs without operator opt-in,
     # an allowlisted platform AND the subject consent recorded on the target.
     apify_enabled: bool = False
+    apify_instagram_posts_enabled: bool = True
     apify_token: Optional[SecretStr] = None
     apify_platforms: list[str] = Field(default_factory=lambda: ["instagram", "tiktok"])
     apify_actor_builds: dict[str, str] = Field(default_factory=dict)

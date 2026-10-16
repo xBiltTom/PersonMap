@@ -24,6 +24,13 @@ def build_narrative(registry: FactRegistry):
         claims.append(NarrativeClaim(text=f'Exposure Lens identificó {len(exposures)} señales representadas; '
                                      f'{impact} tienen impacto potencial medio o alto. '
                                      'La severidad describe el hallazgo.', fact_ids=[f.id for f in exposures]))
+    activity = [f for f in facts if f.kind in {'post', 'repository'}]
+    if activity:
+        platforms = Counter(f.platform or 'fuente pública' for f in activity)
+        detail = ', '.join(f'{count} en {platform}' for platform, count in sorted(platforms.items()))
+        claims.append(NarrativeClaim(text=f'Se observaron {len(activity)} publicaciones o repositorios públicos ({detail}). '
+            'Estas observaciones describen contenido publicado; no infieren hábitos ni actividad privada.',
+            fact_ids=[f.id for f in activity]))
     breaches = [f for f in facts if f.kind in {'breach', 'infostealer'}]
     if breaches:
         claims.append(NarrativeClaim(text=f'Hay {len(breaches)} registros de exposición en brechas o infostealers asociados a identificadores atribuidos. '

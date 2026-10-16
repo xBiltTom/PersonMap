@@ -92,6 +92,7 @@ class FairPlan:
             plan = replace(plan,
                 deadline_seconds=min(plan.deadline_seconds, LITE_DEADLINE_SECONDS),
                 username_sites=min(plan.username_sites, LITE_USERNAME_RECIPES),
+                search_queries=settings.search_query_budget,
                 maigret_options={"names": list(COMMON_PLATFORMS), "tags": [], "excluded": [],
                     "keywords": [], "parse": False, "enrich": False, "retries": 0, "permutation_parts": []},
                 sources=tuple(replace(source,
@@ -100,10 +101,12 @@ class FairPlan:
                     priority=2 if source.tool == "infostealer_checker" else 4 if source.tool == "email_enumerator" else source.priority,
                     scope="identifier" if source.tool == "infostealer_checker" else source.scope,
                     max_invocations=6 if source.tool in {"infostealer_checker", "username_finder", "github_deep_scanner"}
-                        else min(source.max_invocations, 3),
+                        else max(3, (settings.search_query_budget + max(1, settings.search_max_queries_per_round) - 1) // max(1, settings.search_max_queries_per_round) + 3)
+                        if source.tool == "search_dorker" else source.max_invocations,
                     reason="operator_disabled" if source.tool in settings.fair_disabled_sources else
                         None if source.tool == "infostealer_checker" else source.reason,
-                    timeout_seconds=22 if source.tool == "infostealer_checker" else min(source.timeout_seconds, 50)
+                    timeout_seconds=settings.search_timeout_seconds if source.tool == "search_dorker" else
+                        22 if source.tool == "infostealer_checker" else min(source.timeout_seconds, 50)
                         if source.tool == "username_finder" else source.timeout_seconds)
                     for source in plan.sources))
         return plan

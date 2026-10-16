@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlsplit
 import re
 
 from app.core.config import settings
+from app.social.capabilities import INSTAGRAM_POSTS
 from app.schemas.footprint import discovered_provenance
 from app.social.safety import public_url, text
 from app.tools.base import ToolFinding
@@ -18,6 +19,9 @@ TEMPLATES = {"instagram": "https://instagram.com/{}", "tiktok": "https://tiktok.
 def actor_input(spec, request, item_limit):
     requests = request if isinstance(request, list) else [request]
     request = requests[0]
+    if spec.actor == INSTAGRAM_POSTS.actor:
+        return {"directUrls": [item.url for item in requests], "resultsType": "posts",
+                "resultsLimit": item_limit, "addParentData": False}
     if spec.platform == "instagram":
         return {"usernames": [item.username for item in requests], "includeAboutSection": False}
     if spec.platform == "threads":
@@ -81,9 +85,20 @@ def _public_links(raw_links):
     return list(dict.fromkeys(links))[:10], list(dict.fromkeys(emails))[:5]
 
 
+def _instagram_authorship(row, handle):
+    if _handle(row.get("ownerUsername")).casefold() == handle.casefold():
+        return "owner", {"id": row.get("ownerId"), "full_name": row.get("ownerFullName")}
+    for author in _list(row.get("coauthorProducers")):
+        if (isinstance(author, dict) and not author.get("is_unpublished")
+                and _handle(author.get("username")).casefold() == handle.casefold()):
+            return "coauthor", author
+    return None, {}
+
+
 def _content(platform, row, handle):
     if platform == "instagram":
-        if row.get("ownerUsername") and str(row["ownerUsername"]).casefold() != handle.casefold():
+        role, author = _instagram_authorship(row, handle)
+        if row.get("ownerUsername") and role is None:
             return None
         raw_url, caption, published = row.get("url"), row.get("caption"), row.get("timestamp")
     elif platform == "threads":
@@ -117,10 +132,13 @@ def _content(platform, row, handle):
         if path != "/watch" or len(video_ids) != 1 or not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_ids[0]):
             return None
     tags = [tag.get("name") if isinstance(tag, dict) else tag for tag in _list(row.get("hashtags"))]
-    return {"id": text(row.get("id"), 100), "url": url,
+    return {"id": text(row.get("id"), 100),
+        **({"authorship_role": role} if platform == "instagram" and role else {}), "url": url,
         "kind": "video" if platform in {"youtube", "tiktok"} else "post",
         "text": text(caption), "title": text(row.get("title"), 255),
         "published_at": text(published, 100) if isinstance(published, str) else published if isinstance(published, int) else None,
+        **{field: row[key] for field, key in (("likes", "likesCount"), ("comments", "commentsCount"), ("views", "videoViewCount"))
+           if type(row.get(key)) is int and row[key] >= 0},
         "hashtags": [text(tag, 100) for tag in tags if isinstance(tag, str)][:30],
         "mentions": [text(mention, 100) for mention in _list(row.get("mentions")) if isinstance(mention, str)][:30]}
 
@@ -132,7 +150,17 @@ class ApifyAdapter:
         for row in result.items:
             if not isinstance(row, dict) or row.get("error") or row.get("errorCode") or row.get("isProfileNotExist"):
                 continue
-            if spec.platform == "tiktok":
+            if spec.actor == INSTAGRAM_POSTS.actor:
+                # Exact observed author is mandatory; never attribute by query URL alone.
+                role, author = _instagram_authorship(row, request.username)
+                if role is None:
+                    continue
+                handle = request.username
+                account = {"id": str(author.get("id") or ""), "username": handle}
+                raw_url = TEMPLATES["instagram"].format(handle)
+                name, bio, avatar = author.get("full_name"), None, None
+                links, posts = [], [row]
+            elif spec.platform == "tiktok":
                 account = _dict(row.get("authorMeta"))
                 if account.get("privateAccount"):
                     continue

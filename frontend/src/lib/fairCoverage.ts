@@ -13,7 +13,7 @@ const STATUS: Record<string, string> = {
 };
 export function fairCoverage(metrics: Record<string, unknown>) {
   const state = (metrics.fair_snapshot || metrics.fair_progress) as {
-    sources?: Record<string, { status: string; findings_count: number; reason?: string }>;
+    sources?: Record<string, { status: string; findings_count: number; reason?: string; queries_used?: number; query_budget?: number }>;
   } | undefined;
   return Object.entries(FAIR_SOURCE_LABELS).map(([key, label]) => {
     const source = state?.sources?.[key];
@@ -23,6 +23,6 @@ export function fairCoverage(metrics: Record<string, unknown>) {
       status === "budget_exhausted" ? "Se respetó el límite de consultas o coste." :
       status === "timeout" ? "No respondió dentro del presupuesto; no indica ausencia de datos." :
       status === "completed" && !source?.findings_count ? "La consulta no devolvió hallazgos en esta cobertura." : "";
-    return { key, label, status, statusLabel: STATUS[status] || "Sin cobertura", count: source?.findings_count || 0, note };
+    return { key, label, status, statusLabel: STATUS[status] || "Sin cobertura", count: source?.findings_count || 0, queryProgress: source?.query_budget ? `${source.queries_used || 0}/${source.query_budget} consultas web` : null, note };
   });
 }

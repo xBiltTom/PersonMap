@@ -49,6 +49,7 @@ async def test_partial_primary_success_still_falls_back():
 @pytest.mark.asyncio
 @respx.mock
 async def test_duplicates_budget_and_later_pivots(monkeypatch):
+    monkeypatch.setattr(settings, 'search_max_queries', None)  # Explicit legacy budget compatibility.
     monkeypatch.setattr(settings, 'tavily_max_queries', 3)
     monkeypatch.setattr(settings, 'search_max_queries_per_round', 1)
     primary = respx.post(TAVILY).respond(200, json={'results': [{'title': 'alpha beta', 'url': 'https://github.com/alpha', 'content': 'alpha beta'}]})
