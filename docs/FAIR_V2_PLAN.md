@@ -364,18 +364,43 @@ override de Compose están en [FAIR_DATABASE.md](FAIR_DATABASE.md). El smoke
 test `backend/scripts/smoke_personmap_lite.py` cubre hallazgos fixture,
 observaciones, decisiones humanas y lectura del dataset únicamente en Lite.
 
-Fases 5–7 siguen pendientes: Exposure Lens, reconstrucción, Graph V2 y Frontend
-Fair Edition.
+Fase 5 está implementada. Fases 6–7 siguen pendientes: reconstrucción integral,
+Graph V2 y Frontend Fair Edition.
 
-## Fase 5 — Exposure Lens (pendiente)
+## Fase 5 — Exposure Lens (implementada)
 
-Analizar progresivamente posts, captions, bios, comentarios públicos, hashtags,
-menciones y metadata pública. Detectar exposición de ubicación general,
-instituciones, contexto profesional/académico, rutinas, biografía, contactos,
-alias reutilizados y documentos útiles para ingeniería social/correlación.
-Cada señal explica QUÉ revela y POR QUÉ aumenta exposición, con URL/fragmento y
-alcance de atribución. Antes de confirmación, analizar contenido como candidato,
-no como hecho de la persona; no inferir información sensible sin evidencia.
+La arquitectura, reglas, límites y políticas están en
+[EXPOSURE_LENS.md](EXPOSURE_LENS.md). Exposure Lens consume exclusivamente el
+`ReviewedFootprintDataset` guardado al finalizar Verification Gate. Antes de
+leer o analizar vuelve a validar el gate; un review abierto o con nuevos
+candidatos devuelve `409 review_not_finalized`. Las cuentas rechazadas/dudosas
+y los hallazgos raw no se consultan como exposición atribuida.
+
+La revisión alimenta reglas determinísticas para contacto visible, alias
+repetidos, enlaces cruzados, correlación por email/dominio, ubicación general,
+referencias temporales, contexto explícito de estudio/trabajo, identificadores
+biográficos, documentos académicos y brechas. Publicaciones confirmadas se
+clasifican por señales de exposición. Cada finding conserva severidad
+cualitativa, evidencia acotada, IDs de origen, explicación, método y acción
+defensiva. Breach exposure sigue siendo una observación y no prueba de identidad.
+Direcciones específicas y rutinas se generalizan; no se emite personalidad,
+atributos sensibles, horarios ni puntaje global.
+
+La clasificación LLM es opcional y está desactivada por defecto. Si se activa,
+recibe lotes acotados de contenido ya atribuido, con texto sensible/localización
+redactados, y solo acepta salida Pydantic estructurada y allowlisted. Un fallo
+de IA conserva hallazgos determinísticos y marca `partial`.
+
+`exposure_runs` y `exposure_content_cache` guardan informes y resultados
+estructurados sin duplicar cuerpos completos. Hashes normalizados invalidan
+informes cuando cambia la huella o configuración. La UI
+`/investigation/{id}/exposure` presenta severidad, categorías, publicaciones
+destacadas, explicación, procedencia y recomendaciones; oculta un informe stale
+hasta reanalizar.
+
+La revisión Alembic `bf781b42de01` se aplicó desde `a41b9c2e7d63` únicamente a
+`personmap_lite`. `person_map` quedó intacta. El smoke de Fase 5 es
+`backend/scripts/smoke_exposure_lens.py` y usa datos sintéticos sin proveedores.
 
 ## Fase 6 — Digital Footprint Reconstruction + Graph V2 (pendiente)
 

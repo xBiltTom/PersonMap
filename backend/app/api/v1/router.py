@@ -7,6 +7,7 @@ from app.api.v1.metrics import router as metrics_router
 from app.api.v1.surveys import router as surveys_router
 from app.api.v1.workspace import router as workspace_router
 from app.api.v1.social_sources import router as social_sources_router
+from app.api.v1.exposure import router as exposure_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -18,3 +19,4 @@ api_v1_router.include_router(metrics_router, tags=["Metrics"])
 api_v1_router.include_router(surveys_router, tags=["Surveys"])
 api_v1_router.include_router(workspace_router, tags=["Workspace"])
 api_v1_router.include_router(social_sources_router, tags=["Sources"])
+api_v1_router.include_router(exposure_router, tags=["Exposure Lens"])

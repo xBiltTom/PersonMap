@@ -16,6 +16,16 @@ class Settings(BaseSettings):
     fair_apify_platforms: list[str] = Field(default_factory=lambda: ["instagram", "tiktok", "youtube"])
     fair_disabled_sources: list[str] = Field(default_factory=list)
 
+    # Exposure Lens is deterministic by default. The optional classifier only
+    # receives bounded, attributed public text after local redaction.
+    exposure_ai_enabled: bool = False
+    exposure_ai_model: Optional[str] = None
+    exposure_max_content_items: int = Field(default=100, ge=1, le=500)
+    exposure_batch_size: int = Field(default=15, ge=1, le=20)
+    exposure_max_text_chars: int = Field(default=30000, ge=1000, le=100000)
+    exposure_max_findings: int = Field(default=100, ge=1, le=500)
+    exposure_max_text_excerpt: int = Field(default=280, ge=80, le=500)
+
     # Database
     database_url: str = "postgresql+asyncpg://postgres@localhost:5432/person_map"
     personmap_env: Literal["normal", "lite"] = "normal"

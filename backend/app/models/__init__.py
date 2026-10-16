@@ -10,6 +10,7 @@ from app.models.investigation_trace_event import InvestigationTraceEvent
 from app.models.investigation_session import InvestigationSession
 from app.models.analysis_note import AnalysisNote
 from app.models.review_decision import ReviewDecision
+from app.models.exposure_run import ExposureContentCache, ExposureRun
 
 __all__ = [
     "Target",
@@ -24,4 +25,6 @@ __all__ = [
     "InvestigationSession",
     "AnalysisNote",
     "ReviewDecision",
+    "ExposureRun",
+    "ExposureContentCache",
 ]

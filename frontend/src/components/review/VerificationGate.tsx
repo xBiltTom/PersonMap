@@ -430,6 +430,9 @@ export function VerificationGate({ investigationId }: { investigationId: string 
                   : "Los dudosos y los pendientes quedarán fuera de la huella atribuida."}</p></div>
             </div>
             <div className={styles.finalizeActions}>
+              {isComplete && <Link href={`/investigation/${investigationId}/exposure`} className={styles.downloadButton}>
+                <ShieldCheck size={14} aria-hidden="true" /> Analizar exposición
+              </Link>}
               {isComplete && <button type="button" className={styles.downloadButton} onClick={() => void handleDownload()}>
                 <Download size={14} aria-hidden="true" /> {downloaded ? "Descargado" : "Descargar dataset"}
               </button>}

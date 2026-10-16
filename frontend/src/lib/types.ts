@@ -240,6 +240,77 @@ export interface ReviewedFootprintDataset {
   execution: Record<string, unknown>;
 }
 
+export type ExposureStatus = "pending" | "running" | "completed" | "partial" | "failed";
+export type ExposureSeverity = "high" | "medium" | "low" | "informational";
+export type ExposurePartialReason = "acquisition_partial" | "content_limit_reached" | "ai_failure";
+export type ExposureCategory =
+  | "contact_exposure"
+  | "alias_reuse"
+  | "cross_platform_correlation"
+  | "location_disclosure"
+  | "temporal_exposure"
+  | "education_work_context"
+  | "biographical_identifiers"
+  | "public_documents"
+  | "breach_exposure"
+  | "content_disclosure";
+export interface ExposureEvidence {
+  source_type: "entity" | "content" | "breach" | "document";
+  source_id?: string | null;
+  platform?: string | null;
+  account?: string | null;
+  url?: string | null;
+  occurred_at?: string | null;
+  excerpt: string;
+}
+export interface ExposureFinding {
+  id: string;
+  category: ExposureCategory;
+  severity: ExposureSeverity;
+  title: string;
+  summary: string;
+  why_it_matters: string;
+  evidence: ExposureEvidence[];
+  source_entity_ids: string[];
+  source_content_ids: string[];
+  recommendations: string[];
+  basis: "observed" | "inferred";
+  analysis_method: "deterministic" | "ai";
+  signals: string[];
+}
+export interface ExposureTopItem {
+  id: string;
+  platform?: string | null;
+  account?: string | null;
+  published_at?: string | null;
+  excerpt: string;
+  severity: ExposureSeverity;
+  reveals: string[];
+  why_it_matters: string;
+  evidence: ExposureEvidence[];
+  recommendations: string[];
+}
+export interface ExposureReport {
+  version: 1;
+  investigation_id: string;
+  dataset_hash?: string | null;
+  current_dataset_hash?: string | null;
+  analysis_version: string;
+  status: ExposureStatus;
+  partial_reasons: ExposurePartialReason[];
+  stale: boolean;
+  cache_hit: boolean;
+  summary: Record<ExposureSeverity, number>;
+  categories: Record<string, number>;
+  findings: ExposureFinding[];
+  top_exposures: ExposureTopItem[];
+  analyzed_content_count: number;
+  skipped_content_count: number;
+  generated_at?: string | null;
+  model?: string | null;
+  config: Record<string, unknown>;
+}
+
 export type AnalysisNoteKind = "comment" | "summary" | "insight" | "hypothesis" | "next_step";
 export interface AnalysisNotePayload {
   kind: AnalysisNoteKind;

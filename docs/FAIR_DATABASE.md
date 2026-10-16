@@ -78,9 +78,12 @@ DATABASE_URL='postgresql+asyncpg://postgres@localhost:5432/personmap_lite' \
   .venv/bin/alembic upgrade head
 ```
 
-El único head vigente es `a41b9c2e7d63`. El bootstrap comprueba al menos:
+La revisión base previa a Exposure Lens era `a41b9c2e7d63`; la revisión actual
+en Lite es `bf781b42de01`. La migración añade `exposure_runs` y
+`exposure_content_cache`. El bootstrap comprueba al menos:
 `targets`, `investigations`, `entities`, `relationships`, `tool_executions`,
-`entity_observations`, `review_decisions` y `alembic_version`. También valida
+`entity_observations`, `review_decisions`, `exposure_runs`,
+`exposure_content_cache` y `alembic_version`. También valida
 UUID, JSONB, índices, unicidad, FKs con `ON DELETE CASCADE` y el CHECK de las
 decisiones.
 
@@ -134,6 +137,30 @@ Ese archivo crea y borra esquemas temporales dentro de la base indicada. Usa
 Lite o una base descartable; nunca apuntes esta variable a datos que deban
 permanecer intactos.
 
+## Pruebas y smoke de Exposure Lens
+
+Los tests de Exposure Lens migran un esquema temporal dentro de Lite, confirman
+que `current_database()` es exactamente `personmap_lite` y lo eliminan al
+terminar:
+
+```bash
+cd backend
+PERSONMAP_ENV=lite \
+DATABASE_URL='postgresql+asyncpg://postgres@localhost:5432/personmap_lite' \
+EXPOSURE_LENS_TEST_DATABASE_URL='postgresql+asyncpg://postgres@localhost:5432/personmap_lite' \
+  .venv/bin/python -m pytest tests/test_exposure_lens.py -m db -q
+```
+
+El smoke toca Lite directamente solo para insertar el fixture sintético y
+elimina target, investigación, decisiones, reporte y cache de contenido:
+
+```bash
+cd backend
+PERSONMAP_ENV=lite \
+DATABASE_URL='postgresql+asyncpg://postgres@localhost:5432/personmap_lite' \
+  .venv/bin/python scripts/smoke_exposure_lens.py
+```
+
 ## Evitar una base equivocada
 
 - Antes de arrancar Fair/Lite, revisa que la URL termine en `/personmap_lite`.
@@ -145,9 +172,10 @@ permanecer intactos.
   Lite. La configuración de Alembic obtiene la URL de `DATABASE_URL`.
 - No existe una copia automática de investigaciones legacy a Lite.
 
-## Deuda antes de Fase 5
+## Deuda antes de Fase 6
 
-La Fase 5 puede leer el dataset versionado solo después de `review_status=complete`.
-El proceso no autentica todavía al sujeto ni aplica permisos por investigación;
-antes de alojar expedientes multiusuario se necesita autorización. Las fuentes
-parciales siguen siendo huecos de cobertura, nunca evidencia de ausencia.
+Exposure Lens lee el dataset versionado solo después de
+`review_status=complete`. El proceso no autentica todavía al sujeto ni aplica
+permisos por investigación; antes de alojar expedientes multiusuario se necesita
+autorización. Las fuentes parciales siguen siendo huecos de cobertura, nunca
+evidencia de ausencia.

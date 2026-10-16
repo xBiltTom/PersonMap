@@ -16,6 +16,7 @@ import type {
   ReviewDecisionValue,
   ReviewFinalizeData,
   ReviewedFootprintDataset,
+  ExposureReport,
   MetricsComparison,
   SurveyPayload,
   SurveyRead,
@@ -41,6 +42,9 @@ function parseErrorDetail(body: unknown, fallback: string): string {
   if (!body || typeof body !== "object") return fallback;
   const detail = (body as { detail?: unknown }).detail;
   if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object" && "message" in detail) {
+    return String((detail as { message: unknown }).message);
+  }
   if (Array.isArray(detail)) {
     const msgs = detail
       .map((d) =>
@@ -52,6 +56,25 @@ function parseErrorDetail(body: unknown, fallback: string): string {
     if (msgs.length) return msgs.join(" · ");
   }
   return fallback;
+}
+
+function parseErrorCode(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const detail = (body as { detail?: unknown }).detail;
+  if (!detail || typeof detail !== "object" || !("code" in detail)) return undefined;
+  return String((detail as { code: unknown }).code);
+}
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -75,8 +98,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* respuesta sin cuerpo JSON */
     }
-    throw new Error(
-      parseErrorDetail(body, `Error ${res.status}: ${res.statusText}`)
+    throw new ApiError(
+      parseErrorDetail(body, `Error ${res.status}: ${res.statusText}`),
+      res.status,
+      parseErrorCode(body)
     );
   }
 
@@ -131,6 +156,14 @@ export function finalizeInvestigationReview(id: string): Promise<ReviewFinalizeD
 
 export function getReviewedFootprint(id: string): Promise<ReviewedFootprintDataset> {
   return request<ReviewedFootprintDataset>(`/investigations/${id}/reviewed-footprint`);
+}
+
+export function analyzeExposure(id: string): Promise<ExposureReport> {
+  return request<ExposureReport>("/investigations/" + id + "/exposure/analyze", { method: "POST" });
+}
+
+export function getExposureReport(id: string): Promise<ExposureReport> {
+  return request<ExposureReport>("/investigations/" + id + "/exposure");
 }
 
 export function addAnalysisNote(id: string, note: AnalysisNotePayload): Promise<AnalysisNoteData> {
