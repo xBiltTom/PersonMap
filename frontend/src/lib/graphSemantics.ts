@@ -12,6 +12,7 @@ export function isProvenanceEdge(edge: GraphEdge): boolean {
 /** Etiquetas observacionales: describen el dato, nunca una identidad inferida. */
 export function getFriendlyRelationLabel(relationType: string, customLabel?: string | null): string {
   const labels: Record<string, string> = {
+    subject_declared_account: "cuenta declarada por la persona",
     target_email_match: "correo coincidente con el objetivo",
     target_phone_match: "teléfono coincidente con el objetivo",
     target_identifier_match: "identificador coincidente con el objetivo",

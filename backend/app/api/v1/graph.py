@@ -17,6 +17,7 @@ from app.schemas.graph import GraphEdge, GraphNode, GraphNodeData, GraphNodePosi
 router = APIRouter()
 
 EDGE_STYLES = {
+    "subject_declared_account": {"stroke": "#38bdf8", "strokeWidth": 2.5},
     "target_email_match": {"stroke": "#38bdf8", "strokeWidth": 2},
     "target_phone_match": {"stroke": "#f59e0b", "strokeWidth": 2},
     "target_identifier_match": {"stroke": "#a855f7", "strokeWidth": 2},
@@ -75,9 +76,14 @@ async def get_investigation_graph(id: UUID, db: AsyncSession = Depends(get_db)):
 
 async def build_evidence_graph(investigation):
     from app.identity.projection import project_evidence
+    from app.schemas.footprint import account_ownership, footprint_input
+    from app.tools.social_profiles import parse_social_profile
+
     relations, groups, affinities = await project_evidence(investigation.id, investigation.entities,
         investigation.target, investigation.relationships)
     target = investigation.target
+    declared_input = footprint_input(target)
+    declared_seeds = declared_input.declared_seeds if declared_input else []
     root_id = f"target-{target.id}"
     root_label = target.full_name or target.username or target.email or target.phone or target.dni or "Identidad Objetivo"
     membership = {str(entity_id): str(group.id) for group in groups for entity_id in group.entity_ids}
@@ -129,12 +135,29 @@ async def build_evidence_graph(investigation):
             )
         )
         affinity = affinities[str(entity.id)]
+        metadata = entity.metadata_info or {}
+        ownership = metadata.get("ownership") if isinstance(metadata, dict) else None
+        ownership = ownership if isinstance(ownership, dict) else {}
+        declared_ownership = {"status": "unverified", "needs_review": True}
+        if entity.entity_type in {"social_account", "sensitive_account"}:
+            profile = parse_social_profile(entity.value)
+            platform = profile.platform if profile else entity.platform
+            username = profile.username if profile else str(metadata.get("username") or entity.value).strip().lstrip("@")
+            declared_ownership = account_ownership(declared_seeds, platform, username)
+            # Keep support for records that already persisted this explicit
+            # declaration before the target's structured input was available.
+            if (declared_ownership["status"] != "subject_declared"
+                    and ownership.get("status") == "subject_declared"):
+                declared_ownership = ownership
+
         strong_email = any(signal['kind'] == 'email' and signal['role'] in STRONG_EMAIL_ROLES
             for signal in affinity['signals'])
         strong_phone = any(signal['kind'] == 'phone' and signal['role'] in STRONG_PHONE_ROLES
             for signal in affinity['signals'])
         rel_type, rel_label = 'discovered_from', 'hallazgo derivado'
-        if affinity['level'] == 'strong':
+        if declared_ownership.get("status") == "subject_declared":
+            rel_type, rel_label = 'subject_declared_account', 'cuenta declarada por la persona'
+        elif affinity['level'] == 'strong':
             if strong_email:
                 rel_type, rel_label = 'target_email_match', 'correo coincidente observado'
             elif strong_phone:
@@ -156,7 +179,10 @@ async def build_evidence_graph(investigation):
                 style=EDGE_STYLES.get(rel_type, EDGE_STYLES["discovered_from"]),
                 evidence={"source_tool": entity.source_tool, "signals": affinity['signals'],
                     "visual_weight": affinity['weight'], "semantics": affinity['semantics'],
-                    "ownership_status": "unverified"},
+                    "ownership_status": declared_ownership.get("status", "unverified"),
+                    **({"declared_seed": declared_ownership.get("seed"),
+                       "ownership_basis": "exact_declared_platform_and_username"}
+                       if declared_ownership.get("status") == "subject_declared" else {})},
             )
         )
 
