@@ -1,0 +1,350 @@
+{
+  "date": "2026-10-16T04:22:55.634056+00:00",
+  "live_validation": "executed_see_per_actor_results",
+  "reserved_charge_usd": 0.08,
+  "runs": [
+    {
+      "platform": "instagram",
+      "actor": "apify/instagram-profile-scraper",
+      "requested_build": "latest",
+      "profiles_requested": 1,
+      "input": {
+        "usernames": [
+          "apify"
+        ],
+        "includeAboutSection": false
+      },
+      "status": "SUCCEEDED",
+      "reserved_charge_usd": 0.02,
+      "actor_id": "dSCLg0C3YEZ83HzYX",
+      "run_id": "RU86UeGPoyp95VcYV",
+      "dataset_id": "qANXo8G2yTTqaT2Ch",
+      "build_id": "Hxfbgi06zYgaj3VEO",
+      "build_number": "0.0.643",
+      "retrieved_at": "2026-10-16T04:23:01.667444+00:00",
+      "error": null,
+      "usage": {
+        "usageTotalUsd": 0,
+        "computeUnits": 0.00016625,
+        "runTimeSecs": 4.788
+      },
+      "items_read": 1,
+      "elapsed_seconds": 6.033606406999752,
+      "observed_schema": [
+        "biography",
+        "businessCategoryName",
+        "externalUrls",
+        "fbid",
+        "followersCount",
+        "followsCount",
+        "fullName",
+        "highlightReelCount",
+        "id",
+        "igtvVideoCount",
+        "inputUrl",
+        "isBusinessAccount",
+        "joinedRecently",
+        "latestIgtvVideos",
+        "latestPosts",
+        "postsCount",
+        "private",
+        "profilePicUrl",
+        "profilePicUrlHD",
+        "relatedProfiles",
+        "url",
+        "username",
+        "verified"
+      ],
+      "nested_schema": {
+        "authorMeta": [],
+        "aboutChannelInfo": []
+      },
+      "profiles_obtained": 1,
+      "useful_content_items": 0,
+      "row_errors": 0,
+      "validation": "live_profile_validated",
+      "content_validation": "not_observed"
+    },
+    {
+      "platform": "tiktok",
+      "actor": "clockworks/tiktok-profile-scraper",
+      "requested_build": "latest",
+      "profiles_requested": 1,
+      "input": {
+        "profiles": [
+          "apify"
+        ],
+        "resultsPerPage": 1,
+        "profileScrapeSections": [
+          "videos"
+        ],
+        "profileSorting": "latest",
+        "maxFollowersPerProfile": 0,
+        "maxFollowingPerProfile": 0,
+        "commentsPerPost": 0,
+        "topLevelCommentsPerPost": 0,
+        "maxRepliesPerComment": 0,
+        "shouldDownloadVideos": false,
+        "shouldDownloadCovers": false,
+        "shouldDownloadSlideshowImages": false,
+        "shouldDownloadAvatars": false,
+        "downloadSubtitlesOptions": "NEVER_DOWNLOAD_SUBTITLES"
+      },
+      "status": "SUCCEEDED",
+      "reserved_charge_usd": 0.02,
+      "actor_id": "0FXVyOXXEmdGcV88a",
+      "run_id": "aPNBxdgfQmJc11XAW",
+      "dataset_id": "DuNttKzjkNTZi0aag",
+      "build_id": "GQg8ahVdFDW60oHoA",
+      "build_number": "0.0.489",
+      "retrieved_at": "2026-10-16T04:23:22.165938+00:00",
+      "error": null,
+      "usage": {
+        "usageTotalUsd": 0.003,
+        "computeUnits": 0.021705555555555554,
+        "runTimeSecs": 19.535
+      },
+      "items_read": 1,
+      "elapsed_seconds": 20.495809261999966,
+      "observed_schema": [
+        "authorMeta",
+        "collectCount",
+        "commentCount",
+        "commentsDatasetUrl",
+        "createTime",
+        "createTimeISO",
+        "detailedMentions",
+        "diggCount",
+        "effectStickers",
+        "fromProfileSection",
+        "hasTikTokShopProduct",
+        "hashtags",
+        "id",
+        "input",
+        "isAd",
+        "isPinned",
+        "isSlideshow",
+        "isSponsored",
+        "isStory",
+        "mediaUrls",
+        "mentions",
+        "musicMeta",
+        "playCount",
+        "repostCount",
+        "shareCount",
+        "shortDramaSeriesInfo",
+        "text",
+        "textLanguage",
+        "videoMeta",
+        "webVideoUrl"
+      ],
+      "nested_schema": {
+        "authorMeta": [
+          "avatar",
+          "bioLink",
+          "commerceUserInfo",
+          "createTime",
+          "digg",
+          "fans",
+          "followDatasetUrl",
+          "following",
+          "friends",
+          "hasActiveStory",
+          "heart",
+          "id",
+          "name",
+          "nickName",
+          "originalAvatarUrl",
+          "privateAccount",
+          "profileUrl",
+          "roomId",
+          "signature",
+          "ttSeller",
+          "verified",
+          "video"
+        ],
+        "aboutChannelInfo": []
+      },
+      "profiles_obtained": 1,
+      "useful_content_items": 1,
+      "row_errors": 0,
+      "validation": "live_profile_validated",
+      "content_validation": "observed"
+    },
+    {
+      "platform": "threads",
+      "actor": "apify/threads-profile-api-scraper",
+      "requested_build": "latest",
+      "profiles_requested": 1,
+      "input": {
+        "usernames": [
+          "apify"
+        ]
+      },
+      "status": "SUCCEEDED",
+      "reserved_charge_usd": 0.02,
+      "actor_id": "kJdK90pa2hhYYrCK5",
+      "run_id": "VPq2A8YqLb1x9FDhs",
+      "dataset_id": "QqhX5xnIXkFZdcHny",
+      "build_id": "aOYXGNYLwSVYUMpGv",
+      "build_number": "0.0.12",
+      "retrieved_at": "2026-10-16T04:24:10.930474+00:00",
+      "error": null,
+      "usage": {
+        "usageTotalUsd": 0.005,
+        "computeUnits": 0.01283361111111111,
+        "runTimeSecs": 46.201
+      },
+      "items_read": 1,
+      "elapsed_seconds": 48.75685405700278,
+      "observed_schema": [
+        "error",
+        "inputUrl",
+        "isProfileNotExist"
+      ],
+      "nested_schema": {
+        "authorMeta": [],
+        "aboutChannelInfo": []
+      },
+      "profiles_obtained": 0,
+      "useful_content_items": 0,
+      "row_errors": 1,
+      "validation": "failed_or_incomplete"
+    },
+    {
+      "platform": "youtube",
+      "actor": "streamers/youtube-channel-scraper",
+      "requested_build": "latest",
+      "profiles_requested": 1,
+      "input": {
+        "startUrls": [
+          {
+            "url": "https://youtube.com/@apify"
+          }
+        ],
+        "maxResults": 1,
+        "maxResultsShorts": 0,
+        "maxResultStreams": 0,
+        "sortVideosBy": "NEWEST"
+      },
+      "status": "SUCCEEDED",
+      "reserved_charge_usd": 0.02,
+      "actor_id": "67Q6fmd8iedTVcCwY",
+      "run_id": "tU4QgQXZxVTUTjxQl",
+      "dataset_id": "MpW18Rfx7MNtAQ1uh",
+      "build_id": "wSsaj4bMkqWgDcubu",
+      "build_number": "0.0.248",
+      "retrieved_at": "2026-10-16T04:24:34.016718+00:00",
+      "error": null,
+      "usage": {
+        "usageTotalUsd": 0,
+        "computeUnits": 0.006031111111111111,
+        "runTimeSecs": 21.712
+      },
+      "items_read": 1,
+      "elapsed_seconds": 23.086204884002655,
+      "observed_schema": [
+        "aboutChannelInfo",
+        "channelAvatarUrl",
+        "channelBannerUrl",
+        "channelDescription",
+        "channelDescriptionLinks",
+        "channelId",
+        "channelJoinedDate",
+        "channelLocation",
+        "channelName",
+        "channelTotalVideos",
+        "channelTotalViews",
+        "channelUrl",
+        "channelUsername",
+        "date",
+        "duration",
+        "fromChannelListPage",
+        "fromYTUrl",
+        "id",
+        "input",
+        "inputChannelUrl",
+        "isAgeRestricted",
+        "isChannelVerified",
+        "numberOfSubscribers",
+        "order",
+        "progressKey",
+        "standardizedUrl",
+        "thumbnailUrl",
+        "title",
+        "type",
+        "url",
+        "viewCount"
+      ],
+      "nested_schema": {
+        "authorMeta": [],
+        "aboutChannelInfo": [
+          "channelAvatarUrl",
+          "channelBannerUrl",
+          "channelDescription",
+          "channelDescriptionLinks",
+          "channelId",
+          "channelJoinedDate",
+          "channelLocation",
+          "channelName",
+          "channelTotalVideos",
+          "channelTotalViews",
+          "channelUrl",
+          "channelUsername",
+          "inputChannelUrl",
+          "isAgeRestricted",
+          "isChannelVerified",
+          "numberOfSubscribers"
+        ]
+      },
+      "profiles_obtained": 1,
+      "useful_content_items": 1,
+      "row_errors": 0,
+      "validation": "live_profile_validated",
+      "content_validation": "observed"
+    }
+  ],
+  "validated_builds": {
+    "instagram": "0.0.643",
+    "tiktok": "0.0.489",
+    "youtube": "0.0.248"
+  },
+  "platforms": {
+    "instagram": {
+      "status": "live_profile_validated",
+      "build": "0.0.643",
+      "usageTotalUsd": 0,
+      "elapsed_seconds": 6.033606406999752
+    },
+    "tiktok": {
+      "status": "live_profile_validated",
+      "build": "0.0.489",
+      "usageTotalUsd": 0.003,
+      "elapsed_seconds": 20.495809261999966
+    },
+    "threads": {
+      "status": "failed_or_incomplete",
+      "build": "0.0.12",
+      "usageTotalUsd": 0.005,
+      "elapsed_seconds": 48.75685405700278
+    },
+    "youtube": {
+      "status": "live_profile_validated",
+      "build": "0.0.248",
+      "usageTotalUsd": 0,
+      "elapsed_seconds": 23.086204884002655
+    },
+    "reddit": {
+      "status": "not_live_validated",
+      "build": null,
+      "usageTotalUsd": null,
+      "elapsed_seconds": null
+    },
+    "twitter": {
+      "status": "not_live_validated",
+      "build": null,
+      "usageTotalUsd": null,
+      "elapsed_seconds": null
+    }
+  }
+}

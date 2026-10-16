@@ -68,12 +68,12 @@ puede optar por **no** activar una capacidad que el Actor ofrece.
 
 | Plataforma | Decisión | Actor evaluado | Entradas / salida útil | Lookup / perfil / posts | Comentarios / listas de audiencia | Uso en esta entrega |
 |---|---|---|---|---|---|---|
-| Instagram | **hybrid** | `apify/instagram-profile-scraper` | username → perfil, bio, enlaces, últimos posts | sí / sí / sí | unknown / unknown | Integrado; declared directo, discovered native-first; sin add-on About |
-| TikTok | **hybrid** | `clockworks/tiktok-profile-scraper` | username → authorMeta + vídeos/captions | sí / sí / sí | sí / sí | Integrado; comentarios y audiencia desactivados |
-| Threads | **hybrid** | `apify/threads-profile-api-scraper` | username → perfil y posts anidados | sí / sí / sí | unknown / unknown | Integrado; se descarta cualquier perfil privado |
-| YouTube | **hybrid** | `streamers/youtube-channel-scraper` | URL canal → canal y vídeos | mediante URL / sí / sí | no / no | Integrado; sin shorts, streams, descargas o CAPTCHA de correo |
-| Reddit | **native**; Apify diferido | `apify/reddit-scraper` | username/URL → perfil, posts, comentarios en modos separados | sí / sí / sí | sí / unknown | Prioridad alta; contrato oficial reevaluado; sin token para validar utilidad/coste real |
-| X/Twitter | **native**; Apify diferido | `apidojo/twitter-profile-scraper` | username/URL → autor, tweets y replies | sí / sí / sí | replies sí / unknown | No integrado; consulta base facturable, calidad/latencia sin medir |
+| Instagram | **hybrid** | `apify/instagram-profile-scraper` | username → perfil, bio, enlaces, últimos posts | sí / sí / sí | unknown / unknown | Perfil validado en vivo; 0 contenidos útiles observados; build `0.0.643` fijado |
+| TikTok | **hybrid** | `clockworks/tiktok-profile-scraper` | username → authorMeta + vídeos/captions | sí / sí / sí | sí / sí | Perfil + 1 vídeo validados; build `0.0.489` fijado; comentarios y audiencia desactivados |
+| Threads | **hybrid** | `apify/threads-profile-api-scraper` | username → perfil y posts anidados | sí / sí / sí | unknown / unknown | Run real; el Actor devolvió `isProfileNotExist` para la cuenta de prueba; sin perfil validado |
+| YouTube | **hybrid** | `streamers/youtube-channel-scraper` | URL canal → canal y vídeos | mediante URL / sí / sí | no / no | Perfil + 1 vídeo validados; build `0.0.248` fijado; sin shorts, streams, descargas o CAPTCHA de correo |
+| Reddit | **native**; Apify diferido | `apify/reddit-scraper` | username/URL → perfil, posts, comentarios en modos separados | sí / sí / sí | sí / unknown | Prioridad alta; contrato oficial reevaluado; no incluido en los cuatro runs live |
+| X/Twitter | **native**; Apify diferido | `apidojo/twitter-profile-scraper` | username/URL → autor, tweets y replies | sí / sí / sí | replies sí / unknown | No integrado; esquema reevaluado, sin run live; calidad/latencia sin medir |
 | Facebook personal | **native**; este Actor **not worth using** | `apify/facebook-posts-scraper` | URL de Page pública → posts de Page | no / no para persona / sí Page | no en el contrato revisado / no | El input schema dice Pages públicas, no perfiles personales, aunque el resumen comercial es más amplio |
 | LinkedIn | **native**; Apify diferido | `harvestapi/linkedin-profile-scraper` | URL/public identifier → detalle profesional | sí / sí / no | no / unknown | No integrado; evaluar procedencia pública; el modo email/SMTP queda excluido |
 | Telegram | **native** | ninguno seleccionado | verificador público especializado existente | existente | no nuevo | No justifica duplicar el motor propio |
@@ -459,10 +459,28 @@ Contratos de batch consultados:
 
 ### Live validation y builds
 
-El backend no dispone de `APIFY_TOKEN`: **0 runs reales**. Todos los Actors:
-`not_live_validated`; coste, latencia y build validado **null / no medidos**.
-Informe versionado: [apify-phase21-validation-2026-10-15.json](audits/apify-phase21-validation-2026-10-15.json).
-No se fija un build inventado ni se usan las métricas sintéticas de tests como reales.
+El 16-10-2026 se ejecutó un único run por cada Actor integrado, sobre la cuenta
+pública `apify`, con tope de USD 0.02 por run y USD 0.08 para la tanda. Los cuatro
+terminaron `SUCCEEDED`; usageTotalUsd reportado sumó **USD 0.008** (puede ser
+eventual y no equivale a la factura final). Los 3 perfiles normalizados fueron
+Instagram, TikTok y YouTube. TikTok y YouTube dieron un contenido útil cada uno;
+Instagram no produjo contenido útil. Reddit/X no se ejecutaron en esta tanda. Threads devolvió una fila de error con
+`isProfileNotExist`, sin perfil: ese Actor sigue sin live validation exitosa.
+
+| Actor | Build/run | Perfiles | Contenido útil | usageTotalUsd informado | Latencia total | Resultado |
+|---|---|---:|---:|---:|---:|---|
+| Instagram | `0.0.643` / `RU86UeGPoyp95VcYV` | 1/1 | 0 | USD 0 | 6.03 s | Perfil observado; contenido no observado |
+| TikTok | `0.0.489` / `aPNBxdgfQmJc11XAW` | 1/1 | 1 vídeo | USD 0.003 | 20.50 s | Perfil y vídeo observados |
+| Threads | `0.0.12` / `VPq2A8YqLb1x9FDhs` | 0/1 | 0 | USD 0.005 | 48.76 s | Run completado; cuenta de prueba no encontrada |
+| YouTube | `0.0.248` / `tU4QgQXZxVTUTjxQl` | 1/1 | 1 vídeo | USD 0 | 23.09 s | Canal y vídeo observados |
+
+Build IDs, datasets, Actor IDs, schemas y filas/errores resumidos constan en
+[el informe live](audits/apify-phase21-validation-2026-10-16.json). No se guardan
+filas crudas. Los USD 0 son el usageTotalUsd reportado por Apify en esa consulta,
+no una garantía de coste final. `APIFY_ACTOR_BUILDS` queda fijado para Instagram,
+TikTok y YouTube en `.env.example` y en el `.env` local ignorado por Git. Threads
+no se fija porque el perfil no se validó. El preflight inicial sin token permanece
+registrado por separado en [el informe inicial](audits/apify-phase21-validation-2026-10-15.json).
 
 Comando sin token, sin red ni gasto (usar ruta de informe nueva):
 
@@ -478,7 +496,7 @@ este benchmark, ejecutar una sola vez (reemplazar handles de ejemplo):
 .venv/bin/python scripts/apify_live_benchmark.py \
   --account instagram:PUBLIC_TEST_HANDLE --account tiktok:PUBLIC_TEST_HANDLE \
   --account threads:PUBLIC_TEST_HANDLE --account youtube:PUBLIC_TEST_HANDLE \
-  --content-limit 1 --charge-per-run 0.03 --charge-total 0.12 \
+  --content-limit 1 --charge-per-run 0.02 --charge-total 0.08 \
   --output /tmp/apify-four-platforms.json
 ```
 
@@ -508,14 +526,16 @@ Reddit/X se etiquetan probe-only: conteos útiles pendientes de revisión, no se
 consideran adapters ni builds validados. En los cuatro integrados, éxito con
 todos los perfiles observados produce `APIFY_ACTOR_BUILDS={platform: buildNumber}`;
 la validación de contenido se registra aparte y puede ser `not_observed`.
-Copiar ese mapa a configuración tras revisar el informe y conservar run/build ID,
-fecha, coste y latencia. `latest` sigue solo como fallback sin garantía de feria.
+Los builds Instagram/TikTok/YouTube ya están fijados tras revisar el informe;
+conservar run/build ID, fecha, coste y latencia. `latest` sigue como fallback sin garantía de feria.
 Los cargos reportados pueden requerir consolidación posterior en Apify Console.
 
 ### Riesgos pendientes para Fase 3
 
-Validación real y pin de builds pendientes; cobertura de contenido Threads/Instagram
-puede variar; filas planas vacías no prueban inexistencia del perfil. Reddit/X
+Reddit/X siguen pendientes de validación. Instagram y YouTube validaron perfil,
+pero usageTotalUsd reportó USD 0 y no hubo cargo positivo registrado; revisar la
+consolidación en Console. Instagram no produjo contenido útil y Threads falló para
+la cuenta de prueba. Una fila plana vacía no prueba inexistencia del perfil. Reddit/X
 necesitan medición y parsers contra outputs reales antes de habilitarse.
 El ledger de investigación sigue sin checkpoint transaccional pre-POST resistente
 a caída dura y sin coordinación distribuida multi-worker. Configurar cuotas

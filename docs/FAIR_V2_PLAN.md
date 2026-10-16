@@ -235,14 +235,21 @@ ApifyAdapter → ToolFinding. [Detalle y comandos reproducibles](APIFY.md#fase-2
   [Contrato actual](https://apify.com/apidojo/twitter-profile-scraper/input-schema).
 - LinkedIn sigue diferido; Facebook sigue nativo por contrato de Pages públicas.
   SearchDorker/Maigret y todos los especialistas fuertes siguen disponibles.
-- Live validation: **APIFY_TOKEN ausente; 0 runs pagados; todos not_live_validated**.
-  Costes y latencias reales: no medidos; builds probados: ninguno.
-  [Informe versionado](audits/apify-phase21-validation-2026-10-15.json).
-  Script `backend/scripts/apify_live_benchmark.py`: límites pequeños, reserva antes
-  del POST, reportes exclusivos, status/build/tiempo/uso/schema/conteos. Exporta
-  mapa APIFY_ACTOR_BUILDS solo tras observar perfiles válidos; latest es fallback.
-- Riesgos para Fase 3: medir contenido y builds reales, promover Reddit/X solamente
-  tras evidencia, ledger transaccional pre-POST y coordinación multi-worker pendientes.
+- Live validation ejecutada el 16-10-2026: un perfil público `apify` por cada uno
+  de los cuatro Actors integrados; límite USD 0.02/run y USD 0.08 total reservado.
+  Instagram/TikTok/YouTube observaron perfiles; TikTok/YouTube devolvieron un vídeo
+  útil cada uno. Threads run `SUCCEEDED`, pero indicó `isProfileNotExist`; no se
+  valida ese perfil/Actor para la feria. UsageTotalUsd informado: Instagram 0,
+  TikTok 0.003, Threads 0.005, YouTube 0 USD; suma USD 0.008 informada (no factura
+  final garantizada). Latencias: 6.03, 20.50, 48.76 y 23.09 s respectivamente.
+  Builds fijados: Instagram `0.0.643`, TikTok `0.0.489`, YouTube `0.0.248`.
+  [Informe con run/build IDs y schema](audits/apify-phase21-validation-2026-10-16.json).
+- Reddit/X permanecen diferidos y no se ejecutaron en la tanda de cuatro runs;
+  el script `backend/scripts/apify_live_benchmark.py` incluye probes explícitos
+  con cuotas pequeñas y reportes sin filas crudas.
+- Riesgos para Fase 3: confirmar cargos en Console, conseguir contenido Instagram y
+  una cuenta de prueba Threads pública válida, medir Reddit/X y mantener el ledger
+  transaccional pre-POST y la coordinación multi-worker pendientes.
   Los límites del benchmark son por invocación, no un ledger entre informes distintos.
 
 Validación Fase 2.1: **91 pruebas Apify/benchmark**, **18 PostgreSQL/REST/MCP**
