@@ -27,6 +27,8 @@ RUN uv sync --project integrations/ghunt --frozen --no-dev --python /usr/local/b
 COPY app/ ./app/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./
+COPY scripts/bootstrap_personmap_lite.py ./scripts/bootstrap_personmap_lite.py
+COPY scripts/smoke_personmap_lite.py ./scripts/smoke_personmap_lite.py
 COPY scripts/ghunt_session.py ./scripts/ghunt_session.py
 
 # --- Stage 2: runtime ---
@@ -49,6 +51,8 @@ COPY --from=builder /build/.venv /app/.venv
 COPY --from=builder /build/app /app/app
 COPY --from=builder /build/migrations /app/migrations
 COPY --from=builder /build/alembic.ini /app/alembic.ini
+COPY --from=builder /build/scripts/bootstrap_personmap_lite.py /app/scripts/bootstrap_personmap_lite.py
+COPY --from=builder /build/scripts/smoke_personmap_lite.py /app/scripts/smoke_personmap_lite.py
 COPY --from=builder /build/integrations/ghunt /app/integrations/ghunt
 COPY --from=builder /build/scripts/ghunt_session.py /app/scripts/ghunt_session.py
 

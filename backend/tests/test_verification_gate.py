@@ -14,6 +14,7 @@ import pytest_asyncio
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -101,6 +102,20 @@ async def add_finding(workspace, finding: ToolFinding) -> Entity:
         rows = await persist_findings(str(workspace["investigation_id"]), [finding], target, db)
         await db.commit()
         return rows[0]
+
+
+async def decide_pending_as_uncertain(workspace, *, except_ids: set[str] | None = None) -> None:
+    except_ids = except_ids or set()
+    review = (await workspace["client"].get(
+        f"/api/v1/investigations/{workspace['investigation_id']}/review"
+    )).json()
+    for candidate in review["candidates"]:
+        if candidate["decision"] is None and candidate["id"] not in except_ids:
+            response = await workspace["client"].patch(
+                f"/api/v1/investigations/{workspace['investigation_id']}/review/{candidate['id']}",
+                json={"decision": "uncertain"},
+            )
+            assert response.status_code == 200
 
 
 async def seed_findings(workspace):
@@ -222,6 +237,11 @@ async def test_reject_and_uncertain_retain_raw_findings_and_are_excluded_from_da
         assert (await db.get(Entity, entities["instagram"].id)).metadata_info["provenance"]["origin"] == "automatic"
     before_final = await workspace["client"].get(f"/api/v1/investigations/{workspace['investigation_id']}/reviewed-footprint")
     assert before_final.status_code == 409 and before_final.json()["detail"]["code"] == "review_not_finalized"
+    blocked = await workspace["client"].post(f"/api/v1/investigations/{workspace['investigation_id']}/review/finalize")
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["code"] == "review_has_pending_candidates"
+    assert blocked.json()["detail"]["pending"] == 3
+    await decide_pending_as_uncertain(workspace)
     finalized = await workspace["client"].post(f"/api/v1/investigations/{workspace['investigation_id']}/review/finalize")
     assert finalized.status_code == 200
     dataset_response = await workspace["client"].get(f"/api/v1/investigations/{workspace['investigation_id']}/reviewed-footprint")
@@ -230,7 +250,9 @@ async def test_reject_and_uncertain_retain_raw_findings_and_are_excluded_from_da
     assert str(entities["instagram"].id) not in {item["entity_id"] for item in dataset["accounts"]}
     assert str(entities["email"].id) not in {item["entity_id"] for item in dataset["emails"]}
     assert {item["entity_id"] for item in dataset["review"]["rejected"]} == {str(entities["instagram"].id)}
-    assert {item["entity_id"] for item in dataset["review"]["uncertain"]} == {str(entities["email"].id)}
+    uncertain_ids = {item["entity_id"] for item in dataset["review"]["uncertain"]}
+    assert str(entities["email"].id) in uncertain_ids
+    assert len(uncertain_ids) == 4
     assert {item["email"] for item in dataset["breaches"]} == {"declared@example.org"}
     assert dataset["execution"]["acquisition_partial"] is True
 
@@ -242,7 +264,9 @@ async def test_confirmed_account_inherits_public_content_but_not_same_alias_on_o
     await workspace["client"].patch(
         f"/api/v1/investigations/{workspace['investigation_id']}/review/{entities['instagram'].id}",
         json={"decision": "confirmed"})
-    await workspace["client"].post(f"/api/v1/investigations/{workspace['investigation_id']}/review/finalize")
+    await decide_pending_as_uncertain(workspace, except_ids={str(entities["instagram"].id)})
+    finalized = await workspace["client"].post(f"/api/v1/investigations/{workspace['investigation_id']}/review/finalize")
+    assert finalized.status_code == 200
     dataset = (await workspace["client"].get(f"/api/v1/investigations/{workspace['investigation_id']}/reviewed-footprint")).json()
     account_ids = {item["entity_id"] for item in dataset["accounts"]}
     assert str(entities["instagram"].id) in account_ids
@@ -269,7 +293,11 @@ async def test_breach_uses_attributed_email_and_academic_profile_includes_verifi
     await workspace["client"].patch(
         f"/api/v1/investigations/{workspace['investigation_id']}/review/{entities['academic_profile'].id}",
         json={"decision": "confirmed"})
-    await workspace["client"].post(f"/api/v1/investigations/{workspace['investigation_id']}/review/finalize")
+    await decide_pending_as_uncertain(workspace, except_ids={
+        str(entities["email"].id), str(entities["academic_profile"].id)
+    })
+    finalized = await workspace["client"].post(f"/api/v1/investigations/{workspace['investigation_id']}/review/finalize")
+    assert finalized.status_code == 200
     dataset = (await workspace["client"].get(f"/api/v1/investigations/{workspace['investigation_id']}/reviewed-footprint")).json()
     assert {item["email"] for item in dataset["breaches"]} == {"declared@example.org", "new@example.org"}
     assert [item["value"] for item in dataset["academic_profiles"]] == ["https://openalex.org/A123"]
@@ -290,7 +318,9 @@ async def test_decision_changes_and_new_candidates_do_not_erase_prior_review(fai
     async with workspace["factory"]() as db:
         row = (await db.execute(select(ReviewDecision).where(ReviewDecision.entity_id == entities["instagram"].id))).scalar_one()
         assert row.decision == "rejected" and len(row.history) == 2
-    await workspace["client"].post(f"/api/v1/investigations/{workspace['investigation_id']}/review/finalize")
+    await decide_pending_as_uncertain(workspace)
+    finalized = await workspace["client"].post(f"/api/v1/investigations/{workspace['investigation_id']}/review/finalize")
+    assert finalized.status_code == 200
     new_entity = await add_finding(workspace, ToolFinding(entity_type="social_account", platform="instagram",
         value="https://instagram.com/new_after_finalize", metadata_info={"username": "new_after_finalize",
             "source_tool": "username_finder"}, evidence_urls=["https://instagram.com/new_after_finalize"]))
@@ -325,3 +355,57 @@ async def test_declared_is_not_patchable_tools_cannot_confirm_and_normal_mode_is
     assert forged_body.status_code == 422
     normal = await workspace["client"].get(f"/api/v1/investigations/{workspace['normal_id']}/review")
     assert normal.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_review_decision_check_unique_valid_values_and_direct_sql_rejection(fair_review_workspace):
+    workspace = fair_review_workspace
+    entities = await seed_findings(workspace)
+    base = f"/api/v1/investigations/{workspace['investigation_id']}/review"
+    for entity, decision in ((entities["instagram"], "confirmed"),
+                             (entities["tiktok"], "rejected"),
+                             (entities["email"], "uncertain")):
+        response = await workspace["client"].patch(f"{base}/{entity.id}", json={"decision": decision})
+        assert response.status_code == 200
+
+    async with workspace["factory"]() as db:
+        rows = list((await db.scalars(select(ReviewDecision).where(
+            ReviewDecision.investigation_id == workspace["investigation_id"]
+        ))).all())
+        assert {row.decision for row in rows} == {"confirmed", "rejected", "uncertain"}
+        with pytest.raises(IntegrityError):
+            await db.execute(text("""
+                INSERT INTO review_decisions (id, investigation_id, entity_id, decision, decided_at)
+                VALUES (:id, :investigation_id, :entity_id, 'maybe', :decided_at)
+            """), {"id": uuid.uuid4(), "investigation_id": workspace["investigation_id"],
+                   "entity_id": entities["phone"].id, "decided_at": datetime.now(timezone.utc)})
+        await db.rollback()
+        with pytest.raises(IntegrityError):
+            db.add(ReviewDecision(investigation_id=workspace["investigation_id"],
+                entity_id=entities["instagram"].id, decision="confirmed", decided_at=datetime.now(timezone.utc)))
+            await db.flush()
+        await db.rollback()
+
+
+@pytest.mark.asyncio
+async def test_review_decision_foreign_keys_cascade_on_entity_and_investigation_delete(fair_review_workspace):
+    workspace = fair_review_workspace
+    entities = await seed_findings(workspace)
+    base = f"/api/v1/investigations/{workspace['investigation_id']}/review"
+    await workspace["client"].patch(f"{base}/{entities['instagram'].id}", json={"decision": "confirmed"})
+    await workspace["client"].patch(f"{base}/{entities['tiktok'].id}", json={"decision": "rejected"})
+    async with workspace["factory"]() as db:
+        instagram_decision = (await db.execute(select(ReviewDecision).where(
+            ReviewDecision.entity_id == entities["instagram"].id))).scalar_one()
+        await db.delete(await db.get(Entity, entities["instagram"].id))
+        await db.commit()
+        assert (await db.execute(select(ReviewDecision).where(
+            ReviewDecision.id == instagram_decision.id))).scalar_one_or_none() is None
+
+        tiktok_decision = (await db.execute(select(ReviewDecision).where(
+            ReviewDecision.entity_id == entities["tiktok"].id))).scalar_one()
+        investigation = await db.get(Investigation, workspace["investigation_id"])
+        await db.delete(investigation)
+        await db.commit()
+        assert (await db.execute(select(ReviewDecision).where(
+            ReviewDecision.id == tiktok_decision.id))).scalar_one_or_none() is None

@@ -22,3 +22,7 @@ export function applyReviewDecision(
     },
   };
 }
+
+export function canFinalizeReview(acquisitionFinished: boolean, pendingCount: number): boolean {
+  return acquisitionFinished && pendingCount === 0;
+}

@@ -30,7 +30,7 @@ import type {
   ReviewCandidate,
   ReviewDecisionValue,
 } from "@/lib/types";
-import { applyReviewDecision } from "@/lib/reviewState";
+import { applyReviewDecision, canFinalizeReview } from "@/lib/reviewState";
 import styles from "./VerificationGate.module.css";
 
 const DECISION_OPTIONS: Array<{
@@ -433,13 +433,19 @@ export function VerificationGate({ investigationId }: { investigationId: string 
               {isComplete && <button type="button" className={styles.downloadButton} onClick={() => void handleDownload()}>
                 <Download size={14} aria-hidden="true" /> {downloaded ? "Descargado" : "Descargar dataset"}
               </button>}
-              <button type="button" className={styles.finalizeButton} disabled={!review.fair.acquisition_finished || finalizing || busyId !== null}
+              <button type="button" className={styles.finalizeButton}
+                disabled={!canFinalizeReview(review.fair.acquisition_finished, review.counts.pending) || finalizing || busyId !== null}
                 onClick={() => void handleFinalize()}>
                 <ShieldCheck size={15} aria-hidden="true" />
                 {finalizing ? "Guardando…" : isComplete ? "Actualizar huella" : "Finalizar revisión"}
               </button>
             </div>
           </footer>
+          {review.fair.acquisition_finished && review.counts.pending > 0 && (
+            <p className={styles.waitNote} role="status">
+              Revisa o marca como “No estoy seguro” los {review.counts.pending} elementos pendientes.
+            </p>
+          )}
           {!review.fair.acquisition_finished && <p className={styles.waitNote}>Puedes revisar resultados ahora; finalizar estará disponible al terminar Fair Mode.</p>}
         </section>
       </div>

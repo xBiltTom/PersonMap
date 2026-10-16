@@ -329,10 +329,10 @@ excluye cuentas declaradas y adjunta explicación, fuentes y URLs saneadas.
 `PATCH /api/v1/investigations/{id}/review/{entity_id}` acepta únicamente una
 decisión (`confirmed`, `rejected`, `uncertain`); el servidor resuelve la entidad,
 persiste el estado activo y guarda cambios anteriores en `review_decisions`.
-`POST .../review/finalize` cierra explícitamente la revisión, incluso si quedan
-elementos dudosos o pendientes. `GET .../reviewed-footprint` devuelve solo el
-dataset final y responde 409 antes de finalizar o cuando aparece un candidato
-nuevo tras el cierre.
+`POST .../review/finalize` cierra explícitamente la revisión cuando no quedan
+pendientes; permite elementos `uncertain`, que quedan fuera de la atribución.
+`GET .../reviewed-footprint` devuelve solo el dataset final y responde 409 antes
+de finalizar o cuando aparece un candidato nuevo tras el cierre.
 
 Las decisiones automáticas nunca se aceptan por metadata de herramienta: la
 operación humana escribe `provenance.status` manteniendo `origin=automatic`.
@@ -347,6 +347,25 @@ pendientes y decisiones agrupadas, resumen de estados, evidencia desplegable,
 aviso de fuentes Fair incompletas, acción de finalizar y descarga del dataset.
 La finalización acepta adquisición parcial y conserva el estado por investigación.
 Investigaciones normales siguen sin habilitar esta API.
+
+## Fase 4.1 — Fair Database Isolation & Clean Bootstrap (implementada)
+
+PersonMap Lite usa los mismos modelos y migraciones en una base PostgreSQL
+dedicada `personmap_lite`. Cada proceso recibe una sola `DATABASE_URL`; la base
+legacy conserva su nombre configurado actual `person_map`. El bootstrap crea
+Lite si falta, aplica el historial Alembic desde vacío, verifica el único head
+`a41b9c2e7d63` y protege el reset con validación estricta del nombre. Una
+migración nueva impone CHECK para `confirmed`, `rejected` y `uncertain`.
+
+La finalización del Verification Gate rechaza con 409 cualquier revisión con
+candidatos pendientes. El sujeto debe elegir una de las tres decisiones; la UI
+deshabilita el cierre y muestra el contador. Los comandos reproducibles y el
+override de Compose están en [FAIR_DATABASE.md](FAIR_DATABASE.md). El smoke
+test `backend/scripts/smoke_personmap_lite.py` cubre hallazgos fixture,
+observaciones, decisiones humanas y lectura del dataset únicamente en Lite.
+
+Fases 5–7 siguen pendientes: Exposure Lens, reconstrucción, Graph V2 y Frontend
+Fair Edition.
 
 ## Fase 5 — Exposure Lens (pendiente)
 

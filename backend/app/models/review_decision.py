@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from app.core.database import Base
 
@@ -12,6 +12,10 @@ class ReviewDecision(Base):
     __tablename__ = "review_decisions"
     __table_args__ = (
         UniqueConstraint("investigation_id", "entity_id", name="uq_review_decision_entity"),
+        CheckConstraint(
+            "decision IN ('confirmed', 'rejected', 'uncertain')",
+            name="ck_review_decisions_valid_decision",
+        ),
     )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

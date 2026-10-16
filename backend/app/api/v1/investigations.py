@@ -145,6 +145,15 @@ async def finalize_investigation_review(id: UUID, db: AsyncSession = Depends(get
     investigation = await _review_investigation(id, db, lock=True)
     _require_fair_finished(investigation)
     response = await verification_gate.get_review_response(db, investigation, investigation.target)
+    if response.counts.pending:
+        raise HTTPException(409, detail={
+            "code": "review_has_pending_candidates",
+            "pending": response.counts.pending,
+            "message": (
+                f"Revisa o marca como ‘No estoy seguro’ los {response.counts.pending} "
+                f"elementos pendientes antes de finalizar."
+            ),
+        })
     now = datetime.now(timezone.utc)
     dataset = await verification_gate.build_dataset(db, investigation, investigation.target, response.candidates)
     dataset_json = dataset.model_dump(mode="json")

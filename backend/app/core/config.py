@@ -1,5 +1,5 @@
-from typing import Optional
-from pydantic import SecretStr, Field
+from typing import Literal, Optional
+from pydantic import SecretStr, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +18,16 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql+asyncpg://postgres@localhost:5432/person_map"
+    personmap_env: Literal["normal", "lite"] = "normal"
+
+    @model_validator(mode="after")
+    def lite_database_must_be_explicit(self):
+        if self.personmap_env == "lite":
+            from sqlalchemy.engine import make_url
+
+            if make_url(self.database_url).database != "personmap_lite":
+                raise ValueError("PERSONMAP_ENV=lite requiere DATABASE_URL apuntando a personmap_lite.")
+        return self
 
     # LLM (Optional - model agnostic via LiteLLM)
     # Examples:

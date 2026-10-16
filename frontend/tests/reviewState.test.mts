@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyReviewDecision } from "../src/lib/reviewState.ts";
+import { applyReviewDecision, canFinalizeReview } from "../src/lib/reviewState.ts";
 import { decideReviewCandidate, finalizeInvestigationReview, getInvestigationReview, getReviewedFootprint } from "../src/lib/api.ts";
 import type { InvestigationReviewData, ReviewCandidate } from "../src/lib/types.ts";
 
@@ -64,6 +64,12 @@ test("Unknown candidate IDs do not change counts", () => {
   const current = review();
   const next = applyReviewDecision(current, "missing", "confirmed");
   assert.deepEqual(next.counts, current.counts);
+});
+
+test("Finalization requires completed acquisition and no pending candidates", () => {
+  assert.equal(canFinalizeReview(true, 0), true);
+  assert.equal(canFinalizeReview(true, 1), false);
+  assert.equal(canFinalizeReview(false, 0), false);
 });
 
 test("Declared seeds stay read-only and are not promoted into review candidates", () => {

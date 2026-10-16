@@ -1,0 +1,7 @@
+# Fair/Lite operational override. The same PostgreSQL server and volume are used;
+# the backend process receives one DATABASE_URL and therefore uses one database.
+services:
+  backend:
+    environment:
+      PERSONMAP_ENV: lite
+      DATABASE_URL: postgresql+asyncpg://person_map:person_map@postgres:5432/personmap_lite

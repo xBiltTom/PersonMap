@@ -106,12 +106,19 @@ resultado disponible aunque alguna fuente haya fallado. La pantalla aclara que
 una búsqueda parcial no permite concluir que no haya más datos públicos.
 
 `POST /api/v1/investigations/{id}/review/finalize` requiere que Fair haya
-terminado y tenga un snapshot persistido. Acepta decisiones `uncertain` y también
-candidatos pendientes; ambos quedan fuera del conjunto atribuible. El botón
-explícito cierra la revisión. Cambiar una decisión la reabre. Si aparece un
-candidato nuevo tras finalizar, sus decisiones previas se conservan, la revisión
-se presenta como `in_progress` y el endpoint del dataset exige finalizar de
-nuevo.
+terminado y tenga un snapshot persistido. Exige que no haya candidatos
+`pending`; si quedan, responde 409 con el código estable
+`review_has_pending_candidates` y el número pendiente. El sujeto debe confirmar,
+rechazar o marcar cada candidato como `uncertain`. `uncertain` es una decisión
+completa que mantiene el hallazgo fuera del conjunto atribuible. El botón se
+deshabilita mientras haya pendientes y muestra cuántos quedan. Cambiar una
+decisión la reabre. Si aparece un candidato nuevo tras finalizar, sus decisiones
+previas se conservan, la revisión se presenta como `in_progress` y el endpoint
+del dataset exige finalizar de nuevo.
+
+PostgreSQL impone también el CHECK `ck_review_decisions_valid_decision` para
+`confirmed`, `rejected` y `uncertain`. La migración `a41b9c2e7d63` lo añade sin
+reescribir la migración histórica de la tabla.
 
 ## Dataset estable y contrato con Fase 5
 
@@ -163,3 +170,6 @@ y requiere una base de datos descartable indicada por
 `VERIFICATION_GATE_TEST_DATABASE_URL`; sin esa variable, pytest la marca como
 omitida. Los tests de estado y contrato del cliente se ejecutan con
 `cd frontend && node --experimental-strip-types --test tests/reviewState.test.mts`.
+El bootstrap de una base Lite aislada y su smoke test están en
+[FAIR_DATABASE.md](FAIR_DATABASE.md). La suite de PostgreSQL migra un esquema
+vacío antes de cada caso y comprueba CHECK, unicidad y cascadas.
