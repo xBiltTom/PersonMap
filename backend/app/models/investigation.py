@@ -22,6 +22,23 @@ class Investigation(Base):
     def acquisition_mode(self):
         return (self.metrics or {}).get("acquisition_mode", "normal")
 
+    @property
+    def entities_count(self) -> int:
+        if "entities_count" in self.__dict__:
+            return self.__dict__["entities_count"]
+        if "entities" in self.__dict__ and self.entities is not None:
+            return len(self.entities)
+        if self.metrics and "entities_discovered" in self.metrics:
+            try:
+                return int(self.metrics["entities_discovered"])
+            except (ValueError, TypeError):
+                pass
+        return 0
+
+    @entities_count.setter
+    def entities_count(self, value: int) -> None:
+        self.__dict__["entities_count"] = value
+
     # Status: "pending", "running", "completed", "failed"
     status = Column(String(50), default="pending", nullable=False, index=True)
 

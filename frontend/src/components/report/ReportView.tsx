@@ -52,7 +52,7 @@ export function ReportView({ investigation }: { investigation: InvestigationData
           </div>
           <div>
             <div className="text-sm font-bold text-slate-200 truncate">
-              {investigation.entities?.length || 0}
+              {investigation.entities?.length ?? investigation.entities_count ?? 0}
             </div>
             <div className="text-xs text-sky-400 font-mono mt-0.5 truncate">
               datos disponibles en el mapa

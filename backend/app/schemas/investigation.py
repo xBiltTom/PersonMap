@@ -62,6 +62,12 @@ class InvestigationRead(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime] = None
     target: Optional[TargetRead] = None
+    entities_count: int = 0
+
+    @field_validator("entities_count", mode="before")
+    @classmethod
+    def historical_empty_entities_count(cls, value):
+        return 0 if value is None else value
 
     @field_validator("metrics", mode="before")
     @classmethod

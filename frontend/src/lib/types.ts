@@ -159,6 +159,7 @@ export interface InvestigationData {
   created_at: string;
   completed_at?: string | null;
   target?: TargetData | null;
+  entities_count?: number;
   entities?: EntityData[];
   correlation_groups?: CorrelationGroupData[];
   analysis_notes?: AnalysisNoteData[];

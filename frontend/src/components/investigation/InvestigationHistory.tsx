@@ -54,6 +54,24 @@ function targetLabel(investigation: InvestigationData): string {
   return targetDisplayName(investigation.target);
 }
 
+function findingsCount(investigation: InvestigationData): number {
+  if (typeof investigation.entities_count === "number") {
+    return investigation.entities_count;
+  }
+  if (Array.isArray(investigation.entities)) {
+    return investigation.entities.length;
+  }
+  const discovered = investigation.metrics?.entities_discovered;
+  if (typeof discovered === "number") {
+    return discovered;
+  }
+  if (discovered !== undefined && discovered !== null) {
+    const parsed = Number(discovered);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return 0;
+}
+
 async function listAllInvestigations(): Promise<InvestigationData[]> {
   const records: InvestigationData[] = [];
   let offset = 0;
@@ -191,7 +209,7 @@ export function InvestigationHistory() {
               const engine = ENGINE_META[resolveEngine(investigation.strategy, investigation.metrics)];
               const status = statusView(investigation.status);
               const StatusIcon = status.icon;
-              return <tr key={investigation.id} className="group transition-colors hover:bg-[#0f1a28]"><td className="max-w-[300px] px-4 py-3 sm:px-5"><Link href={`/investigation/${investigation.id}`} className="block min-w-0"><span className="block truncate font-medium text-slate-200 group-hover:text-sky-200">{target}</span><span className="mt-0.5 block font-mono text-[10px] text-slate-500">{code}{investigation.target?.university ? ` · ${investigation.target.university}` : ""}</span></Link></td><td className="px-4 py-3"><span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] ${status.className}`}><StatusIcon className={`h-2.5 w-2.5 ${investigation.status === "running" || investigation.status === "pending" ? "animate-spin" : ""}`} />{status.label}</span></td><td className="px-4 py-3"><span className={`inline-flex rounded border px-1.5 py-0.5 font-mono text-[9px] ${engine.badge}`}>{engine.label}</span></td><td className="px-4 py-3 text-right font-mono text-xs text-sky-200">{investigation.entities?.length ?? 0}</td><td className="whitespace-nowrap px-4 py-3 font-mono text-[10px] text-slate-500"><span className="inline-flex items-center gap-1"><CalendarDays className="h-3 w-3 text-slate-600" />{formatDate(investigation.created_at)}</span></td><td className="px-4 py-3 text-right"><div className="inline-flex items-center gap-1"><Link href={`/investigation/${investigation.id}`} title="Abrir expediente" className="rounded p-1.5 text-slate-400 hover:bg-sky-500/10 hover:text-sky-200"><ArrowUpRight className="h-3.5 w-3.5" /></Link><button type="button" onClick={(event) => void handleDelete(event, investigation.id, target)} title="Eliminar expediente" className="rounded p-1.5 text-slate-500 hover:bg-rose-500/10 hover:text-rose-300"><Trash2 className="h-3.5 w-3.5" /></button></div></td></tr>;
+              return <tr key={investigation.id} className="group transition-colors hover:bg-[#0f1a28]"><td className="max-w-[300px] px-4 py-3 sm:px-5"><Link href={`/investigation/${investigation.id}`} className="block min-w-0"><span className="block truncate font-medium text-slate-200 group-hover:text-sky-200">{target}</span><span className="mt-0.5 block font-mono text-[10px] text-slate-500">{code}{investigation.target?.university ? ` · ${investigation.target.university}` : ""}</span></Link></td><td className="px-4 py-3"><span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] ${status.className}`}><StatusIcon className={`h-2.5 w-2.5 ${investigation.status === "running" || investigation.status === "pending" ? "animate-spin" : ""}`} />{status.label}</span></td><td className="px-4 py-3"><span className={`inline-flex rounded border px-1.5 py-0.5 font-mono text-[9px] ${engine.badge}`}>{engine.label}</span></td><td className="px-4 py-3 text-right font-mono text-xs text-sky-200">{findingsCount(investigation)}</td><td className="whitespace-nowrap px-4 py-3 font-mono text-[10px] text-slate-500"><span className="inline-flex items-center gap-1"><CalendarDays className="h-3 w-3 text-slate-600" />{formatDate(investigation.created_at)}</span></td><td className="px-4 py-3 text-right"><div className="inline-flex items-center gap-1"><Link href={`/investigation/${investigation.id}`} title="Abrir expediente" className="rounded p-1.5 text-slate-400 hover:bg-sky-500/10 hover:text-sky-200"><ArrowUpRight className="h-3.5 w-3.5" /></Link><button type="button" onClick={(event) => void handleDelete(event, investigation.id, target)} title="Eliminar expediente" className="rounded p-1.5 text-slate-500 hover:bg-rose-500/10 hover:text-rose-300"><Trash2 className="h-3.5 w-3.5" /></button></div></td></tr>;
             })}
           </tbody>
         </table>

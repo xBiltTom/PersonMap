@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db
@@ -208,15 +208,25 @@ async def list_investigations(
     db: AsyncSession = Depends(get_db),
 ):
     """Returns the history of investigations ordered by newest first."""
+    subq = (
+        select(func.count(Entity.id))
+        .where(Entity.investigation_id == Investigation.id)
+        .scalar_subquery()
+        .label("entities_count")
+    )
     stmt = (
-        select(Investigation)
+        select(Investigation, subq)
         .options(selectinload(Investigation.target))
         .order_by(desc(Investigation.created_at))
         .limit(limit)
         .offset(offset)
     )
     result = await db.execute(stmt)
-    return result.scalars().all()
+    investigations = []
+    for inv, count in result.all():
+        inv.entities_count = count or 0
+        investigations.append(inv)
+    return investigations
 
 
 @router.get("/investigations/{id}", response_model=InvestigationDetail)
