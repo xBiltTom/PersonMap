@@ -363,3 +363,214 @@
   color: #b42318;
   background: #fff1f0;
 }
+
+.page { max-width: 1440px; }
+.backLink { margin-bottom: 12px; }
+
+.workflow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.workflowStep {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--gate-edge);
+  color: var(--gate-muted);
+  background: var(--panel, #0d1420);
+  text-decoration: none;
+}
+
+.workflowStep[data-current="true"], .workflowStep[aria-current="step"] { border-color: var(--gate-paper); color: var(--gate-ink); }
+.workflowStep[data-complete="true"] { border-color: #2d765d; }
+.workflowStep[data-locked="true"] { opacity: .68; }
+.workflowNumber { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; border: 1px solid var(--gate-edge); color: var(--gate-paper); font: 10px var(--font-mono, monospace); }
+.workflowStep > span:nth-child(2) { display: grid; min-width: 0; gap: 3px; }
+.workflowStep strong { color: inherit; font-size: 11px; font-weight: 600; }
+.workflowStep small { color: var(--gate-muted); font-size: 9px; }
+.workflowStep > svg { flex: 0 0 auto; margin-left: auto; color: var(--gate-paper); }
+.workflowConnector { height: 1px; background: var(--gate-edge); }
+
+.hero {
+  align-items: center;
+  padding: 21px 24px;
+  border-radius: 0;
+  border-left-width: 3px;
+  background: var(--panel, #0d1420);
+  box-shadow: none;
+}
+.heroCopy { max-width: 900px; }
+.hero h1 { margin: 7px 0 6px; color: var(--gate-ink); font-size: clamp(23px, 2.4vw, 31px); letter-spacing: -.03em; }
+.heroCopy > p { max-width: 760px; color: var(--gate-muted); }
+.eyebrow { font-size: 9px; letter-spacing: .08em; }
+.eyebrow > span { border-radius: 0; box-shadow: none; }
+
+.partialNotice, .errorBanner { border-radius: 0; }
+.partialNotice p { max-width: 920px; }
+
+.countRail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin: 12px 0 16px;
+  padding: 13px 16px 11px;
+  border-radius: 0;
+  background: var(--panel, #0d1420);
+}
+.countRail > div { min-width: 0; padding: 0; border: 0; }
+.progressHeading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.progressHeading > div { display: flex; align-items: baseline; gap: 8px; }
+.progressHeading > div strong { color: var(--gate-ink); font: 600 14px var(--font-mono, monospace); }
+.progressHeading > div span { display: inline; margin: 0; color: var(--gate-muted); font-size: 10px; }
+.progressTrack { height: 4px; overflow: hidden; background: var(--panel-inset, #060a10); }
+.progressTrack > span { display: block; height: 100%; background: var(--gate-paper); transition: width .2s ease; }
+.statusPill { margin: 0; padding: 5px 8px; border: 1px solid var(--gate-edge); }
+.decisionCounts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.decisionCounts > div { display: flex; align-items: baseline; gap: 7px; padding: 3px 10px; border-left: 1px solid var(--gate-edge); }
+.decisionCounts > div:first-child { padding-left: 0; border-left: 0; }
+.decisionCounts strong { display: inline; color: var(--gate-ink); font: 600 11px var(--font-mono, monospace); }
+.decisionCounts span { display: inline; margin: 0; color: var(--gate-muted); font-size: 9px; }
+
+.layout { grid-template-columns: minmax(225px, 285px) minmax(0, 1fr); gap: 15px; }
+.declaredPanel, .sourceHealth, .ruleNote, .finalizePanel, .candidate, .emptyState, .reviewSection { border-radius: 0; }
+.declaredPanel { padding: 14px; }
+.declaredGlyph { border-radius: 0; }
+.declaredHeading h2 { font-size: 12px; }
+.declaredHeading p { font: 10px var(--font-sans, sans-serif); }
+.seedList li { border-left-width: 2px; font-size: 10px; }
+.readOnlyNote { color: var(--gate-muted); font-size: 10px; }
+.ruleNote { background: var(--panel, #0d1420); }
+.ruleNote p { color: var(--gate-muted); font-size: 10px; }
+
+.sourceHealth > summary { min-height: 55px; padding: 11px 13px; }
+.sourceHealth > summary .sourceSummaryCopy { display: grid; gap: 4px; margin: 0; color: var(--gate-ink); font: inherit; }
+.sourceSummaryCopy strong { color: var(--gate-ink); font-size: 11px; font-weight: 600; }
+.sourceSummaryCopy small { color: var(--gate-muted); font: 10px/1.45 var(--font-sans, sans-serif); }
+.sourceDetails { padding: 0 12px 12px; border-top: 1px solid var(--gate-edge); }
+.sourceIntro { margin: 11px 0; color: var(--gate-muted); font-size: 10px; line-height: 1.5; }
+.sourceCounts { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.sourceCounts > span { padding: 4px 6px; border: 1px solid var(--gate-edge); color: var(--gate-muted); font-size: 10px; }
+.sourceCounts strong { margin-right: 3px; color: var(--gate-ink); font: 600 9px var(--font-mono, monospace); }
+.sourceHealth ul { max-height: 365px; padding: 0; }
+.sourceHealth li { align-items: start; gap: 5px 8px; padding: 9px 0; border-top-color: var(--gate-edge); }
+.sourceCopy { display: grid; min-width: 0; gap: 3px; }
+.sourceCopy > strong { color: var(--gate-ink); font-size: 11px; font-weight: 600; line-height: 1.4; }
+.sourceHealth li .sourceCopy > small { grid-column: auto; color: var(--gate-muted); font: 10px/1.45 var(--font-sans, sans-serif); }
+.sourceStatus { max-width: 135px; padding: 3px 5px; border: 1px solid var(--gate-edge); text-align: right; white-space: normal; }
+.sourceStatus[data-status="completed"] { border-color: #28634f; color: #79d9ae; }
+.sourceStatus.sourceEmpty { border-color: var(--gate-edge); color: var(--gate-muted); }
+.sourceStatus[data-status="partial"], .sourceStatus[data-status="timeout"], .sourceStatus[data-status="provider_unavailable"], .sourceStatus[data-status="failed"], .sourceStatus[data-status="budget_exhausted"] { border-color: #705c2e; color: #e5c777; }
+.sourceStatus[data-status="skipped"], .sourceStatus[data-status="not_applicable"] { border-color: var(--gate-edge); color: var(--gate-muted); }
+
+.sectionIntro { align-items: center; margin-top: 0; }
+.sectionIntro h2 { font-size: 21px; }
+.sectionHelp { margin: -4px 0 12px; color: var(--gate-muted); font-size: 11px; line-height: 1.5; }
+.pendingLabel { border-radius: 0; }
+.candidate { padding: 16px; border-radius: 0; background: var(--panel, #0d1420); box-shadow: none; }
+.candidate:focus-within { border-color: var(--gate-paper); }
+.observationTag { text-transform: none; letter-spacing: 0; }
+.reason { display: grid; grid-template-columns: 15px minmax(0, 1fr); align-items: start; border-left-color: var(--gate-paper); border-radius: 0; color: var(--gate-ink); background: var(--panel-elevated, #121c2d); }
+.reason svg { margin-top: 2px; }
+.reason > div { min-width: 0; }
+.reason strong { display: block; color: var(--gate-ink); font-size: 10px; font-weight: 600; }
+.reason p { margin: 3px 0 0; color: var(--gate-muted); font-size: 11px; line-height: 1.5; }
+.evidenceDetails summary { color: var(--gate-muted); }
+.evidenceDetails summary:hover { color: var(--gate-ink); }
+.decisionPrompt { margin: 12px 0 7px; color: var(--gate-muted); font-size: 11px; }
+.actions { margin-top: 0; }
+.decisionButton { min-height: 44px; border-radius: 0; font-size: 11px; }
+.decisionButton:hover:not(:disabled) { color: var(--gate-ink); }
+.decision_confirmed:hover:not(:disabled), .decision_confirmed.selected { color: #79d9ae; }
+.decision_rejected:hover:not(:disabled), .decision_rejected.selected { color: #fda4af; }
+.decision_uncertain:hover:not(:disabled), .decision_uncertain.selected { color: var(--gate-paper); }
+.savedMark { margin-left: auto; }
+.emptyState { padding: 26px 18px; border-radius: 0; }
+.emptyState > span { border-radius: 0; }
+.decidedGroups { margin-top: 10px; }
+.reviewSection { border-radius: 0; }
+.sectionCount { border-radius: 0; }
+
+.finalizePanel { border-radius: 0; border-color: var(--gate-edge); background: var(--panel, #0d1420); }
+.finalizeIcon { flex: 0 0 auto; }
+.finalizeCopy h3 { color: var(--gate-ink); font-size: 12px; }
+.finalizeCopy p { max-width: 560px; color: var(--gate-muted); font-size: 10px; }
+.finalizeButton, .downloadButton { min-height: 38px; border-radius: 0; }
+.finalizeButton { border-color: var(--gate-paper); color: #06121f; background: var(--gate-paper); }
+.finalizeButton:hover:not(:disabled) { background: #0ea5e9; }
+.downloadButton { color: var(--gate-ink); background: var(--panel-elevated, #121c2d); }
+.waitNote { color: var(--gate-muted); font-size: 10px; }
+
+@media (max-width: 590px) {
+  .workflow { grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr); gap: 5px; }
+  .workflowStep { gap: 7px; padding: 8px; }
+  .workflowNumber { width: 24px; height: 24px; }
+  .workflowStep strong { font-size: 9px; }
+  .workflowStep small { display: none; }
+  .hero { padding: 18px 15px; }
+  .hero h1 { margin-top: 8px; font-size: 25px; }
+  .progressHeading > div { display: grid; gap: 2px; }
+  .decisionCounts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 0; }
+  .decisionCounts > div:nth-child(3) { padding-left: 0; border-left: 0; }
+  .sourceHealth li { grid-template-columns: minmax(0, 1fr); }
+  .sourceStatus { max-width: none; justify-self: start; }
+}
+
+@media (max-width: 850px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ruleNote { grid-column: 1 / -1; }
+}
+
+@media (max-width: 590px) {
+  .sidebar { grid-template-columns: 1fr; }
+  .ruleNote { grid-column: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progressTrack > span { transition: none; }
+}
+
+:global(:root[data-theme="light"]) .page .workflowStep strong,
+:global(:root[data-theme="light"]) .page .progressHeading > div strong,
+:global(:root[data-theme="light"]) .page .decisionCounts strong,
+:global(:root[data-theme="light"]) .page .sourceSummaryCopy strong,
+:global(:root[data-theme="light"]) .page .sourceCopy > strong,
+:global(:root[data-theme="light"]) .page .sourceCounts strong,
+:global(:root[data-theme="light"]) .page .reason strong,
+:global(:root[data-theme="light"]) .page .finalizeCopy h3 { color: var(--gate-ink); }
+:global(:root[data-theme="light"]) .page .workflowStep small,
+:global(:root[data-theme="light"]) .page .progressHeading > div span,
+:global(:root[data-theme="light"]) .page .decisionCounts span,
+:global(:root[data-theme="light"]) .page .sourceSummaryCopy small,
+:global(:root[data-theme="light"]) .page .sourceIntro,
+:global(:root[data-theme="light"]) .page .sourceCopy > small,
+:global(:root[data-theme="light"]) .page .sectionHelp,
+:global(:root[data-theme="light"]) .page .reason p,
+:global(:root[data-theme="light"]) .page .finalizeCopy p { color: var(--gate-muted); }
+:global(:root[data-theme="light"]) .page .sourceCounts > span,
+:global(:root[data-theme="light"]) .page .sourceStatus[data-status="skipped"],
+:global(:root[data-theme="light"]) .page .sourceStatus[data-status="not_applicable"] { border-color: var(--gate-edge); color: var(--gate-muted); }
+:global(:root[data-theme="light"]) .page .sourceStatus[data-status="completed"] { border-color: #a7d8c2; color: #047857; }
+:global(:root[data-theme="light"]) .page .sourceStatus.sourceEmpty { border-color: var(--gate-edge); color: var(--gate-muted); }
+:global(:root[data-theme="light"]) .page .sourceStatus[data-status="partial"],
+:global(:root[data-theme="light"]) .page .sourceStatus[data-status="timeout"],
+:global(:root[data-theme="light"]) .page .sourceStatus[data-status="provider_unavailable"],
+:global(:root[data-theme="light"]) .page .sourceStatus[data-status="failed"],
+:global(:root[data-theme="light"]) .page .sourceStatus[data-status="budget_exhausted"] { border-color: #e7c878; color: #7c4a03; }
+:global(:root[data-theme="light"]) .page .workflowStep[data-complete="true"] { border-color: #a7d8c2; }
+:global(:root[data-theme="light"]) .page .workflowStep[data-current="true"],
+:global(:root[data-theme="light"]) .page .workflowStep[aria-current="step"] { border-color: var(--gate-paper); }
+:global(:root[data-theme="light"]) .page .decision_confirmed:hover:not(:disabled),
+:global(:root[data-theme="light"]) .page .decision_confirmed.selected { color: #047857; }
+:global(:root[data-theme="light"]) .page .decision_rejected:hover:not(:disabled),
+:global(:root[data-theme="light"]) .page .decision_rejected.selected { color: #b42318; }
+:global(:root[data-theme="light"]) .page .decision_uncertain:hover:not(:disabled),
+:global(:root[data-theme="light"]) .page .decision_uncertain.selected { color: #075985; }
+:global(:root[data-theme="light"]) .page .finalizeButton { color: #ffffff; background: var(--gate-paper); }
+:global(:root[data-theme="light"]) .page .finalizeButton:hover:not(:disabled) { background: #075985; }
