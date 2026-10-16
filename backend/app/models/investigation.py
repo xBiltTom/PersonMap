@@ -56,3 +56,4 @@ from app.models.entity_observation import EntityObservation  # noqa: E402, F401
 from app.models.investigation_trace_event import InvestigationTraceEvent  # noqa: E402, F401
 from app.models.investigation_session import InvestigationSession  # noqa: E402, F401
 from app.models.analysis_note import AnalysisNote  # noqa: E402, F401
+from app.models.review_decision import ReviewDecision  # noqa: E402, F401

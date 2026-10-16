@@ -185,6 +185,14 @@ async def persist_findings(
 
     for f in dedupe_findings(findings):
         current = existing.get(finding_dedupe_key(f))
+        current_metadata = dict(current.metadata_info or {}) if current is not None else {}
+        current_provenance = current_metadata.get("provenance") or {}
+        current_ownership = current_metadata.get("ownership") or {}
+        has_human_account_decision = (
+            current_provenance.get("origin") == "automatic"
+            and current_provenance.get("status") in {"confirmed", "rejected", "uncertain"}
+            and current_ownership.get("status") in {"subject_confirmed", "subject_rejected", "uncertain"}
+        )
         if current is not None:
             previous = ToolFinding(
                 entity_type=current.entity_type, platform=current.platform, value=current.value,
@@ -206,8 +214,15 @@ async def persist_findings(
             profile = parse_social_profile(f.value)
             ownership = account_ownership(declared.declared_seeds if declared else [],
                 profile.platform if profile else f.platform, profile.username if profile else "")
-            metadata.update(ownership=ownership, ownership_status=ownership["status"],
-                            ownership_review_required=ownership["needs_review"])
+            # Only the explicit Verification Gate operation writes these states.
+            # A later tool refresh may enrich evidence, but cannot undo or replace
+            # the subject's active decision.
+            if has_human_account_decision:
+                metadata.update(ownership=current_ownership,
+                    ownership_status=current_ownership["status"], ownership_review_required=False)
+            else:
+                metadata.update(ownership=ownership, ownership_status=ownership["status"],
+                                ownership_review_required=ownership["needs_review"])
         # Las herramientas ya recogen URLs de evidencia, pero Entity no tenía
         # una columna específica para ellas. Persistirlas dentro del metadata
         # evita una migración y permite que el inspector separe la fuente del

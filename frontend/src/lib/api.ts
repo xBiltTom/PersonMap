@@ -12,6 +12,10 @@ import type {
   InvestigationData,
   InvestigationLogHistory,
   InvestigationTraceResponse,
+  InvestigationReviewData,
+  ReviewDecisionValue,
+  ReviewFinalizeData,
+  ReviewedFootprintDataset,
   MetricsComparison,
   SurveyPayload,
   SurveyRead,
@@ -104,6 +108,29 @@ export function listInvestigations(
 
 export function getInvestigation(id: string): Promise<InvestigationData> {
   return request<InvestigationData>(`/investigations/${id}`);
+}
+
+export function getInvestigationReview(id: string): Promise<InvestigationReviewData> {
+  return request<InvestigationReviewData>(`/investigations/${id}/review`);
+}
+
+export function decideReviewCandidate(
+  investigationId: string,
+  candidateId: string,
+  decision: ReviewDecisionValue,
+): Promise<InvestigationReviewData> {
+  return request<InvestigationReviewData>(`/investigations/${investigationId}/review/${candidateId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ decision }),
+  });
+}
+
+export function finalizeInvestigationReview(id: string): Promise<ReviewFinalizeData> {
+  return request<ReviewFinalizeData>(`/investigations/${id}/review/finalize`, { method: "POST" });
+}
+
+export function getReviewedFootprint(id: string): Promise<ReviewedFootprintDataset> {
+  return request<ReviewedFootprintDataset>(`/investigations/${id}/reviewed-footprint`);
 }
 
 export function addAnalysisNote(id: string, note: AnalysisNotePayload): Promise<AnalysisNoteData> {

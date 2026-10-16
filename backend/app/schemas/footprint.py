@@ -31,8 +31,8 @@ class UsernameSeed(BaseModel):
 class DataProvenance(BaseModel):
     """Origin and human decision are independent of source/existence verification.
 
-    Future review writes must be authenticated server operations, never tool output.
-    No review mutation endpoint is implemented in Foundation V2.
+    Review writes are explicit server-side operations, never tool output. The
+    verification gate changes status while preserving this historical origin.
     """
     origin: Literal["subject", "automatic", "legacy"]
     status: ProvenanceStatus

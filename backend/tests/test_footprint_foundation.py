@@ -268,7 +268,9 @@ async def test_rest_validation_and_response_serialization(monkeypatch):
     monkeypatch.setattr(routes.workspace, "create", create)
     app = FastAPI()
     app.include_router(routes.router, prefix="/api/v1")
-    app.dependency_overrides[get_db] = lambda: None
+    async def no_database_for_workspace_create():
+        return None
+    app.dependency_overrides[get_db] = no_database_for_workspace_create
     body = {"target": {"emails": ["a@example.org", "b@example.org"]}, "execution_mode": "external"}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         denied = await client.post("/api/v1/investigations", json=body)

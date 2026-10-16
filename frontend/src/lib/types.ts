@@ -93,6 +93,7 @@ export interface RecommendationData {
 }
 
 export interface InvestigationMetrics {
+  acquisition_mode?: "normal" | "fair";
   entities_discovered?: number;
   execution_time_seconds?: number;
   ai_enhanced?: boolean;
@@ -162,6 +163,81 @@ export interface InvestigationData {
   correlation_groups?: CorrelationGroupData[];
   analysis_notes?: AnalysisNoteData[];
   sessions?: InvestigationSessionData[];
+}
+
+export type ReviewDecisionValue = "confirmed" | "rejected" | "uncertain";
+export type ReviewStatus = "not_started" | "in_progress" | "complete";
+export interface ReviewCandidateSource {
+  name: string;
+  evidence_urls: string[];
+}
+export interface ReviewCandidate {
+  id: string;
+  entity_type: string;
+  category: "account" | "email" | "phone" | "academic_profile";
+  platform?: string | null;
+  value: string;
+  username?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  public_url?: string | null;
+  bio?: string | null;
+  institutions: string[];
+  reason: string;
+  sources: ReviewCandidateSource[];
+  evidence_urls: string[];
+  provenance: DataProvenance;
+  decision: ReviewDecisionValue | null;
+  decided_at?: string | null;
+}
+export interface ReviewCounts {
+  pending: number;
+  confirmed: number;
+  rejected: number;
+  uncertain: number;
+}
+export interface FairReviewSourceState {
+  status: string;
+  reason?: string | null;
+  findings_count: number;
+}
+export interface FairReviewState {
+  acquisition_finished: boolean;
+  partial: boolean;
+  warning?: string | null;
+  sources: Record<string, FairReviewSourceState>;
+  social_sources: Record<string, FairReviewSourceState>;
+}
+export interface InvestigationReviewData {
+  version: 1;
+  investigation_id: string;
+  review_status: ReviewStatus;
+  finalized_at?: string | null;
+  counts: ReviewCounts;
+  declared_seeds: DeclaredSeed[];
+  candidates: ReviewCandidate[];
+  fair: FairReviewState;
+}
+export interface ReviewFinalizeData {
+  investigation_id: string;
+  review_status: "complete";
+  finalized_at: string;
+  counts: ReviewCounts;
+  dataset_version: 1;
+}
+export interface ReviewedFootprintDataset {
+  version: 1;
+  subject: { declared: Array<DeclaredSeed & { seed_id: string }> };
+  accounts: Array<Record<string, unknown>>;
+  emails: Array<Record<string, unknown>>;
+  phones: Array<Record<string, unknown>>;
+  academic_profiles: Array<Record<string, unknown>>;
+  documents: Array<Record<string, unknown>>;
+  breaches: Array<Record<string, unknown>>;
+  social_content: Array<Record<string, unknown>>;
+  review: Record<ReviewDecisionValue, Array<Record<string, unknown>>>;
+  evidence: Array<Record<string, unknown>>;
+  execution: Record<string, unknown>;
 }
 
 export type AnalysisNoteKind = "comment" | "summary" | "insight" | "hypothesis" | "next_step";

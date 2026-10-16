@@ -318,15 +318,35 @@ sin modificaciones). `git diff --check` limpio. Las primeras corridas restringid
 que se bloquearon se interrumpieron; las corridas general/BD aprobadas usaron
 acceso al transporte local fuera del sandbox. No hubo nuevas llamadas Apify reales.
 
-Fases 4–7 siguen pendientes: no Gate UI, Exposure Lens, reconstrucción, Graph V2
-ni Frontend Fair Edition.
+Fases 5–7 siguen pendientes: Exposure Lens, reconstrucción, Graph V2 y Frontend
+Fair Edition. La Fase 4 implementa únicamente la UI funcional de revisión.
 
-## Fase 4 — Verification Gate (pendiente)
+## Fase 4 — Verification Gate (implementada)
 
-Al terminar el descubrimiento: SOLO elementos nuevos con Sí soy yo / No soy yo /
-No estoy seguro. Transiciones authenticated/auditadas a confirmed/rejected/uncertain,
-con fecha y evidencia; no sobrescribir origen. No presentar seeds para reconfirmar.
-Producir un dataset limpio y mantener separada verificación de existencia.
+El detalle operativo y los contratos están en [VERIFICATION_GATE.md](VERIFICATION_GATE.md).
+`GET /api/v1/investigations/{id}/review` proyecta entidades Fair revisables,
+excluye cuentas declaradas y adjunta explicación, fuentes y URLs saneadas.
+`PATCH /api/v1/investigations/{id}/review/{entity_id}` acepta únicamente una
+decisión (`confirmed`, `rejected`, `uncertain`); el servidor resuelve la entidad,
+persiste el estado activo y guarda cambios anteriores en `review_decisions`.
+`POST .../review/finalize` cierra explícitamente la revisión, incluso si quedan
+elementos dudosos o pendientes. `GET .../reviewed-footprint` devuelve solo el
+dataset final y responde 409 antes de finalizar o cuando aparece un candidato
+nuevo tras el cierre.
+
+Las decisiones automáticas nunca se aceptan por metadata de herramienta: la
+operación humana escribe `provenance.status` manteniendo `origin=automatic`.
+Una cuenta confirmada incorpora contenido público observado con origen automático;
+la coincidencia de alias no propaga decisión a otra plataforma. Brechas se
+adjuntan a un correo declarado/confirmado, sin convertirse en prueba de identidad.
+Perfiles académicos confirmados heredan publicaciones solo mediante relaciones
+de autoría ya verificadas por el motor académico.
+
+La pantalla `/investigation/{id}/review` expone semillas en solo lectura,
+pendientes y decisiones agrupadas, resumen de estados, evidencia desplegable,
+aviso de fuentes Fair incompletas, acción de finalizar y descarga del dataset.
+La finalización acepta adquisición parcial y conserva el estado por investigación.
+Investigaciones normales siguen sin habilitar esta API.
 
 ## Fase 5 — Exposure Lens (pendiente)
 
@@ -370,8 +390,10 @@ no implementa el rediseño completo ni presenta funciones aún inexistentes.
 - V1 no adquiere obligatoriedad general de consentimiento para no romper
   clientes históricos. Retirar esa entrada o endurecerla requiere versión/política
   de deprecación explícita; ninguna herramienta puede inferir consentimiento.
-- La revisión humana futura necesita endpoints y autorización propios; el
-  contrato de estados no es una implementación de esas transiciones.
+- La API actual del producto no tiene identidad de usuario; la auditoría registra
+  cada transición como operación `verification_gate`, pero no autentica qué
+  persona pulsó la decisión. Antes de alojar expedientes multiusuario se necesita
+  autorización por investigación.
 - Mantener evidencia original, historial de decisiones y no transmitir
   atribuciones entre cuentas por compartir alias o componente de grafo.
 - No se incluye `opencode.json` preexistente sin seguimiento en este commit.

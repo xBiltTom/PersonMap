@@ -37,6 +37,7 @@ import {
   Check,
   Maximize2,
   ChevronUp,
+  ShieldCheck,
 } from "lucide-react";
 
 type WorkspaceSelection =
@@ -454,6 +455,18 @@ export default function InvestigationDetailPage({
               </span>
 
               {/* Export dropdown */}
+              {investigation.metrics.acquisition_mode === "fair" && isCompleted && (
+                <Link
+                  href={`/investigation/${investigation.id}/review`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#d9d47a] hover:bg-[#e8e38a] border border-[#eee99a] text-xs font-semibold text-[#191b12] transition-colors"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>{(investigation.metrics.verification_gate as { status?: string } | undefined)?.status === "complete"
+                    ? "Abrir revisión"
+                    : "Revisar descubrimientos"}</span>
+                </Link>
+              )}
+
               <div className="relative shrink-0" ref={exportMenuRef}>
                 <button
                   type="button"
