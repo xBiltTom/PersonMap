@@ -6,10 +6,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
-import { getReconstruction, buildReconstruction, ApiError } from "../src/lib/api.ts";
+import { getReconstruction, buildReconstruction, ApiError, getMcpReconstruction, requestMcpReconstruction,
+  cancelMcpReconstruction } from "../src/lib/api.ts";
 import { filterReconstructionGraph, reconstructionDetails, reconstructionPositions, visibleReconstruction,
   reconstructionNextStep } from "../src/lib/reconstructionState.ts";
-import type { DigitalFootprintReconstruction, ReconstructionFact, ReconstructionRelation, ReconstructionReport } from "../src/lib/types.ts";
+import type { DigitalFootprintReconstruction, ReconstructionFact, ReconstructionRelation, ReconstructionReport,
+  ReconstructionRequest } from "../src/lib/types.ts";
 
 function fact(id: string, kind: ReconstructionFact["kind"], group: ReconstructionFact["group"], ring: number): ReconstructionFact {
   return { id, kind, group, ring, label: kind === "account" ? "instagram · @shared" : kind, basis: kind === "subject" ? "DECLARED" : "OBSERVED",
@@ -41,7 +43,7 @@ const pending: ReconstructionReport = { version: 1, investigation_id: "fixture",
 
 // Transpile the real presentational TSX with the installed TypeScript compiler.
 // No new test/runtime dependency, browser or UI implementation copy is needed.
-async function component(name: string) {
+async function component(name: string, exportName = name) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const directory = await mkdtemp(join(root, "tests/.reconstruction-render-"));
   const source = await readFile(join(root, `src/components/reconstruction/${name}.tsx`), "utf8");
@@ -49,7 +51,7 @@ async function component(name: string) {
     .replace('"../../lib/reconstructionState.ts"', JSON.stringify(pathToFileURL(join(root, "src/lib/reconstructionState.ts")).href));
   const path = join(directory, `${name}.mjs`);
   await writeFile(path, compiled);
-  try { return (await import(pathToFileURL(path).href))[name]; }
+  try { return (await import(pathToFileURL(path).href))[exportName]; }
   finally { await rm(directory, { recursive: true, force: true }); }
 }
 
@@ -144,7 +146,68 @@ test("review, Exposure and reconstruction share the workstation type and panel p
   for (const file of ["review/VerificationGate.module.css", "exposure/ExposureLens.module.css", "reconstruction/ReconstructionView.module.css"]) {
     const css = await readFile(join(root, "src/components", file), "utf8");
     assert.doesNotMatch(css, /Georgia|Times New Roman/);
-    assert.match(css, /#0d1420|var\(--panel/);
-    assert.match(css, /#38bdf8/);
+    assert.match(css, /#0d1420|var\(--(?:color-)?panel/);
+    assert.match(css, /#38bdf8|var\(--color-accent\)/);
   }
+});
+
+const mcpPending: ReconstructionRequest = {
+  id: "12345678-1234-4234-8234-123456789abc", investigation_id: "fixture", status: "pending", stale: false,
+  dataset_hash: "dataset", input_hash: "mcp-input", client: null, model: null,
+  progress: { message: "Esperando a Codex", analyzed_posts: 0, total_posts: 4 },
+  created_at: "2026-10-16T00:00:00Z", updated_at: "2026-10-16T00:00:00Z", completed_at: null,
+  command: "backend/.venv/bin/python backend/scripts/personmap_mcp.py codex --reconstruction-request 12345678-1234-4234-8234-123456789abc",
+  prompt: "Completa esta solicitud con submit_reconstruction_result", result: null,
+};
+
+test("MCP waiting view shows a request-specific command and cancellation; reload keeps pending state", async () => {
+  const Panel = await component("ReconstructionWorkflow", "McpReconstructionPanel");
+  const Active = await component("ReconstructionWorkflow", "mcpRequestActive");
+  const props = { request: mcpPending, enabled: true, busy: false, error: null, onRequest() {}, onCancel() {} };
+  const html = renderToStaticMarkup(createElement(Panel, props));
+  assert.match(html, /Esperando a Codex/);
+  assert.match(html, /--reconstruction-request 12345678/);
+  assert.match(html, /Copiar comando/);
+  assert.match(html, /Cancelar espera/);
+  assert.match(html, /submit_reconstruction_result/);
+  assert.equal(Active(JSON.parse(JSON.stringify(mcpPending))), true);
+  assert.equal(visibleReconstruction(mcpPending.result), null);
+  assert.equal(Active({ ...mcpPending, stale: true }), false);
+  assert.equal(Active({ ...mcpPending, status: "completed" }), false);
+  const done = renderToStaticMarkup(createElement(Panel, { ...props, request: { ...mcpPending, status: "completed" } }));
+  assert.match(done, /Resultado recibido/);
+  assert.doesNotMatch(done, /Cancelar espera|Copiar comando/);
+});
+
+test("MCP progress and failed/stale requests offer a recoverable state", async () => {
+  const Panel = await component("ReconstructionWorkflow", "McpReconstructionPanel");
+  const props = { enabled: true, busy: false, error: null, onRequest() {}, onCancel() {} };
+  const running = renderToStaticMarkup(createElement(Panel, { ...props, request: { ...mcpPending,
+    status: "running", progress: { analyzed_posts: 2, total_posts: 4 }, client: "Codex" } }));
+  assert.match(running, /Codex está analizando/);
+  assert.match(running, /2 de 4 publicaciones/);
+  const stale = renderToStaticMarkup(createElement(Panel, { ...props, request: { ...mcpPending, stale: true } }));
+  assert.match(stale, /crea una solicitud nueva/);
+  assert.match(stale, /Solicitar otro análisis/);
+  assert.doesNotMatch(stale, /Copiar comando/);
+  const failed = renderToStaticMarkup(createElement(Panel, { ...props, request: { ...mcpPending, status: "failed" } }));
+  assert.match(failed, /no se completó/);
+  assert.match(failed, /Solicitar otro análisis/);
+});
+
+test("MCP API separates observation, request creation and cancellation", async () => {
+  const original = globalThis.fetch;
+  const calls: Array<{ url: string; method: string }> = [];
+  globalThis.fetch = (async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || "GET" });
+    return new Response(JSON.stringify(mcpPending), { status: 200 });
+  }) as typeof fetch;
+  try {
+    await getMcpReconstruction("fixture");
+    await requestMcpReconstruction("fixture");
+    await cancelMcpReconstruction("fixture", mcpPending.id);
+    assert.deepEqual(calls.map(call => call.method), ["GET", "POST", "POST"]);
+    assert.match(calls[0].url, /reconstruction\/mcp$/);
+    assert.match(calls[2].url, /\/cancel$/);
+  } finally { globalThis.fetch = original; }
 });

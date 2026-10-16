@@ -263,3 +263,16 @@ export function getReconstruction(id: string): Promise<ReconstructionReport> {
 export function buildReconstruction(id: string): Promise<ReconstructionReport> {
   return request<ReconstructionReport>("/investigations/" + id + "/reconstruction/build", { method: "POST" });
 }
+
+export function getReconstructionProviders(id: string): Promise<import("./types").ReconstructionProviders> {
+  return request("/investigations/" + id + "/reconstruction/providers");
+}
+export function getMcpReconstruction(id: string): Promise<import("./types").ReconstructionRequest | null> {
+  return request("/investigations/" + id + "/reconstruction/mcp");
+}
+export function requestMcpReconstruction(id: string): Promise<import("./types").ReconstructionRequest> {
+  return request("/investigations/" + id + "/reconstruction/mcp", { method: "POST" });
+}
+export function cancelMcpReconstruction(id: string, requestId: string): Promise<import("./types").ReconstructionRequest> {
+  return request("/investigations/" + id + "/reconstruction/mcp/" + requestId + "/cancel", { method: "POST" });
+}

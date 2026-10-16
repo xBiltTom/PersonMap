@@ -115,19 +115,20 @@ class PostRiskSignal(BaseModel):
 class PostAssessment(BaseModel):
     fact_id: str
     severity: ExposureSeverity | None = None
-    status: Literal['signals_detected', 'no_signals', 'no_text']
+    status: Literal['signals_detected', 'no_signals', 'no_text', 'not_analyzed']
     signals: list[PostRiskSignal] = Field(default_factory=list)
     explanation: str
     recommendations: list[str] = Field(default_factory=list)
     title: str = ''
     context: str = ''
     limitations: list[str] = Field(default_factory=list)
-    analysis_method: Literal['deterministic', 'ai'] = 'deterministic'
+    analysis_method: Literal['deterministic', 'ai', 'mcp'] = 'deterministic'
 
 
 class DigitalFootprintReconstruction(BaseModel):
     version: Literal[1] = 1
     reconstruction_version: Literal['reconstruction-v1'] = 'reconstruction-v1'
+    analysis_provider: Literal['integrated', 'mcp'] = 'integrated'
     investigation_id: str
     dataset_hash: str
     exposure_dataset_hash: str

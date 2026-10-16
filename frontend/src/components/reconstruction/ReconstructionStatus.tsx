@@ -1,9 +1,10 @@
 import type { ReconstructionReport } from "../../lib/types";
 import { reconstructionNextStep, visibleReconstruction } from "../../lib/reconstructionState.ts";
 
-export function ReconstructionStatus({ report, error, building, investigationId, onBuild }: {
+export function ReconstructionStatus({ report, error, building, investigationId, onBuild, buildDisabled = false }: {
   report: ReconstructionReport | null; error: { message: string; code?: string } | null;
   building: boolean; investigationId: string; onBuild: () => void;
+  buildDisabled?: boolean;
 }) {
   const next = reconstructionNextStep(error?.code);
   const snapshot = visibleReconstruction(report);
@@ -13,7 +14,7 @@ export function ReconstructionStatus({ report, error, building, investigationId,
     </aside>}
     {!next && <section className="reconstruction-actions" aria-label="Estado de reconstrucción">
       <p>{report?.stale ? "La evidencia cambió. Reconstruye la huella actual." : !snapshot ? "La huella está lista para reconstruir." : "Huella actual de las fuentes observadas."}</p>
-      <button type="button" onClick={onBuild} disabled={building}>
+      <button type="button" onClick={onBuild} disabled={building || buildDisabled}>
         {building ? "Construyendo…" : snapshot ? "Actualizar reconstrucción" : "Construir reconstrucción"}</button>
     </section>}
   </>;

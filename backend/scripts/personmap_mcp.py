@@ -8,6 +8,8 @@ import os
 import re
 import secrets
 import shutil
+import sys
+from uuid import UUID
 from pathlib import Path
 
 from dotenv import dotenv_values
@@ -50,10 +52,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["setup", "codex"])
     parser.add_argument("--url", default="http://127.0.0.1:8000/mcp")
+    parser.add_argument("--reconstruction-request", type=UUID)
     args, remaining = parser.parse_known_args()
     if args.action == "setup":
-        if remaining:
+        if remaining or args.reconstruction_request:
             parser.error("setup no admite argumentos adicionales")
         setup()
     else:
+        if args.reconstruction_request:
+            sys.path.insert(0, str(ROOT / 'backend'))
+            from app.reconstruction.handoff_prompt import reconstruction_prompt
+            remaining.append(reconstruction_prompt(args.reconstruction_request))
         launch_codex(args.url, remaining)

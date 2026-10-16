@@ -63,3 +63,15 @@
 .page :global(.reconstruction-risk-signal) h4, .page :global(.reconstruction-post) h4 { font-size: 13px; font-weight: 600; }
 .page :global(.reconstruction-evidence) { border-left: 2px solid var(--recon-edge); padding-left: 12px; }
 .page :global(.reconstruction-recommendations) { padding-left: 20px; list-style: disc; font-size: 13px; line-height: 1.8; margin-top: 12px; }
+.page :global(.reconstruction-provider-choice) { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0; border: 0; padding: 0; }
+.page :global(.reconstruction-provider-choice) legend { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+.page :global(.reconstruction-provider-choice) label { display: flex; gap: 12px; align-items: flex-start; padding: 20px; border: 1px solid var(--recon-edge); background: var(--color-panel); border-radius: 10px; cursor: pointer; }
+.page :global(.reconstruction-provider-choice) label[data-selected="true"] { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 7%, var(--color-panel)); }
+.page :global(.reconstruction-provider-choice) input { margin-top: 4px; accent-color: var(--color-accent); }
+.page :global(.reconstruction-provider-choice) strong { font-size: 14px; }
+.page :global(.reconstruction-provider-choice) small { display: block; color: var(--recon-muted); font-size: 12px; line-height: 1.6; margin-top: 7px; }
+.page :global(.reconstruction-command) { white-space: pre-wrap; overflow-wrap: anywhere; padding: 18px; margin: 14px 0; border: 1px solid var(--recon-edge); border-radius: 8px; background: var(--color-panel-inset); font-size: 12px; line-height: 1.7; user-select: all; }
+.page :global(.reconstruction-mcp-status) { border-left: 3px solid var(--color-accent); padding: 16px 20px; margin: 20px 0; background: var(--color-panel-inset); }
+.page :global(.reconstruction-mcp-status) small { color: var(--recon-muted); font-size: 12px; }
+.page :global(.reconstruction-claim) textarea { display: block; width: 100%; padding: 12px; margin: 12px 0; color: var(--color-ink); background: var(--color-panel-inset); border: 1px solid var(--recon-edge); border-radius: 6px; font-size: 12px; line-height: 1.6; resize: vertical; }
+@media (max-width: 650px) { .page :global(.reconstruction-provider-choice) { grid-template-columns: 1fr; } }

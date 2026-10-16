@@ -44,7 +44,10 @@ export function ReconstructionAnalysis({ snapshot }: { snapshot: DigitalFootprin
     <section className="reconstruction-panel" aria-label="Análisis de publicaciones">
       <h2>Qué publicaciones requieren tu atención</h2>
       <p>{assessments.length} publicaciones registradas · {risky.length} con señales detectadas · {assessments.filter(item => item.status === "no_text").length} sin texto evaluable.</p>
-      <p>Ordenadas por exposición potencial. El análisis considera el propósito de la publicación, su antigüedad y si la cuenta figura como colaboradora. Imágenes, audio y video quedan fuera de esta lectura.</p>
+      <p>Ordenadas por exposición potencial. El análisis considera el propósito de la publicación, su antigüedad y si la cuenta figura como colaboradora. {snapshot.analysis_provider === "mcp"
+        ? "Incluye las imágenes que el agente declara haber inspeccionado; una miniatura no equivale a analizar el video o audio completo."
+        : "Imágenes, audio y video quedan fuera de esta lectura."}</p>
+      {snapshot.coverage_reasons.includes("visual_media_not_inspected") && <p role="status">Hay imágenes disponibles que el agente no declaró haber inspeccionado. La cobertura visual es parcial.</p>}
       {snapshot.content_analysis_status !== "completed" && <p role="status">{snapshot.content_analysis_status === "partial"
         ? "La lectura contextual se completó para algunas publicaciones; las demás conservan la revisión por reglas."
         : "Lectura contextual no disponible. Se muestran señales preliminares de la revisión por reglas."}</p>}
@@ -59,6 +62,7 @@ export function ReconstructionAnalysis({ snapshot }: { snapshot: DigitalFootprin
           {Object.entries(severityLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}
           <option value="no_signals">Sin señales detectadas</option>
           <option value="no_text">Sin texto evaluable</option>
+          <option value="not_analyzed">Sin analizar</option>
         </select></label>
         <label>Plataforma<select value={platform} onChange={event => { setPlatform(event.target.value); setLimit(10); }}>
           <option value="all">Todas las plataformas</option>
@@ -71,7 +75,7 @@ export function ReconstructionAnalysis({ snapshot }: { snapshot: DigitalFootprin
         if (!fact) return null;
         return <li key={item.fact_id} id={`post-${item.fact_id}`} className="reconstruction-post" data-severity={item.severity ?? "none"}>
           <header><h3>{item.title || `${fact.platform || "Fuente pública"} · ${fact.label}`}</h3>
-            <span className="reconstruction-basis">{item.severity ? severityLabels[item.severity] : item.status === "no_text" ? "Sin texto" : "Sin señales"}</span>
+            <span className="reconstruction-basis">{item.severity ? severityLabels[item.severity] : item.status === "no_text" ? "Sin texto" : item.status === "not_analyzed" ? "Sin analizar" : "Sin señales"}</span>
           </header>
           <p>{fact.platform || "Fuente pública"} · {fact.date && <time dateTime={fact.date}>{fact.date}</time>}
             {snapshot.correlations.some(relation => relation.type === "COAUTHORED" && relation.target === item.fact_id) && " · Publicación colaborativa"}
@@ -85,8 +89,9 @@ export function ReconstructionAnalysis({ snapshot }: { snapshot: DigitalFootprin
               <h4>{signal.label} · {severityLabels[signal.severity]}</h4>
               <p><strong>Qué se observó:</strong> {signal.observation}</p>
               <p><strong>Por qué te expone:</strong> {signal.why_it_matters}</p>
-              <small>{item.analysis_method === "ai" ? "Lectura contextual con cita verificada en el texto" : signal.analysis_method === "ai" ? "Clasificación de Exposure Lens" : "Señal detectada por reglas locales"}</small>
+              <small>{item.analysis_method === "mcp" ? "Interpretación del agente recibida por MCP" : item.analysis_method === "ai" ? "Lectura contextual con cita verificada en el texto" : signal.analysis_method === "ai" ? "Clasificación de Exposure Lens" : "Señal detectada por reglas locales"}</small>
               {signal.evidence_refs.map(ref => snapshot.evidence[ref] && <blockquote className="reconstruction-evidence" key={ref}>
+                {snapshot.evidence[ref].source_type === "mcp_visual_observation" && <small>Observación visual del agente · </small>}
                 “{snapshot.evidence[ref].excerpt}”
               </blockquote>)}
             </section>)}

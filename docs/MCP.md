@@ -298,3 +298,46 @@ CDNs públicos conocidos, con HTTPS y validación de DNS y redirecciones. Las fi
 transitorias de CDN quedan en la referencia almacenada; las citas y el inventario MCP
 usan el enlace del post y un ID de medio, sin exponer la consulta firmada. Las imágenes
 entregadas se convierten a JPEG sin metadatos EXIF.
+
+## Reconstrucción solicitada desde la web
+
+En la vista **Reconstrucción**, el usuario elige **Google AI Studio / IA integrada**
+o **Codex por MCP**. La primera opción ejecuta la IA configurada en el backend.
+La segunda crea una solicitud persistente y la página observa su estado hasta recibir
+el resultado. No inicia Codex ni consume el LLM del backend por sí sola.
+
+El frontend muestra el comando completo, con un ID generado por el servidor:
+
+```bash
+backend/.venv/bin/python backend/scripts/personmap_mcp.py codex --reconstruction-request <UUID-de-la-solicitud>
+```
+
+Ejecútalo desde la raíz del repositorio. El lanzador configura la conexión MCP para
+esa ejecución y pasa a Codex un encargo específico de la solicitud. La credencial
+continúa en el entorno del proceso, fuera de los argumentos y del frontend. El soporte
+para un prompt inicial y configuración por `-c` está descrito en la
+[referencia oficial de Codex CLI](https://learn.chatgpt.com/docs/cli/reference).
+Si Codex ya está conectado, el panel también permite copiar el encargo directamente.
+
+Flujo del agente:
+
+1. `get_reconstruction_request(request_id)` devuelve el contexto y las reglas del
+   resultado. `claim_reconstruction_request` toma la solicitud y devuelve un
+   `claim_token`; debe conservarse para los siguientes pasos y no incluirse en notas.
+2. Pagina `list_public_posts`, lee textos e imágenes con `read_post_images` y contrasta
+   las fuentes. La versión de entrada queda fijada; enriquecer o cambiar el dataset
+   durante la solicitud requiere una nueva solicitud desde la web.
+3. Usa `update_reconstruction_progress` para informar el avance. Si no puede
+   completarse, envía `failed=true` y un motivo concreto.
+4. `submit_reconstruction_result` recibe resumen, identidad reconstruida, un análisis
+   por publicación, evidencias y medios inspeccionados. Valida los IDs, las citas de
+   texto, el alcance de los medios y la cobertura, y publica el resultado atómicamente.
+   Las observaciones visuales siguen siendo interpretaciones del agente. Una respuesta
+   en el chat o una nota de análisis no completan esta solicitud.
+
+El resultado MCP se guarda aparte de la reconstrucción integrada. Las solicitudes
+sobreviven a recargas y reinicios; el usuario puede cancelar una espera y crear otra.
+Un análisis tardío de una solicitud cancelada o cuyos datos cambiaron se rechaza.
+La preparación MCP utiliza reglas locales sobre la huella Fair revisada y no requiere
+haber generado previamente un informe con Google AI Studio. Aplica Alembic hasta
+`e31d4598a207` para crear la tabla `reconstruction_requests`.

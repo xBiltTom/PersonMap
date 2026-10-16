@@ -13,7 +13,7 @@ export function ReconstructionSections({ snapshot }: { snapshot: DigitalFootprin
     </aside>}
     <section aria-label="Resumen factual" className="reconstruction-panel">
       <h2>La huella reconstruible</h2>
-      <p>{snapshot.narrative_method === "ai_assisted" ? "Evidencia de actividad organizada con IA y validada contra los hechos revisados." :
+      <p>{snapshot.analysis_provider === "mcp" ? "Análisis elaborado por el agente conectado mediante MCP, con referencias al conjunto revisado. Las observaciones visuales son interpretaciones del agente." : snapshot.narrative_method === "ai_assisted" ? "Evidencia de actividad organizada con IA y validada contra los hechos revisados." :
         snapshot.narrative_status === "fallback" ? "La IA no respondió; se conserva la reconstrucción factual." : "Reconstrucción factual de las fuentes observadas."}</p>
       {snapshot.summary.map(claim => <p key={claim.text} data-fact-count={claim.fact_ids.length}>{claim.text}</p>)}
     </section>

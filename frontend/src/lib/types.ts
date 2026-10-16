@@ -710,13 +710,13 @@ export interface ReconstructionGraph {
 export interface PostAssessment {
   fact_id: string;
   severity: ExposureSeverity | null;
-  status: "signals_detected" | "no_signals" | "no_text";
+  status: "signals_detected" | "no_signals" | "no_text" | "not_analyzed";
   explanation: string;
   recommendations: string[];
   title?: string;
   context?: string;
   limitations?: string[];
-  analysis_method?: "deterministic" | "ai";
+  analysis_method?: "deterministic" | "ai" | "mcp";
   signals: Array<{
     category: string; label: string; severity: ExposureSeverity;
     observation: string; why_it_matters: string; recommendations: string[];
@@ -727,6 +727,7 @@ export interface PostAssessment {
 export interface DigitalFootprintReconstruction {
   version: 1;
   reconstruction_version: "reconstruction-v1";
+  analysis_provider?: "integrated" | "mcp";
   investigation_id: string;
   dataset_hash: string;
   exposure_dataset_hash: string;
@@ -764,4 +765,26 @@ export interface ReconstructionReport {
   input_hash: string | null;
   current_input_hash: string | null;
   snapshot: DigitalFootprintReconstruction | null;
+}
+
+export interface ReconstructionProviders {
+  integrated: { enabled: boolean; label: string; model: string | null; reason: string | null };
+  mcp: { enabled: boolean; label: string; reason: string | null };
+}
+export interface ReconstructionRequest {
+  id: string;
+  investigation_id: string;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  stale: boolean;
+  dataset_hash: string;
+  input_hash: string;
+  client: string | null;
+  model: string | null;
+  progress: { message?: string; analyzed_posts?: number; total_posts?: number };
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  command: string;
+  prompt: string;
+  result: ReconstructionReport | null;
 }
