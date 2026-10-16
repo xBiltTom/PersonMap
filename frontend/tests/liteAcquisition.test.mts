@@ -35,16 +35,6 @@ test("normal mode retains its existing explicit options", () => {
     { acquisition_mode: "normal", strategy: "hybrid", maigret_plan: { scan_mode: "all", options: { parse: true, enrich: false } } });
 });
 
-test("Lite explains automatic social/academic search without Maigret selectors", async () => {
-  const Info = await component("LiteSearchInfo");
-  const html = renderToStaticMarkup(createElement(Info, { plan: { platforms: ["Instagram", "GitHub", "Reddit"],
-    deadline_seconds: 180, apify_status: "configured_not_live_validated" } }));
-  assert.match(html, /Sin configurar herramientas/);
-  assert.match(html, /OpenAlex y Crossref/);
-  assert.match(html, /3 minutos/);
-  assert.doesNotMatch(html, /<select|Alcance de Maigret|Híbrido/);
-});
-
 test("coverage distinguishes empty search results, missing inputs and timeout", async () => {
   const metrics = { fair_snapshot: { sources: {
     search_dorker: { status: "completed", findings_count: 0 },

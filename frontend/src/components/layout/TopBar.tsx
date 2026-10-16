@@ -2,10 +2,10 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { checkHealth } from "@/lib/api";
 import { useWorkstation } from "@/context/WorkstationContext";
 import {
-  Shield,
   Search,
   Command,
   Cpu,
@@ -49,31 +49,34 @@ export function TopBar() {
 
   return (
     <header className="h-14 border-b border-[#162234] bg-[#090e17] px-3 sm:px-5 flex items-center justify-between gap-3 sticky top-0 z-40 select-none">
-      {/* Left: Brand + Tagline + Mobile toggle */}
+      {/* Marca y navegación móvil */}
       <div className="flex items-center gap-3 shrink-0 min-w-0">
         <button
           type="button"
           onClick={toggleSidebar}
-          className="md:hidden p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-[#121c2d]"
+          className="md:hidden p-1.5 text-slate-400 hover:text-white hover:bg-[#121c2d]"
           aria-label={isSidebarOpen ? "Cerrar menú lateral" : "Abrir menú lateral"}
         >
           {isSidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
         </button>
 
-        <Link href="/" className="flex items-center gap-2.5 group">
-          <div className="w-7 h-7 rounded-lg bg-[#0e1726] border border-[#1e2f47] flex items-center justify-center text-sky-400 group-hover:border-sky-400/60 transition-colors shadow-sm">
-            <Shield className="w-4 h-4" />
-          </div>
-          <span className="font-mono font-bold text-sm tracking-wide text-slate-100">
-            PersonMap
+        <Link href="/" aria-label="PersonMap, inicio" className="flex items-center gap-1.5 group">
+          <span className="relative h-8 w-8 shrink-0 overflow-hidden" aria-hidden="true">
+            <Image
+              src="/personmap-logo.png"
+              alt=""
+              width={168}
+              height={112}
+              priority
+              className="absolute max-w-none mix-blend-screen drop-shadow-[0_0_5px_rgba(0,80,255,0.5)]"
+              style={{ left: -18, top: -37 }}
+            />
+          </span>
+          <span className="font-sans text-[15px] font-extrabold tracking-[-0.055em] text-slate-100">
+            Person<span className="text-sky-400">Map</span>
           </span>
         </Link>
 
-        <div className="hidden lg:block h-3.5 w-px bg-[#162234]" />
-
-        <p className="hidden lg:block text-[11px] font-mono text-slate-500 tracking-tight">
-          Open Sources. Real Context. Human Judgment.
-        </p>
       </div>
 
       {/* Center: Search trigger (⌘K) */}
