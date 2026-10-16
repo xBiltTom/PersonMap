@@ -1,18 +1,18 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Oxanium, JetBrains_Mono } from "next/font/google";
 import { WorkstationProvider } from "@/context/WorkstationContext";
 import { WorkstationShell } from "@/components/layout/WorkstationShell";
 import "./globals.css";
 
-const sansFont = Inter({
+const sansFont = Oxanium({
   subsets: ["latin"],
-  variable: "--font-sans",
+  variable: "--font-ui",
   display: "swap",
 });
 
 const monoFont = JetBrains_Mono({
   subsets: ["latin"],
-  variable: "--font-mono",
+  variable: "--font-code",
   display: "swap",
 });
 

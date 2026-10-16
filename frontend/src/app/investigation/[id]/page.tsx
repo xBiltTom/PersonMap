@@ -10,7 +10,6 @@ import { DigitalMapGraph } from "@/components/graph/DigitalMapGraph";
 import { FindingsTable } from "@/components/findings/FindingsTable";
 import { DiscoveryTimeline } from "@/components/timeline/DiscoveryTimeline";
 import { LiveConsole } from "@/components/console/LiveConsole";
-import { FairCoverage } from "@/components/investigation/FairCoverage";
 import { InvestigationProgress } from "@/components/console/InvestigationProgress";
 import { useInvestigationStream } from "@/lib/useInvestigationStream";
 import { ReportView } from "@/components/report/ReportView";
@@ -39,11 +38,19 @@ import {
   Maximize2,
   ChevronUp,
   ShieldCheck,
+  Mail,
+  AtSign,
+  Fingerprint,
+  CalendarDays,
+  MoreHorizontal,
 } from "lucide-react";
 
 type WorkspaceSelection =
   | { kind: "node"; id: string }
   | { kind: "edge"; id: string };
+
+// Acción temporalmente oculta para la muestra.
+const SHOW_EXPORT_ACTIONS = false;
 
 function formatDate(value?: string): string {
   if (!value) return "Fecha no registrada";
@@ -85,7 +92,7 @@ export default function InvestigationDetailPage({
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const mapSectionRef = useRef<HTMLDivElement>(null);
-  const loadMaigretExports = Boolean(investigation && investigation.metrics.acquisition_mode !== "fair");
+  const loadMaigretExports = SHOW_EXPORT_ACTIONS && Boolean(investigation && investigation.metrics.acquisition_mode !== "fair");
   useEffect(() => {
     if (!loadMaigretExports) return;
     let cancelled = false;
@@ -342,107 +349,93 @@ export default function InvestigationDetailPage({
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
-      {/* 1. Dossier Header Bar */}
-      <div className="panel-card p-4 sm:p-5 border border-[#162234] bg-[#0d1420] shadow-xl">
-        <div className="flex flex-col 2xl:flex-row 2xl:items-center justify-between gap-4">
-          {/* Target Identity & Metadata */}
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-100 font-sans truncate max-w-full">
+      {/* Resumen del expediente */}
+      <section aria-label="Resumen de la auditoría" className="overflow-visible border border-[#1c2c40] bg-[#0d1420] shadow-[0_18px_48px_rgba(0,0,0,0.22)]">
+        <div className="grid gap-4 p-4 sm:p-5 2xl:grid-cols-[minmax(0,1fr)_300px_300px] 2xl:items-center 2xl:gap-5">
+          <div className="min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h1 title={targetName} className="max-w-full truncate text-xl font-semibold leading-tight tracking-[-0.035em] text-slate-100 sm:text-2xl">
                 {targetName}
               </h1>
               {investigation.target?.university && (
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#131e2e] text-sky-300 border border-[#20324c] shrink-0">
+                <span className="inline-flex shrink-0 items-center border border-[#244362] bg-[#101d2c] px-2 py-1 text-[10px] font-medium text-sky-200">
                   {investigation.target.university}
                 </span>
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs font-mono text-slate-400">
-              <span className="text-slate-300 font-medium shrink-0">{code}</span>
-              <span className="text-slate-600 hidden sm:inline">|</span>
-              <span className="shrink-0">{formatDate(investigation.created_at)}</span>
-              <span className="text-slate-600 hidden sm:inline">|</span>
-              <span className={`text-[10px] px-2 py-0.2 rounded border shrink-0 ${engineMeta.badge}`}>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] text-slate-400">
+              <span className="font-mono font-medium text-slate-300">{code}</span>
+              <span aria-hidden="true" className="text-slate-700">/</span>
+              <span className="inline-flex items-center gap-1.5">
+                <CalendarDays className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+                {formatDate(investigation.created_at)}
+              </span>
+              <span className={`inline-flex items-center gap-1.5 border px-2 py-1 text-[10px] font-medium ${engineMeta.badge}`}>
+                <span className="h-1.5 w-1.5 bg-current" aria-hidden="true" />
                 {engineMeta.label}
               </span>
             </div>
 
-            {/* Quick target identifiers */}
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[11px] font-mono text-slate-500">
+            <div role="group" aria-label="Identificadores del objetivo" className="mt-3 flex flex-wrap gap-2">
               {investigation.target?.email && (
-                <span className="truncate max-w-full sm:max-w-xs" title={investigation.target.email}>
-                  📧 {investigation.target.email}
+                <span className="inline-flex min-w-0 max-w-full items-center gap-2 border border-[#1d2c40] bg-[#090f18] px-2.5 py-1.5 text-[11px] text-slate-300" title={investigation.target.email}>
+                  <Mail className="h-3.5 w-3.5 shrink-0 text-sky-400" aria-hidden="true" />
+                  <span className="max-w-[18rem] truncate">{investigation.target.email}</span>
                 </span>
               )}
               {investigation.target?.username && (
-                <span className="truncate max-w-full sm:max-w-xs">
-                  👤 @{investigation.target.username}
+                <span className="inline-flex min-w-0 max-w-full items-center gap-2 border border-[#1d2c40] bg-[#090f18] px-2.5 py-1.5 text-[11px] text-slate-300">
+                  <AtSign className="h-3.5 w-3.5 shrink-0 text-sky-400" aria-hidden="true" />
+                  <span className="max-w-[18rem] truncate">{investigation.target.username}</span>
                 </span>
               )}
               {investigation.target?.dni && (
-                <span className="shrink-0">
-                  🪪 DNI: {investigation.target.dni}
+                <span className="inline-flex items-center gap-2 border border-[#1d2c40] bg-[#090f18] px-2.5 py-1.5 text-[11px] text-slate-300">
+                  <Fingerprint className="h-3.5 w-3.5 text-sky-400" aria-hidden="true" />
+                  DNI {investigation.target.dni}
                 </span>
               )}
             </div>
           </div>
 
-          {/* Metrics Strip + Status + Actions */}
-          <div className="flex flex-wrap items-center justify-between 2xl:justify-end gap-3 sm:gap-5 pt-3 2xl:pt-0 border-t 2xl:border-t-0 border-[#162234] max-w-full">
-            {/* 3 Factual Metrics: Hallazgos, Relaciones, Fuentes */}
-            <div className="grid grid-cols-3 gap-3 sm:gap-6 text-center">
-              <div>
-                <div className="font-mono text-base sm:text-lg font-bold text-sky-400">
-                  {findingsCount}
-                </div>
-                <div className="text-[10px] font-mono text-slate-400">
-                  Hallazgos
-                </div>
+          <div className="contents">
+            <div className="grid min-w-0 grid-cols-3 gap-px border border-[#22344d] bg-[#22344d]" role="group" aria-label="Métricas de la auditoría">
+              <div className="min-w-0 bg-[#0a111b] px-3 py-2.5 sm:px-4">
+                <div className="text-lg font-semibold leading-none text-sky-300 sm:text-xl">{findingsCount}</div>
+                <div className="mt-1.5 text-[9px] font-medium uppercase tracking-[0.12em] text-slate-500">Hallazgos</div>
               </div>
-
-              <div>
-                <div className="font-mono text-base sm:text-lg font-bold text-slate-100">
-                  {relationsCount}
-                </div>
-                <div className="text-[10px] font-mono text-slate-400">
-                  Relaciones
-                </div>
+              <div className="min-w-0 bg-[#0a111b] px-3 py-2.5 sm:px-4">
+                <div className="text-lg font-semibold leading-none text-slate-100 sm:text-xl">{relationsCount}</div>
+                <div className="mt-1.5 text-[9px] font-medium uppercase tracking-[0.12em] text-slate-500">Relaciones</div>
               </div>
-
-              <div>
-                <div className="font-mono text-base sm:text-lg font-bold text-slate-100">
-                  {sourcesCount}
-                </div>
-                <div className="text-[10px] font-mono text-slate-400">
-                  Fuentes
-                </div>
+              <div className="min-w-0 bg-[#0a111b] px-3 py-2.5 sm:px-4">
+                <div className="text-lg font-semibold leading-none text-slate-100 sm:text-xl">{sourcesCount}</div>
+                <div className="mt-1.5 text-[9px] font-medium uppercase tracking-[0.12em] text-slate-500">Fuentes</div>
               </div>
             </div>
 
-            <div className="h-8 w-px bg-[#162234] hidden sm:block shrink-0" />
-
-            {/* Status Indicator & Action Buttons */}
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 border-t border-[#1b2c41] pt-4 2xl:justify-end 2xl:border-l 2xl:border-t-0 2xl:pl-5 2xl:pt-0">
               <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-semibold border shrink-0 ${
+                role="status"
+                className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 border px-3 text-[11px] font-medium ${
                   isCompleted
-                    ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
                     : isRunning
-                    ? "bg-sky-500/15 text-sky-300 border-sky-500/30 animate-pulse"
+                    ? "border-sky-500/30 bg-sky-500/10 text-sky-300"
                     : isFailed
-                    ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
-                    : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                    ? "border-rose-500/30 bg-rose-500/10 text-rose-300"
+                    : "border-amber-500/30 bg-amber-500/10 text-amber-300"
                 }`}
               >
                 {isCompleted ? (
-                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
                 ) : isRunning ? (
-                  <Clock className="w-3.5 h-3.5 animate-spin" />
+                  <Clock className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                 ) : investigation.status === "paused" ? (
-                  <Clock className="w-3.5 h-3.5" />
+                  <Clock className="h-3.5 w-3.5" aria-hidden="true" />
                 ) : (
-                  <XCircle className="w-3.5 h-3.5" />
+                  <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
                 )}
                 <span>
                   {isCompleted
@@ -457,109 +450,81 @@ export default function InvestigationDetailPage({
                 </span>
               </span>
 
-              {/* Export dropdown */}
               {investigation.metrics.acquisition_mode === "fair" && isCompleted && (
                 <Link
                   href={`/investigation/${investigation.id}/review`}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#d9d47a] hover:bg-[#e8e38a] border border-[#eee99a] text-xs font-semibold text-[#191b12] transition-colors"
+                  className="inline-flex min-h-9 items-center gap-1.5 border border-[#eee99a] bg-[#d9d47a] px-3 text-[11px] font-semibold text-[#191b12] transition-colors hover:bg-[#e8e38a]"
                 >
-                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>{(investigation.metrics.verification_gate as { status?: string } | undefined)?.status === "complete"
                     ? "Abrir revisión"
                     : "Revisar descubrimientos"}</span>
                 </Link>
               )}
 
-              <div className="relative shrink-0" ref={exportMenuRef}>
+              {SHOW_EXPORT_ACTIONS ? <div className="relative shrink-0" ref={exportMenuRef}>
                 <button
                   type="button"
+                  aria-expanded={isExportOpen}
                   disabled={Boolean(exportingMaigret)}
                   onClick={() => setIsExportOpen((prev) => !prev)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#142032] hover:bg-[#1c2e47] border border-[#213550] text-xs font-mono text-slate-200 transition-colors cursor-pointer"
+                  className="flex min-h-9 items-center gap-1.5 border border-[#29405c] bg-[#101b2a] px-3 text-[11px] text-slate-200 transition-colors hover:border-sky-500/50 hover:bg-[#162438] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <Download className="w-3.5 h-3.5 text-sky-400" />
+                  <Download className="h-3.5 w-3.5 text-sky-400" aria-hidden="true" />
                   <span>{exportingMaigret ? `Generando ${exportingMaigret}…` : "Exportar informe"}</span>
-                  <ChevronDown className="w-3 h-3 text-slate-400" />
+                  <ChevronDown className="h-3 w-3 text-slate-400" aria-hidden="true" />
                 </button>
 
                 {isExportOpen && (
-                  <div className="absolute right-0 top-10 w-60 max-h-[65vh] overflow-y-auto rounded-xl border border-[#22344d] bg-[#0c131f] p-1.5 shadow-2xl z-50 animate-fade-in font-mono text-xs">
-                    <button
-                      type="button"
-                      onClick={handleExportJson}
-                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors cursor-pointer"
-                    >
-                      <Download className="w-3.5 h-3.5 text-sky-400" />
+                  <div className="absolute right-0 top-10 z-50 max-h-[65vh] w-60 overflow-y-auto border border-[#29405c] bg-[#0c131f] p-1 shadow-2xl animate-fade-in font-mono text-xs">
+                    <button type="button" onClick={handleExportJson} className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-slate-300 transition-colors hover:bg-[#162234] hover:text-white">
+                      <Download className="h-3.5 w-3.5 text-sky-400" aria-hidden="true" />
                       <span>Descargar JSON</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        window.print();
-                        setIsExportOpen(false);
-                      }}
-                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors cursor-pointer"
-                    >
-                      <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                    <button type="button" onClick={() => { window.print(); setIsExportOpen(false); }} className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-slate-300 transition-colors hover:bg-[#162234] hover:text-white">
+                      <Printer className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
                       <span>Imprimir / PDF forense</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        window.open(getGraphmlUrl(investigation.id), "_blank");
-                        setIsExportOpen(false);
-                      }}
-                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors cursor-pointer"
-                    >
-                      <FileDown className="w-3.5 h-3.5 text-purple-400" />
+                    <button type="button" onClick={() => { window.open(getGraphmlUrl(investigation.id), "_blank"); setIsExportOpen(false); }} className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-slate-300 transition-colors hover:bg-[#162234] hover:text-white">
+                      <FileDown className="h-3.5 w-3.5 text-purple-400" aria-hidden="true" />
                       <span>Descargar GraphML</span>
                     </button>
                     {hasMaigretEvidence && maigretFormats.length > 0 && <div className="mt-1 border-t border-[#22344d] pt-2">
                       <p className="px-2.5 pb-1 text-[10px] text-slate-500">Maigret · detecciones y datos</p>
-                      {maigretFormats.map((format) => <button key={format} type="button" onClick={() => void handleMaigretExport(format)} className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors cursor-pointer">
-                        <FileDown className="w-3.5 h-3.5 text-sky-400" />
+                      {maigretFormats.map((format) => <button key={format} type="button" onClick={() => void handleMaigretExport(format)} className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-slate-300 transition-colors hover:bg-[#162234] hover:text-white">
+                        <FileDown className="h-3.5 w-3.5 text-sky-400" aria-hidden="true" />
                         <span>{format === "graph" ? "Grafo de enlaces (HTML)" : format === "neo4j" ? "Neo4j (Cypher)" : format.toUpperCase()}</span>
                       </button>)}
                     </div>}
                   </div>
                 )}
                 {exportError && <p role="alert" className="mt-2 max-w-60 text-xs text-rose-300">{exportError}</p>}
-              </div>
+              </div> : null}
 
-              {/* More options menu */}
               <div className="relative shrink-0" ref={moreMenuRef}>
                 <button
                   type="button"
+                  aria-label="Más opciones"
+                  aria-expanded={isMoreMenuOpen}
                   onClick={() => setIsMoreMenuOpen((prev) => !prev)}
-                  className="p-2 rounded-lg bg-[#0e1624] hover:bg-[#162438] border border-[#1b2a3e] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                  className="inline-flex h-9 w-9 items-center justify-center border border-[#1b2a3e] bg-[#0e1624] text-slate-400 transition-colors hover:border-[#314966] hover:bg-[#162438] hover:text-slate-100"
                   title="Más opciones"
                 >
-                  ···
+                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
                 </button>
 
                 {isMoreMenuOpen && (
-                  <div className="absolute right-0 top-10 w-48 rounded-xl border border-[#22344d] bg-[#0c131f] p-1.5 shadow-2xl z-50 animate-fade-in font-mono text-xs">
-                    <button
-                      type="button"
-                      onClick={handleCopyId}
-                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors cursor-pointer"
-                    >
+                  <div className="absolute right-0 top-10 z-50 w-48 border border-[#29405c] bg-[#0c131f] p-1 shadow-2xl animate-fade-in font-mono text-xs">
+                    <button type="button" onClick={handleCopyId} className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-slate-300 transition-colors hover:bg-[#162234] hover:text-white">
                       {copiedId ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <Check className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
                       ) : (
-                        <Copy className="w-3.5 h-3.5 text-slate-400" />
+                        <Copy className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
                       )}
                       <span>{copiedId ? "ID copiado" : "Copiar ID"}</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        loadData();
-                        setIsMoreMenuOpen(false);
-                      }}
-                      className="flex w-full items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-[#162234] text-left transition-colors cursor-pointer"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5 text-sky-400" />
+                    <button type="button" onClick={() => { loadData(); setIsMoreMenuOpen(false); }} className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-slate-300 transition-colors hover:bg-[#162234] hover:text-white">
+                      <RefreshCw className="h-3.5 w-3.5 text-sky-400" aria-hidden="true" />
                       <span>Recargar datos</span>
                     </button>
                   </div>
@@ -568,10 +533,7 @@ export default function InvestigationDetailPage({
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Real-time progress tracker when investigation is active */}
-      {investigation.metrics.acquisition_mode === "fair" && <FairCoverage metrics={investigation.metrics} />}
+      </section>
 
       {isRunning && (
         <InvestigationProgress
