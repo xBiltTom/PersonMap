@@ -138,3 +138,21 @@ def is_declared_identifier(target, kind: str, value: str, platform: str | None =
     namespace = platform.strip().casefold() or None if platform else None
     return any(item.username == value.strip().lstrip("@") and item.platform == namespace
                for item in declared.usernames)
+
+
+def account_ownership(seeds, platform, username) -> dict:
+    """Only an exact declared namespace associates an account with the subject.
+
+    Stable seed IDs survive JSON reloads and do not identify unrelated aliases.
+    """
+    import hashlib
+    import json
+    from app.social.capabilities import canonical_platform
+    for seed in seeds:
+        if (seed.kind == "username" and seed.platform
+                and canonical_platform(seed.platform) == canonical_platform(platform)
+                and seed.value.casefold() == username.lstrip("@").casefold()):
+            ref = {"kind": seed.kind, "value": seed.value, "platform": seed.platform}
+            return {"status": "subject_declared", "needs_review": False,
+                    "seed_id": hashlib.sha256(json.dumps(ref, sort_keys=True).encode()).hexdigest(), "seed": ref}
+    return {"status": "unverified", "needs_review": True}

@@ -1,4 +1,4 @@
-"""Native-first routing. Neither a namespace nor a plausible profile proves ownership."""
+"""Declared accounts enrich directly; discovered accounts require native admission."""
 from dataclasses import asdict, dataclass
 
 from app.core.config import settings
@@ -40,6 +40,7 @@ class RoutingDecision:
     native_tools: tuple[str, ...]
     actor: str | None
     reason: str
+    declared_seed: dict | None = None
 
 
 class SocialSourceRouter:
@@ -55,8 +56,27 @@ class SocialSourceRouter:
                    if public_url(raw) and (profile := parse_social_profile(raw))}
         decisions = []
         represented = set()
+        from app.social.apify_adapter import TEMPLATES
+        from app.schemas.footprint import account_ownership
+        for seed in context.declared_seeds:
+            platform = canonical_platform(seed.platform)
+            if seed.kind != "username" or platform not in ACTORS:
+                continue
+            url = TEMPLATES[platform].format(seed.value)
+            profile = parse_social_profile(url)
+            if not profile:
+                continue
+            reason = ("subject_consent_required" if not consent else available if available != "configured_not_live_validated"
+                else "platform_disabled" if platform not in allowed else "subject_declared_account_ready")
+            ready = reason == "subject_declared_account_ready"
+            represented.add((seed.value.casefold(), platform))
+            decisions.append(RoutingDecision(platform, seed.value, profile.url, "hybrid" if ready else "native",
+                NATIVE_TOOLS, ACTORS[platform].actor if ready else None, reason,
+                account_ownership(context.declared_seeds, platform, seed.value)))
         for entry in context.extra.get("social_native_profiles", [])[:128]:
             platform, username, url = canonical_platform(entry["platform"]), entry["username"], entry["url"]
+            if (username.casefold(), platform) in represented:
+                continue
             represented.add((username.casefold(), platform))
             spec = ACTORS.get(platform)
             reason = ("subject_consent_required" if not consent else available if available != "configured_not_live_validated"

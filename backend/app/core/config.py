@@ -229,6 +229,9 @@ class Settings(BaseSettings):
     apify_actor_builds: dict[str, str] = Field(default_factory=dict)
     apify_max_actors: int = Field(default=2, ge=0, le=10)
     apify_max_runs: int = Field(default=2, ge=0, le=20)
+    apify_max_profiles_per_actor: int = Field(default=3, ge=1, le=30)
+    apify_max_content_items_per_profile: int = Field(default=10, ge=1, le=100)
+    # Deprecated compatibility field; limits are now profiles and content separately.
     apify_max_items_per_actor: int = Field(default=5, ge=1, le=100)
     apify_dataset_page_size: int = Field(default=5, ge=1, le=100)
     apify_run_timeout: int = Field(default=60, ge=5, le=300)

@@ -43,7 +43,7 @@ URLS = {"instagram": "https://instagram.com/fixture.person", "tiktok": "https://
 def config(monkeypatch):
     for key, value in {"apify_enabled": True, "apify_token": SecretStr("apify_api_TEST_SECRET"),
         "apify_platforms": list(ACTORS), "apify_actor_builds": {}, "apify_max_runs": 2, "apify_max_actors": 2,
-        "apify_max_items_per_actor": 5, "apify_dataset_page_size": 2, "apify_run_timeout": 60,
+        "apify_max_profiles_per_actor": 3, "apify_max_content_items_per_profile": 10, "apify_max_items_per_actor": 5, "apify_dataset_page_size": 2, "apify_run_timeout": 60,
         "apify_batch_timeout": 150, "apify_request_timeout": 15, "apify_max_retries": 1,
         "apify_parallelism": 1, "apify_max_charge_per_run_usd": .05,
         "apify_max_charge_per_investigation_usd": .1, "apify_max_response_bytes": 2_000_000}.items():
@@ -106,11 +106,11 @@ def run_response(status="SUCCEEDED", **extra):
 
 
 @pytest.mark.parametrize("platform", list(ACTORS))
-def test_known_platform_routes_native_first_and_only_then_hybrid(platform):
+def test_declared_platform_routes_immediately_and_keeps_native_discovery(platform):
     ctx = context(platform, observed=False)
     router = SocialSourceRouter()
-    assert all(item.strategy == "native" for item in router.plan(ctx))
-    assert not ApifySocialTool().can_run(ctx)
+    assert ApifySocialTool().can_run(ctx)
+    assert router.enrichment_requests(ctx)[0].reason == "subject_declared_account_ready"
     extract_and_apply_pivots([native(platform)], ctx)
     selected = router.enrichment_requests(ctx)
     assert len(selected) == 1 and selected[0].actor == ACTORS[platform].actor
@@ -157,6 +157,7 @@ def test_unlabelled_username_can_enrich_only_after_native_discovery():
 @pytest.mark.parametrize("literal,expected", [(True, True), (False, False), (None, False)])
 def test_native_literal_search_profile_is_plausible_without_claiming_existence(literal, expected):
     ctx = context(observed=False)
+    ctx.declared_seeds = []
     finding = ToolFinding(entity_type="search_mention", value=URLS["instagram"],
         metadata_info={"source_tool": "search_dorker", "literal_match": literal, "ownership_status": "unverified"})
     extract_and_apply_pivots([finding], ctx)
@@ -167,6 +168,7 @@ def test_native_literal_search_profile_is_plausible_without_claiming_existence(l
 
 def test_frontier_admission_cannot_be_bypassed_by_saved_profile_archive():
     ctx = context()
+    ctx.declared_seeds = []
     ctx.extra["candidate_urls"] = []
     assert not ApifySocialTool().can_run(ctx)
     assert any(item.reason == "awaiting_frontier_admission" for item in SocialSourceRouter().plan(ctx))
@@ -175,6 +177,8 @@ def test_frontier_admission_cannot_be_bypassed_by_saved_profile_archive():
 @pytest.mark.parametrize("kind", ["search", "candidate", "actor", "uncontrolled", "controlled"])
 def test_only_explicit_native_existence_observations_unlock_enrichment(kind):
     ctx = context(observed=False)
+    ctx.declared_seeds = []
+    ctx.declared_seeds = []
     finding = native(verification_status="candidate")
     if kind == "search":
         finding.entity_type = "search_mention"
@@ -206,7 +210,7 @@ def test_actor_shapes_normalize_to_common_account_content_and_provenance(platfor
     finding = findings[0]
     assert finding.entity_type == "social_account" and finding.value == URLS[platform]
     meta = finding.metadata_info
-    assert meta["ownership_status"] == "unverified" and meta["provenance"]["origin"] == "automatic"
+    assert meta["ownership_status"] == "subject_declared" and meta["provenance"]["origin"] == "automatic"
     assert meta["provenance"]["status"] == "discovered" and meta["provenance"]["needs_review"]
     assert len(meta["public_content"]) == content_count
     source = meta["collection_sources"][0]
@@ -356,13 +360,13 @@ async def test_distinct_actor_and_reserved_cost_limits(monkeypatch, budget, limi
 @pytest.mark.asyncio
 async def test_items_are_allocated_per_actor_across_profiles(monkeypatch):
     monkeypatch.setattr(settings, "apify_max_runs", 10)
-    monkeypatch.setattr(settings, "apify_max_items_per_actor", 2)
+    monkeypatch.setattr(settings, "apify_max_profiles_per_actor", 2)
     monkeypatch.setattr(settings, "apify_max_charge_per_investigation_usd", 1)
     ctx = context()
     extract_and_apply_pivots([native(url="https://instagram.com/another"), native(url="https://instagram.com/third")], ctx)
     await ApifySocialTool(FixtureClient).execute(ctx)
-    assert execution_summary(ctx)["runs_reserved"] == 2
-    assert any(row["status"] == "item_budget_exhausted" for row in execution_summary(ctx)["diagnostics"])
+    assert execution_summary(ctx)["runs_reserved"] == 1
+    assert any(row["status"] == "profile_budget_exhausted" for row in execution_summary(ctx)["diagnostics"])
 
 
 @pytest.mark.asyncio
@@ -605,3 +609,84 @@ async def test_rules_use_same_native_pivot_tool_and_common_findings_pipeline(mon
     assert execution_summary(sweep.context)["runs_reserved"] == 1
     assert "public@example.org" in sweep.context.discovered_emails
     assert any(item.type == "email" and item.value == "public@example.org" for item in PivotFrontier(sweep.context).rank())
+
+
+@pytest.mark.asyncio
+async def test_three_declared_accounts_share_one_batch_and_keep_individual_provenance():
+    row = Target(**TargetCreate(usernames=[{"username": name, "platform": "instagram"}
+        for name in [HANDLES["instagram"], "second", "third"]]).persistence_values())
+    row.extra_data["subject_consent"] = True
+    ctx = TargetContext.from_target(row)
+    calls = []
+    class BatchClient:
+        async def run(self, spec, submitted, item_limit, charge, *, on_update):
+            calls.append(submitted)
+            rows = []
+            for username in submitted["usernames"]:
+                entry = deepcopy(FIXTURES["instagram"][0])
+                entry.update(username=username, url=f"https://instagram.com/{username}")
+                if username == "second":
+                    entry = {"error": "unavailable", "username": username}
+                rows.append(entry)
+            return result(items=rows)
+    findings = await ApifySocialTool(BatchClient).execute(ctx)
+    assert len(calls) == 1 and len(calls[0]["usernames"]) == 3
+    assert len(findings) == 2
+    summary = execution_summary(ctx)
+    assert summary["runs_reserved"] == 1 and summary["reserved_charge_usd"] == .05
+    assert summary["outcomes"] == ["partial"]
+    for finding in findings:
+        meta = finding.metadata_info
+        assert meta["ownership"]["status"] == "subject_declared"
+        assert meta["ownership"]["seed_id"] and not meta["ownership"]["needs_review"]
+        assert not meta["ownership_review_required"]
+        assert meta["provenance"]["origin"] == "automatic"
+        assert meta["collection_sources"][0]["query"]["profile_url"] == finding.value
+        for content in meta["public_content"]:
+            assert content["origin"] == "automatic"
+            assert content["collection_source"]["query"]["profile_url"] == finding.value
+    restored = TargetContext.model_validate_json(ctx.model_dump_json())
+    assert not ApifySocialTool().can_run(restored)
+
+
+@pytest.mark.asyncio
+async def test_persistence_recomputes_ownership_from_seed_without_confirming_other_profiles():
+    query = request()
+    declared = ApifyAdapter().normalize(ACTORS["instagram"], query, result(), {})[0]
+    other = native(url="https://instagram.com/someone_else")
+    other.metadata_info["ownership"] = {"status": "subject_declared", "needs_review": False}
+    db = SimpleNamespace(add=lambda row: None, flush=AsyncMock())
+    saved = await persist_findings(str(uuid4()), [declared, other], target(), db)
+    meta = saved[0].metadata_info
+    assert meta["ownership_status"] == "subject_declared" and not meta["ownership_review_required"]
+    assert meta["provenance"]["origin"] == "automatic"
+    assert saved[1].metadata_info["ownership_status"] == "unverified"
+    assert saved[1].metadata_info["ownership_review_required"]
+
+
+@pytest.mark.parametrize("platform", list(ACTORS))
+def test_batch_builders_and_per_profile_content_limit(monkeypatch, platform):
+    from dataclasses import replace
+    query = request(platform)
+    queries = [query, replace(query, username="another", url="https://youtube.com/@another")]
+    submitted = actor_input(ACTORS[platform], queries, 1)
+    field = {"instagram": "usernames", "threads": "usernames", "tiktok": "profiles", "youtube": "startUrls"}[platform]
+    assert len(submitted[field]) == 2
+    monkeypatch.setattr(settings, "apify_max_content_items_per_profile", 1)
+    normalized = ApifyAdapter().normalize(ACTORS[platform], query, result(platform), submitted)
+    assert len(normalized[0].metadata_info["public_content"]) <= 1
+
+
+@pytest.mark.asyncio
+async def test_legacy_reservations_count_toward_new_profile_budget(monkeypatch):
+    ctx = context()
+    ctx.extra["apify_runtime"] = {"runs": {"old": {
+        "actor": ACTORS["instagram"].actor, "status": "start_uncertain", "item_allowance": 1,
+        "reserved_charge_usd": .05, "profile_keys": ["instagram:username:previous"]}}}
+    monkeypatch.setattr(settings, "apify_max_profiles_per_actor", 1)
+    tool = ApifySocialTool(FixtureClient)
+    assert not tool.can_run(ctx)
+    assert await tool.execute(ctx) == []
+    assert execution_summary(ctx)["runs_reserved"] == 1
+    assert execution_summary(ctx)["reserved_charge_usd"] == .05
+    assert execution_summary(ctx)["diagnostics"][-1]["status"] == "profile_budget_exhausted"

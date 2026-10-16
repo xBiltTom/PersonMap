@@ -16,18 +16,20 @@ TEMPLATES = {"instagram": "https://instagram.com/{}", "tiktok": "https://tiktok.
 
 
 def actor_input(spec, request, item_limit):
+    requests = request if isinstance(request, list) else [request]
+    request = requests[0]
     if spec.platform == "instagram":
-        return {"usernames": [request.username], "includeAboutSection": False}
+        return {"usernames": [item.username for item in requests], "includeAboutSection": False}
     if spec.platform == "threads":
-        return {"usernames": [request.username]}
+        return {"usernames": [item.username for item in requests]}
     if spec.platform == "tiktok":
-        return {"profiles": [request.username], "resultsPerPage": item_limit,
+        return {"profiles": [item.username for item in requests], "resultsPerPage": item_limit,
             "profileScrapeSections": ["videos"], "profileSorting": "latest", "maxFollowersPerProfile": 0,
             "maxFollowingPerProfile": 0, "commentsPerPost": 0, "topLevelCommentsPerPost": 0, "maxRepliesPerComment": 0,
             "shouldDownloadVideos": False, "shouldDownloadCovers": False, "shouldDownloadSlideshowImages": False,
             "shouldDownloadAvatars": False, "downloadSubtitlesOptions": "NEVER_DOWNLOAD_SUBTITLES"}
     if spec.platform == "youtube":
-        return {"startUrls": [{"url": request.url}], "maxResults": item_limit,
+        return {"startUrls": [{"url": item.url} for item in requests], "maxResults": item_limit,
                 "maxResultsShorts": 0, "maxResultStreams": 0, "sortVideosBy": "NEWEST"}
     raise ValueError("unsupported_actor_contract")
 
@@ -176,10 +178,13 @@ class ApifyAdapter:
                     "verification_status": "verified", "ownership_status": "unverified", "access_context": "public_only",
                     "provenance": discovered_provenance(evidence), "collection_sources": [source],
                     "url": request.url, "profile_url": request.url, "observed_profile_url": profile.url,
+                    "ownership": request.declared_seed or {"status": "unverified", "needs_review": True},
+                    "ownership_review_required": not bool(request.declared_seed),
                     "resource_kind": profile.resource_kind, "name": text(name, 255), "bio": text(bio),
                     "linked_profiles": public_links, "website": next(iter(public_links), None),
                     "extracted_emails": emails, "extracted_usernames": [handle] if handle else [],
                     "public_content": [], "content_scope": "observed_account_not_confirmed_subject"}
+                metadata["ownership_status"] = metadata["ownership"]["status"]
                 if profile.resource_kind == "username":
                     metadata["username"] = profile.username
                 if avatar_url := public_url(avatar):
@@ -188,9 +193,11 @@ class ApifyAdapter:
                     display_name=text(name, 255) or profile.username, metadata_info=metadata,
                     confidence=0.6, evidence_urls=evidence)
             for post in posts:
-                if len(finding.metadata_info["public_content"]) >= settings.apify_max_items_per_actor:
+                if len(finding.metadata_info["public_content"]) >= settings.apify_max_content_items_per_profile:
                     break
                 if isinstance(post, dict) and (content := _content(spec.platform, post, handle)) and content["url"] not in seen_content:
+                    content["origin"] = "automatic"
+                    content["collection_source"] = finding.metadata_info["collection_sources"][0]
                     finding.metadata_info["public_content"].append(content)
                     seen_content.add(content["url"])
         return [finding] if finding else []

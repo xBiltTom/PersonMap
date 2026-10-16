@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-16T04:04:23.502355+00:00",
+  "live_validation": "not_live_validated",
+  "reserved_charge_usd": 0,
+  "runs": [],
+  "validated_builds": {},
+  "platforms": {
+    "instagram": {
+      "status": "not_live_validated",
+      "build": null,
+      "usageTotalUsd": null,
+      "elapsed_seconds": null
+    },
+    "tiktok": {
+      "status": "not_live_validated",
+      "build": null,
+      "usageTotalUsd": null,
+      "elapsed_seconds": null
+    },
+    "threads": {
+      "status": "not_live_validated",
+      "build": null,
+      "usageTotalUsd": null,
+      "elapsed_seconds": null
+    },
+    "youtube": {
+      "status": "not_live_validated",
+      "build": null,
+      "usageTotalUsd": null,
+      "elapsed_seconds": null
+    },
+    "reddit": {
+      "status": "not_live_validated",
+      "build": null,
+      "usageTotalUsd": null,
+      "elapsed_seconds": null
+    },
+    "twitter": {
+      "status": "not_live_validated",
+      "build": null,
+      "usageTotalUsd": null,
+      "elapsed_seconds": null
+    }
+  },
+  "reason": "token_missing"
+}

@@ -199,6 +199,15 @@ async def persist_findings(
         # Tools (including agents) cannot manufacture a subject's decision.
         metadata["provenance"] = ((current.metadata_info or {}).get("provenance") if current else None) or discovered_provenance(
             f.evidence_urls, matches_declared_identifier=is_declared_identifier(target, f.entity_type, f.value, f.platform))
+        if f.entity_type == "social_account":
+            from app.schemas.footprint import account_ownership, footprint_input
+            from app.tools.social_profiles import parse_social_profile
+            declared = footprint_input(target)
+            profile = parse_social_profile(f.value)
+            ownership = account_ownership(declared.declared_seeds if declared else [],
+                profile.platform if profile else f.platform, profile.username if profile else "")
+            metadata.update(ownership=ownership, ownership_status=ownership["status"],
+                            ownership_review_required=ownership["needs_review"])
         # Las herramientas ya recogen URLs de evidencia, pero Entity no tenía
         # una columna específica para ellas. Persistirlas dentro del metadata
         # evita una migración y permite que el inspector separe la fuente del

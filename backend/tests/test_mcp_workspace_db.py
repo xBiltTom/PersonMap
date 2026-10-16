@@ -43,7 +43,8 @@ pytestmark = pytest.mark.db
 
 
 @pytest.mark.asyncio
-async def test_apify_uses_shared_workspace_trace_persistence_and_durable_budget(isolated_workspace, monkeypatch):
+@pytest.mark.parametrize("native_first", [True, False])
+async def test_apify_uses_shared_workspace_trace_persistence_and_durable_budget(isolated_workspace, monkeypatch, native_first):
     from app.engine.persistence import persist_findings
     from app.tools import http_client
     from app.tools.apify_social import execution_summary
@@ -66,12 +67,13 @@ async def test_apify_uses_shared_workspace_trace_persistence_and_durable_budget(
     async with service.session_factory() as db:
         inv = await service.create(InvestigationCreate(target=TargetCreate(usernames=[{"username": "fixture", "platform": "instagram"}]),
             subject_consent=True, execution_mode="external"), db)
-        await persist_findings(str(inv.id), [ToolFinding(entity_type="social_account", value="https://instagram.com/fixture",
-            platform="instagram", metadata_info={"source_tool": "social_verifier", "verification_status": "verified", "username": "fixture"})], inv.target, db)
+        if native_first:
+            await persist_findings(str(inv.id), [ToolFinding(entity_type="social_account", value="https://instagram.com/fixture",
+                platform="instagram", metadata_info={"source_tool": "social_verifier", "verification_status": "verified", "username": "fixture"})], inv.target, db)
         await db.commit()
     opened = await service.open_session(inv.id, SessionCreate(client="apify-fixture"))
-    arguments = ToolRequest(tool_name="apify_social", inputs=ToolInputs(candidate_urls=["https://instagram.com/fixture"]),
-        rationale="Read bounded public profile content after native existence evidence")
+    arguments = ToolRequest(tool_name="apify_social", inputs=ToolInputs(),
+        rationale="Read bounded public content for subject declared account")
     submitted = await service.submit_tool(inv.id, uuid.UUID(opened["id"]), arguments)
     task = service.tasks.get(uuid.UUID(submitted["id"]))
     if task:
@@ -80,7 +82,10 @@ async def test_apify_uses_shared_workspace_trace_persistence_and_durable_budget(
     assert len(detail["entities"]) == 1
     entity = detail["entities"][0]
     assert entity["provenance"]["origin"] == "automatic" and entity["provenance"]["status"] == "discovered"
-    assert set(entity["metadata_info"]["source_tools"]) == {"social_verifier", "apify_social"}
+    assert set(entity["metadata_info"]["source_tools"]) == ({"social_verifier", "apify_social"} if native_first else {"apify_social"})
+    assert entity["metadata_info"]["ownership_status"] == "subject_declared"
+    assert entity["metadata_info"]["ownership"]["seed_id"]
+    assert not entity["metadata_info"]["ownership_review_required"]
     source = entity["metadata_info"]["collection_sources"][0]
     assert source["run_id"] == "dbRun123" and source["dataset_id"] == "dbDataset123" and source["build_id"] == "dbBuild123"
     assert entity["metadata_info"]["public_content"][0]["text"] == "Public caption"

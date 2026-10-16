@@ -6,7 +6,7 @@ import re
 
 from app.core.config import settings
 
-VERSION = 1
+VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -30,7 +30,7 @@ class ApifyActorSpec:
 ACTORS = {
     "instagram": ApifyActorSpec("instagram", "apify/instagram-profile-scraper",
         ("username",), ("profile", "recent_posts"), profile_row=True,
-        notes="One profile per run; includeAboutSection=false. Nested recent posts have no Actor-side count input; local content truncation."),
+        notes="Multiple usernames per run; includeAboutSection=false. Nested recent posts have no Actor-side count input; local content truncation."),
     "tiktok": ApifyActorSpec("tiktok", "clockworks/tiktok-profile-scraper",
         ("username",), ("profile", "videos"), supports_comments=True, supports_followers_following=True,
         notes="resultsPerPage bounded. Comments, followers/following, downloads and transcripts explicitly disabled."),
@@ -43,7 +43,7 @@ ACTORS = {
 }
 
 EVALUATED = {
-    "reddit": {"actor": "harshmaur/reddit-user-scraper", "input_types": ["username", "profile_url"],
+    "reddit": {"actor": "apify/reddit-scraper", "input_types": ["username", "profile_url"],
         "output_types": ["profile", "posts", "comments"], "supports_username_lookup": True,
         "supports_profile": True, "supports_posts": True, "supports_comments": True,
         "supports_followers_following": None},
@@ -63,8 +63,8 @@ EVALUATED = {
 
 # Choices apply to PersonMap's scope, not to the inherent quality of every Actor.
 POLICIES = {
-    **{platform: ("hybrid", "Native existence first; Apify only for bounded public enrichment.") for platform in ACTORS},
-    "reddit": ("native", "Maigret/SearchDorker remain; defer paid activity extraction pending comparative measurement."),
+    **{platform: ("hybrid", "Declared platform accounts enrich directly; discovered accounts require native observation and Frontier admission.") for platform in ACTORS},
+    "reddit": ("native", "Maigret/SearchDorker remain; official Actor supports usernames and separate users/posts/comments modes; high priority, deferred pending live validation and comparative measurement."),
     "twitter": ("native", "Defer paid profile queries pending quality/cost comparison; never expand every alias into X."),
     "facebook": ("native", "Reviewed posts Actor documents public Pages, not personal profiles; scope mismatch."),
     "linkedin": ("native", "Public search/verification remain. Optional email-finder modes are outside scope; defer detailed profile adapter."),
@@ -119,17 +119,19 @@ def capabilities() -> dict:
             rows.append({**asdict(ACTORS[platform]), "input_types": list(ACTORS[platform].input_types),
                 "output_types": list(ACTORS[platform].output_types), "provider": "apify", "strategy": policy,
                 "enabled": platform in allowed and availability() == "configured_not_live_validated",
-                "validation": {"input_schema": "validated", "dataset": "fixture-tested", "live_run": "not live-tested"},
+                "validation": {"input_schema": "validated", "dataset": "fixture-tested", "live_run": "not_live_validated"},
                 "collection_scope": "public_profile_and_bounded_content_no_audience_lists"})
         elif platform in EVALUATED:
             rows.append({**EVALUATED[platform], "platform": platform, "provider": "apify", "enabled": False,
                 "strategy": "not worth using" if platform == "facebook" else "native",
                 "priority": 100, "estimated_cost_class": "unknown", "estimated_latency_class": "unknown",
                 "notes": notes + " Evaluated, not integrated; enabling the platform cannot launch this Actor.",
-                "validation": {"input_schema": "validated", "dataset": "not fixture-tested", "live_run": "not live-tested"}})
+                "validation": {"input_schema": "validated", "dataset": "not fixture-tested", "live_run": "not_live_validated"}})
     return {"version": VERSION, "availability": availability(), "matrix": rows,
         "budget": {"max_actors": settings.apify_max_actors, "max_runs": settings.apify_max_runs,
             "max_items_per_actor": settings.apify_max_items_per_actor,
+            "max_profiles_per_actor": settings.apify_max_profiles_per_actor,
+            "max_content_items_per_profile": settings.apify_max_content_items_per_profile,
             "run_timeout_seconds": settings.apify_run_timeout, "batch_timeout_seconds": settings.apify_batch_timeout,
             "request_timeout_seconds": settings.apify_request_timeout, "get_retries": settings.apify_max_retries,
             "start_retries": 0, "parallelism": settings.apify_parallelism,

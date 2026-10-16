@@ -146,7 +146,8 @@ Frontier. No se introduce un segundo registro de identidades ni se usa el estado
 de exploración pending/explored como estado de verificación humana.
 
 Contrato para el futuro Verification Gate: filtrar por
-`provenance.needs_review`, sobre descubrimientos, nunca sobre `declared_seeds`.
+`ownership_review_required` para cuentas y `provenance.needs_review` para otros
+hallazgos (contrato Fase 2.1), nunca sobre `declared_seeds`.
 No hay todavía pantalla ni endpoints de revisión. `DigitalFootprintDataset`
 deberá combinar declared + confirmed con IDs de evidencia, excluyendo rejected,
 discovered y uncertain del conjunto atribuido. IA tendrá procedencia separada
@@ -192,6 +193,66 @@ Validación de Fase 2: 205 casos de integración/regresión (73 nuevos de Apify)
 17 pruebas PostgreSQL/REST/MCP, 205 de fuentes nativas y 63 de Maigret/WhatsMyName
 aprobados. Frontend: seis pruebas y TypeScript sin errores. Los detalles de la
 suite general, límites y ausencia de scraping real están en `APIFY.md`.
+
+## Fase 2.1 — Fair Routing & Live Validation
+
+Implementada sobre `b20b045c08c142646e1ea800e0a04d28732a0c74`, misma rama.
+Esta sección sustituye las decisiones de routing/presupuesto de Fase 2 arriba.
+Arquitectura intacta: SocialSourceRouter → ApifySocialTool → ApifyClient →
+ApifyAdapter → ToolFinding. [Detalle y comandos reproducibles](APIFY.md#fase-21--fair-routing--live-validation).
+
+- Username declarado + plataforma integrada permite Apify inmediato con consentimiento,
+  allowlist y presupuesto. Las fuentes nativas siguen elegibles para descubrir más.
+  No requiere observación nativa ni Frontier para esa cuenta declarada.
+- Username sin plataforma y candidatos automáticos conservan native-first +
+  observación plausible + admisión Frontier. No hay expansión pagada a ciegas.
+- Ownership separado: `subject_declared`, seed estable y revisión de ownership
+  desactivada solamente para coincidencia exacta de username/plataforma declarada.
+  Persistencia recalcula desde el target; otros perfiles y pivotes siguen unverified.
+  Perfil y contenido observado continúan automatic/discovered, sin convertir posts
+  en subject ni inferir atribución de terceros. Gate futuro consulta el flag de
+  ownership para cuentas; no se implementa esa fase.
+- Batches por plataforma/Actor/build con correspondencia por handle/ID observado,
+  provenance individual y fallos parciales por perfil. Los cuatro Actors integrados
+  aceptan múltiples entradas; un batch es un run y reserva todos sus perfiles.
+- Nuevos defaults: 3 perfiles por Actor/investigación y 10 contenidos por perfil.
+  Instagram/Threads retornan perfiles con posts anidados recortados localmente;
+  TikTok/YouTube limitan contenido remoto por perfil y filas del batch. La antigua
+  variable MAX_ITEMS queda obsoleta. Persisten cuotas de Actors/runs/USD, timeout,
+  paralelismo, reservas y prohibición de retry del POST ambiguo.
+- Integrados: Instagram `apify/instagram-profile-scraper`, TikTok
+  `clockworks/tiktok-profile-scraper`, Threads `apify/threads-profile-api-scraper`,
+  YouTube `streamers/youtube-channel-scraper`. Solo Instagram/TikTok en allowlist
+  por defecto; todos dependen del flag global (false por defecto).
+- Reddit oficial `apify/reddit-scraper` reevaluado como prioridad alta: usernames,
+  perfil y modos posts/comments acotados permiten evaluar actividad pública útil.
+  Sigue native/deferred porque no hay token para demostrar funcionamiento y mejora
+  real. Benchmark incluye sus tres modos. Se abandona la evaluación exclusiva del
+  Actor comunitario anterior. [Contrato oficial](https://apify.com/apify/reddit-scraper/input-schema).
+- X `apidojo/twitter-profile-scraper`: contrato actual revisado (handles, tweets,
+  replies opcionales, límite global); probe mínimo preparado sin extras. Sigue
+  native/deferred sin datos reales de latencia/calidad/coste.
+  [Contrato actual](https://apify.com/apidojo/twitter-profile-scraper/input-schema).
+- LinkedIn sigue diferido; Facebook sigue nativo por contrato de Pages públicas.
+  SearchDorker/Maigret y todos los especialistas fuertes siguen disponibles.
+- Live validation: **APIFY_TOKEN ausente; 0 runs pagados; todos not_live_validated**.
+  Costes y latencias reales: no medidos; builds probados: ninguno.
+  [Informe versionado](audits/apify-phase21-validation-2026-10-15.json).
+  Script `backend/scripts/apify_live_benchmark.py`: límites pequeños, reserva antes
+  del POST, reportes exclusivos, status/build/tiempo/uso/schema/conteos. Exporta
+  mapa APIFY_ACTOR_BUILDS solo tras observar perfiles válidos; latest es fallback.
+- Riesgos para Fase 3: medir contenido y builds reales, promover Reddit/X solamente
+  tras evidencia, ledger transaccional pre-POST y coordinación multi-worker pendientes.
+  Los límites del benchmark son por invocación, no un ledger entre informes distintos.
+
+Validación Fase 2.1: **91 pruebas Apify/benchmark**, **18 PostgreSQL/REST/MCP**
+y **1017 regresiones generales** aprobadas (19 excluidas por marcadores;
+se omite `test_scan_progress.py`, sin modificaciones). La prueba de compatibilidad
+con reservas antiguas se añadió tras la colección general y está entre las 91.
+`git diff --check` sin errores. Las corridas restringidas bloqueadas se interrumpieron;
+las corridas generales/BD aprobadas se ejecutaron fuera del sandbox.
+
+No se implementan Orchestrator Lite, SLA, Gate UI, Exposure Lens, IA, Graph V2 ni frontend.
 
 ## Fase 3 — PersonMap Lite Orchestrator (pendiente)
 
