@@ -83,6 +83,37 @@ PersonMap conserva tres estrategias independientes:
 
 La IA es opcional. Sin `LLM_MODEL` y `LLM_API_KEY`, el motor de reglas sigue funcionando. El uso de IA no convierte un hallazgo en una conclusión de identidad.
 
+## Herramientas e integraciones OSINT
+
+Las estrategias de exploración coordinan las herramientas según los datos disponibles, el alcance elegido y los presupuestos de cada investigación. PersonMap combina bibliotecas originales, catálogos de detección, técnicas adaptadas y módulos propios que consultan fuentes públicas.
+
+### Integraciones principales
+
+| Integración | Qué aporta | Cómo se integra y qué requiere |
+| --- | --- | --- |
+| **[Maigret](docs/MAIGRET.md)** | Búsqueda de cuentas por alias, consultas por identificadores tipados, extracción, enriquecimiento e informes. | Biblioteca original en procesos aislados, utilizada por `username_finder` y `maigret_enricher`. El alcance, los filtros y los servicios opcionales se configuran en PersonMap. |
+| **[WhatsMyName](docs/WHATSMYNAME.md)** | Recetas de detección de cuentas por alias que complementan las comprobaciones de Maigret. | Dataset y recetas ejecutados por `username_finder`, incluidos métodos HTTP, cabeceras y firmas de presencia/ausencia. Los catálogos se conservan separados y se combinan durante el escaneo. |
+| **[Holehe — técnicas adaptadas](docs/HOLEHE.md)** | Sondas de registro de correo en servicios, con controles negativos y estados por consulta. | `email_enumerator` adapta consultas y validaciones de Holehe y añade sondas propias. Se ejecutan con asyncio/HTTPX de PersonMap; el paquete y la CLI de Holehe no se instalan. |
+| **[GHunt](docs/GHUNT.md)** | Consulta de perfiles Google y datos expuestos de servicios como Maps, Calendar, Play Games y recursos públicos de Drive/Docs, según la entrada y el alcance implementado. | `ghunt` usa la biblioteca original en un entorno Python independiente. Requiere habilitar la integración, instalar su runtime y configurar la sesión del operador. Scholar y YouTube tienen búsquedas públicas complementarias en `google_account_osint`. |
+
+### Módulos propios y fuentes consultadas
+
+| Área / herramientas | Fuentes y función | Configuración y documentación |
+| --- | --- | --- |
+| **Búsqueda web** — `search_dorker` | Consultas y dorks mediante Tavily, TinyFish, Brave o DuckDuckGo, con lectura acotada de páginas y documentos públicos. | Los proveedores con API requieren sus claves; la selección y los respaldos dependen de la configuración. [Motor de búsqueda](docs/MOTOR_BUSQUEDA.md). |
+| **Huella académica** — `academic_finder`, `google_account_osint` | Publicaciones y autores de OpenAlex/Crossref; perfiles públicos de Scholar y candidatos de YouTube. | Clave de OpenAlex y contacto Crossref configurables; cada proveedor conserva su estado y procedencia. [Motor académico](docs/ACADEMICO.md) y [Google público](docs/HOLEHE.md#github-y-google-públicos). |
+| **Correo y Gravatar** — `email_checker`, `gravatar_deep` | Clasificación del dominio del correo, coincidencias exactas con correos públicos en GitHub y datos publicados en perfiles Gravatar. | Requieren un correo de entrada u observado. [Correo](docs/HOLEHE.md) y [registro de fuentes](docs/OSINT_SOURCES.md). |
+| **GitHub** — `github_deep_scanner` | Perfil, repositorios, actividad y metadatos públicos asociados al alias consultado. | `GITHUB_API_TOKEN` es opcional y amplía el margen de consultas. [Registro de fuentes](docs/OSINT_SOURCES.md). |
+| **Keybase y Wikipedia** — `keybase_resolver`, `wikipedia_edits` | Enlaces y pruebas publicados en Keybase; contribuciones públicas por alias mediante la API de MediaWiki. | Consultas a APIs públicas. [Registro de fuentes](docs/OSINT_SOURCES.md). |
+| **Perfiles sociales** — `social_url_extractor`, `social_verifier` | Reconocimiento de URLs candidatas y extracción de metadatos observados de perfiles públicos. | La disponibilidad depende de cada plataforma; se conserva el estado de verificación. [Redes sociales](docs/AUDITORIA_REDES_SOCIALES_2026-10-07.md) y [Telegram](docs/AUDITORIA_TELEGRAM_2026-10-07.md). |
+| **Dominios** — `domain_finder` | Dominios y subdominios observados en registros públicos de Certificate Transparency mediante crt.sh. | Parte de dominios explícitos o derivados de los datos de entrada. [Registro de fuentes](docs/OSINT_SOURCES.md). |
+| **Teléfonos** — `phone_lookup` | Normalización y análisis del plan de numeración con `phonenumbers`, con consulta de red opcional. | El formato válido y el operador original no confirman actividad ni titularidad. [Motor telefónico](docs/AUDITORIA_TELEFONOS_2026-10-07.md). |
+| **DNI y documentos** — `dni_lookup` | Menciones de DNI en páginas y datasets públicos, con lectura de documentos y OCR cuando corresponde. | Fuentes explícitas/configuradas y OCR local. [DNI](docs/AUDITORIA_DNI_2026-10-07.md) y [OCR de PDF](docs/OCR_PDF.md). |
+| **Brechas e infostealers** — `breach_checker`, `infostealer_checker` | Reportes de exposición de XposedOrNot y Hudson Rock Cavalier. | La consulta de infostealers requiere consentimiento explícito y conserva solo los campos permitidos por el módulo. [Registro de fuentes](docs/OSINT_SOURCES.md). |
+| **Búsqueda inversa de imágenes** — `reverse_image_search` | Búsqueda de imágenes a partir de URLs de avatares observados mediante Google Lens vía SerpAPI. | Opcional; requiere `SERPAPI_KEY`. [Registro de fuentes](docs/OSINT_SOURCES.md). |
+
+La ejecución de cada herramienta depende de sus entradas y requisitos; una integración disponible en el código puede estar deshabilitada o carecer de credenciales en una instalación concreta. Los resultados conservan su procedencia y los estados de consulta. El [registro de fuentes y técnicas OSINT](docs/OSINT_SOURCES.md) detalla la procedencia y las referencias de las integraciones.
+
 ## Agentes externos mediante MCP
 
 El backend también expone `/mcp` para que Codex, Claude Code u otros clientes compatibles dirijan las herramientas sobre los mismos expedientes de la web. El modo externo no depende de las claves LLM del servidor: guarda resultados por ejecución, conserva sesiones para continuar un caso y sincroniza mapa, hallazgos, trazabilidad y análisis mediante SSE.
