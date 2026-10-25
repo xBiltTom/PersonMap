@@ -22,7 +22,9 @@ import type {
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
-  "http://localhost:8000/api/v1";
+  (typeof window === "undefined"
+    ? `${(process.env.API_PROXY_TARGET || "http://127.0.0.1:8000").replace(/\/$/, "")}/api/v1`
+    : "/api/v1");
 
 /**
  * Origen del backend, sin el prefijo /api/v1. Necesario para los endpoints que

@@ -26,6 +26,8 @@ MANIFEST
 # rutas del frontend como frontend/src/lib/ (bug que dejó api.ts/types.ts sin commitear).
 .env
 .env.local
+.env.*.local
+.local-runtime/
 .venv
 venv/
 ENV/
@@ -45,6 +47,10 @@ pnpm-debug.log*
 # Database / OS
 *.sqlite3
 *.db
+*.log
+*.tsbuildinfo
+# Local case exports contain investigation data, not source code.
+/docs/exportaciones/
 .DS_Store
 Thumbs.db
 
